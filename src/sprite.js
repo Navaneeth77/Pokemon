@@ -22,7 +22,7 @@ export function dirFromVector(dx, dy) {
 }
 
 // Not every SpriteCollab sheet has every animation (e.g. Mega Charizard X has no Strike/Faint).
-const FALLBACK = { Fly: 'Idle', SpAttack: 'Shoot', Hop: 'Attack', Rotate: 'Attack', Double: 'Idle', Strike: 'Attack', RearUp: 'Attack', Swing: 'Attack', Shoot: 'Attack', Faint: 'Hurt', Charge: 'Idle', Walk: 'Idle', Hurt: 'Idle' };
+const FALLBACK = { Pose: 'Hop', Attack: ['Swing', 'Rotate'], Fly: 'Idle', SpAttack: 'Shoot', Hop: 'Attack', Rotate: 'Attack', Double: 'Idle', Strike: 'Attack', RearUp: 'Attack', Swing: 'Attack', Shoot: 'Attack', Faint: 'Hurt', Charge: 'Idle', Walk: 'Idle', Hurt: 'Idle' };
 
 export class AnimatedSprite {
   constructor(set) {
@@ -34,10 +34,21 @@ export class AnimatedSprite {
     return name in this.set.anims;
   }
 
+  // Breadth-first through the fallback chain, cached per sheet set.
   resolve(name) {
-    let n = name;
-    while (n && !this.set.anims[n]) n = FALLBACK[n];
-    return this.set.anims[n] ?? this.set.anims.Idle;
+    const cache = (this.set.resolved ??= {});
+    if (cache[name]) return cache[name];
+    const seen = new Set(), queue = [name];
+    let found = null;
+    while (queue.length && !found) {
+      const n = queue.shift();
+      if (this.set.anims[n]) found = this.set.anims[n];
+      else if (!seen.has(n)) {
+        seen.add(n);
+        queue.push(...[].concat(FALLBACK[n] ?? []));
+      }
+    }
+    return (cache[name] = found ?? this.set.anims.Idle);
   }
 
   play(name, { loop = true, speed = 1, force = false } = {}) {

@@ -11,7 +11,11 @@ export class Input {
     this.game = game;
     this.held = new Set();
     window.addEventListener('keydown', e => this.onDown(e));
-    window.addEventListener('keyup', e => this.held.delete(e.code));
+    window.addEventListener('keyup', e => {
+      this.held.delete(e.code);
+      // Releasing a held move key fires a charged attack.
+      if (e.code in ATTACK_KEYS && !this.game.switchMenu) this.game.playerRelease(ATTACK_KEYS[e.code]);
+    });
     window.addEventListener('blur', () => this.clear());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.clear();
@@ -20,8 +24,15 @@ export class Input {
 
   onDown(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target?.tagName === 'INPUT') return; // typing in the roster search
     const { state } = this.game;
     const fighting = state === 'fighting';
+    // Intro showcase and finishing sequence can be skipped.
+    if ((this.game.showcase || this.game.finale) && ['Enter', 'Space', 'Escape'].includes(e.code)) {
+      e.preventDefault();
+      if (!e.repeat) this.game.skipCinema();
+      return;
+    }
     if (MOVE_KEYS[e.code]) {
       if (fighting) e.preventDefault();
       this.held.add(e.code);
@@ -31,7 +42,7 @@ export class Input {
       if (e.repeat) return;
       // While the switch picker is open, 1–3 choose a teammate instead of a move.
       if (this.game.switchMenu) this.game.pickSwitch(ATTACK_KEYS[e.code]);
-      else this.game.playerMove(ATTACK_KEYS[e.code]);
+      else this.game.playerPress(ATTACK_KEYS[e.code]);
     } else if (e.code === 'KeyQ') {
       if (!fighting) return;
       e.preventDefault();
@@ -39,13 +50,21 @@ export class Input {
     } else if (e.code === 'Escape' && this.game.switchMenu) {
       e.preventDefault();
       this.game.toggleSwitchMenu(false);
-    } else if (e.code === 'KeyM' || e.code === 'Digit5') {
+    } else if (e.code === 'KeyR' || e.code === 'Digit5' || e.code === 'Numpad5') {
+      if (!fighting) return;
+      e.preventDefault();
+      if (!e.repeat) this.game.playerUltimate();
+    } else if (e.code === 'Space') {
+      if (!fighting) return;
+      e.preventDefault();
+      if (!e.repeat) this.game.playerDodge();
+    } else if (e.code === 'KeyM') {
       if (!fighting) return;
       e.preventDefault();
       if (!e.repeat) this.game.playerMega();
     } else if (e.code === 'Enter' && (state === 'select' || state === 'over')) {
       e.preventDefault();
-      if (state === 'select') this.game.start();
+      if (state === 'select') this.game.ui.startBattle();
       else this.game.toSelect();
     }
   }

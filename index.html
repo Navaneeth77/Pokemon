@@ -12,11 +12,20 @@
         <div id="select-overlay" class="overlay">
           <div class="select-card">
             <div class="matchup"><span class="red">RED</span> <span class="vs">VS</span> <span class="gold">GOLD</span></div>
-            <div class="sub">Choose your lead Pokémon</div>
-            <div id="picks" class="picks"></div>
+            <div class="sub">Pick any 3 Pokémon · click a team slot to set your lead</div>
+            <div class="roster-tools">
+              <input id="roster-search" type="search" placeholder="Search name, type, ability or move…" autocomplete="off" spellcheck="false" />
+              <div id="roster-filters" class="filters">
+                <button data-f="all" class="on">All</button><button data-f="regular">Regular</button><button data-f="legendary">Legendary</button><button data-f="mythical">Mythical</button><button data-f="mega">Mega</button>
+                <span id="roster-count"></span>
+              </div>
+            </div>
+            <div id="roster" class="roster"></div>
+            <div id="mon-info" class="mon-info"></div>
+            <div id="team-summary" class="team-summary"></div>
             <div class="foe"><span>Gold's team:</span><span id="foe-team" class="foe-team"></span></div>
             <button id="start-btn" class="big-btn">Start Battle</button>
-            <div class="hint"><kbd>WASD</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack · <kbd>Q</kbd> switch · <kbd>M</kbd> Mega</div>
+            <div class="hint"><kbd>WASD</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack (hold ⚡ moves to charge) · <kbd>R</kbd>/<kbd>5</kbd> ultimate · <kbd>Q</kbd> switch · <kbd>Space</kbd> dodge · <kbd>M</kbd> Mega</div>
           </div>
         </div>
         <div id="switch-menu" class="switch-menu hidden">
@@ -38,14 +47,20 @@
         </header>
         <div class="team-head"><span>YOUR TEAM</span><span id="switch-cd"></span></div>
         <div id="team" class="team"></div>
+        <div id="ability-box" class="ability-box"></div>
         <div id="moves"></div>
+        <button id="ult-btn" class="move ult">
+          <span class="key">R</span>
+          <span class="info"><span class="name">Ultimate</span><span class="meta"></span></span>
+          <span class="type">ULT</span><span class="cd"></span><span class="cdt"></span>
+        </button>
         <button id="mega-btn" class="mega-btn hidden">
           <span class="key">M</span>
           <span class="info"><span class="name">Mega Evolve</span><span class="meta">Once per battle · becomes Mega Charizard X</span></span>
         </button>
         <div id="log" aria-live="polite"></div>
         <footer>
-          <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack · <kbd>Q</kbd> switch · <kbd>M</kbd> Mega</div>
+          <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack (hold ⚡) · <kbd>R</kbd>/<kbd>5</kbd> ultimate · <kbd>Q</kbd> switch · <kbd>Space</kbd> dodge · <kbd>M</kbd> Mega</div>
           <div class="row">
             <button id="restart-btn">Restart Battle</button>
             <button id="mute-btn">Sound: On</button>

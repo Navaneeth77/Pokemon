@@ -1,15 +1,24 @@
 import { Arena, WORLD_W, WORLD_H } from './arena.js';
-import { Pokemon } from './pokemon.js';
+import { Pokemon, CHARGE_MAX } from './pokemon.js';
 import { Trainer } from './trainer.js';
 import { Team } from './team.js';
-import { SPECIES, PLAYER_TEAM, OPPONENT_TEAM } from './data/species.js';
-import { MOVES } from './moves.js';
+import { SPECIES, DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
+import { abilityOf, typesOf } from './data/abilities.js';
+import { applyStatus, addBuff, benchStatus } from './status.js';
+import { comboRole, soften } from './combat.js';
+import { typeMultiplier } from './data/types.js';
+import { Showcase, Finale } from './cinema.js';
+import { loadSpecies, measureDims } from './assets.js';
+import { WINGS } from './data/wings.js';
+import { addFlapAnim } from './flap.js';
+import { TYPE_COLORS } from './data/types.js';
+import { MOVES, chargedMove } from './moves.js';
 import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import {
   ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst,
-  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks,
+  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar,
 } from './effects.js';
 import { initAudio, sfx } from './audio.js';
 
@@ -17,7 +26,16 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
+const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Sizes for species without hand-tuned dimensions, and procedural wing flaps, once their sheets load.
+export function prepareSprites(sprites, ids) {
+  for (const s of Object.values(SPECIES)) {
+    if (s.bodyZ == null && ids.includes(s.sprite) && sprites[s.sprite]) Object.assign(s, measureDims(sprites[s.sprite]));
+  }
+  for (const [id, cfg] of Object.entries(WINGS)) if (ids.includes(id) && sprites[id]) addFlapAnim(sprites[id], cfg);
+}
 
 export class Game {
   constructor(canvas, sprites, ui) {
@@ -32,9 +50,10 @@ export class Game {
     this.hud = new Hud(this);
     this.red = new Trainer('red', 'Red', 180, 598);
     this.gold = new Trainer('gold', 'Gold', 180, 104);
-    const team = (ids, side, trainer) => new Team(side, trainer, ids.map(id => new Pokemon(SPECIES[id], sprites[SPECIES[id].sprite], side)));
-    this.playerTeam = team(PLAYER_TEAM, 'player', this.red);
-    this.opponentTeam = team(OPPONENT_TEAM, 'opponent', this.gold);
+    this.makeTeam = (ids, side, trainer) => new Team(side, trainer, ids.map(id => new Pokemon(SPECIES[id], sprites[SPECIES[id].sprite], side)));
+    this.selection = [...DEFAULT_TEAM];
+    this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
+    this.opponentTeam = this.makeTeam(OPPONENT_TEAM, 'opponent', this.gold);
     for (const m of this.opponentTeam.members) m.faceFoeWhileMoving = true;
     this.ai = new OpponentAI();
     this.input = new Input(this);
@@ -80,6 +99,7 @@ export class Game {
       hitstopT: 0, lastHitstop: -1, shakeT: 0, shakeDur: 1, shakeMag: 0, slowT: 0, flashT: 0, endT: 0,
       winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, switching: false,
       switchMenu: false, windsOn: false, winds: null, punchT: 0, punchDur: 1, punchAmt: 0, punchAt: null,
+      weather: null, weatherT: 0, finale: null, showcase: null, popT: new Map(),
     });
     this.ui.showSwitchMenu(false);
   }
@@ -91,23 +111,47 @@ export class Game {
     this.ui.showSelect(this.lead);
   }
 
+  async ensureSprites(ids) {
+    const need = spritesFor(ids).filter(k => !this.sprites[k]);
+    if (!need.length) return;
+    Object.assign(this.sprites, await loadSpecies(need));
+    prepareSprites(this.sprites, need);
+  }
+
   later(delay, fn) {
     this.timers.push({ t: delay, fn });
   }
 
+  // The player's team is whichever three Pokémon were picked on the selection screen.
   start() {
+    if (this.selection.length !== 3) return;
     initAudio();
     document.activeElement?.blur?.();
+    this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
+    this.playerTeam.members.forEach((m, i) => { m.megaPick = this.megaPicks?.[this.selection[i]] ?? null; });
+    this.ui.buildTeam(this);
     this.reset();
+    for (const m of this.playerTeam.members) m.megaChoice = m.megaPick;
     this.state = 'intro';
     this.ui.onStart();
     this.ui.setActive(this.player);
+    this.showcase = new Showcase(this);
+  }
+
+  // After the team showcase (or when it is skipped): both trainers throw out their leads.
+  beginSendOut() {
+    this.showcase = null;
     this.sendOut(this.opponent, 0.1, `Gold sent out ${this.opponent.species.name}!`);
     this.sendOut(this.player, 0.5, `Go, ${this.player.species.name}!`);
     this.later(1.45, () => {
       this.state = 'fighting';
       this.hud.showBanner('BATTLE START!', { color: '#ff7a2f', y: 330, life: 1.1 });
     });
+  }
+
+  skipCinema() {
+    if (this.showcase) this.showcase.skip();
+    else if (this.finale) this.finale.skip();
   }
 
   sendOut(mon, delay, line, onOut) {
@@ -130,7 +174,21 @@ export class Game {
   release(mon) {
     mon.hidden = false;
     mon.appear = 1;
+    mon.enteredAt = this.time;
     sendOutBurst(this, mon.x, mon.y, mon.species.bodyZ);
+    const [c1] = TYPE_COLORS[mon.species.types[0]];
+    const rgb = [1, 3, 5].map(i => parseInt(c1.slice(i, i + 2), 16));
+    this.spawn(new Ring(mon.x, mon.y, { r0: 6, r1: 46, life: 0.45, color: c1, width: 3 }));
+    if (mon.species.class !== 'regular') {
+      this.spawn(new Pillar(mon.x, mon.y, 0.7, rgb, 360));
+      this.spawn(new Glow(mon.x, mon.y, mon.species.bodyZ, 60, rgb, 0.6));
+      this.shake(6, 0.5);
+      mon.sprite.play(['Roar', 'RearUp', 'Pose', 'Charge'].find(a => mon.sprite.has(a)) ?? 'Idle', { loop: false, force: true });
+      sfx.roar();
+    }
+    this.later(0.35, () => {
+      if (!mon.hidden && mon.alive) abilityOf(mon).onEnter?.(this, mon);
+    });
     const player = mon.side === 'player';
     this.spawn(new FloatText(mon.x, mon.y + (player ? 26 : 18), `Go, ${mon.species.name}!`, player ? '#ff8a3d' : '#f5c542', 8, 1.5));
     this.hud.flashPanel(mon.side);
@@ -158,7 +216,11 @@ export class Game {
   switchTo(index, forced = false) {
     const team = this.playerTeam, cur = team.active, next = team.members[index];
     if (this.state !== 'fighting' || !next || !next.alive || next === cur) return false;
-    if (!forced && (this.switching || this.cinematic || this.switchCD > 0 || cur.recallT > 0)) return false;
+    if (!forced && (this.switching || this.cinematic || this.switchCD > 0 || cur.recallT > 0 || cur.held || this.ultActive())) return false;
+    if (!forced && cur.alive && abilityOf(this.opponent).shadowTag && !this.opponent.hidden && this.opponent.alive) {
+      this.abilityPop(this.opponent, "Can't escape!");
+      return false;
+    }
     if (!forced) this.switchCD = SWITCH_COOLDOWN;
     this.toggleSwitchMenu(false);
     this.switching = true;
@@ -174,9 +236,17 @@ export class Game {
     };
     if (cur.alive && !cur.hidden) {
       this.ui.log(`Come back, ${cur.species.name}!`, 'player');
+      this.leaveField(cur);
       this.recall(cur, bringIn);
     } else bringIn();
     return true;
+  }
+
+  leaveField(mon) {
+    mon.cancelCharge(this, false);
+    abilityOf(mon).onLeave?.(this, mon);
+    benchStatus(mon);
+    if (mon.form) this.setForm(mon, null);
   }
 
   // Q opens a picker of teammates; the battle keeps running while it is open.
@@ -205,13 +275,283 @@ export class Game {
     sfx.denied();
   }
 
-  useMove(user, id) {
-    if (this.state !== 'fighting' || this.cinematic || !user.canAct() || user.cooldown(id) > 0) return false;
-    const move = MOVES[id];
-    user.cooldowns[id] = move.cooldown;
+  // A landed hit opens a short chain window: a higher combo role (opener → launcher → finisher) can
+  // cancel the remaining recovery. Ultimates need a full meter instead of a cooldown.
+  canChain(user, move) {
+    return user.chainT > 0 && comboRole(move) > user.chainRole && comboRole(move) < 3 && user.alive && !user.hidden && user.recallT <= 0
+      && user.frozen <= 0 && user.stagger <= 0 && !user.held && !(user.status.sleep > 0) && user.dodgeT <= 0 && !user.charging
+      && !user.action?.move.ultimate;
+  }
+
+  useMove(user, id, chargeLevel = 0) {
+    const base = MOVES[id];
+    if (!base || this.state !== 'fighting' || this.cinematic) return false;
+    const chain = !user.canAct() && !base.ultimate && this.canChain(user, base);
+    if (!user.canAct() && !chain) return false;
+    if (this.moveCD(user, id) > 0) return false;
+    if (base.ultimate) {
+      user.ult = 0;
+      this.startUltCutscene(user, base);
+      if (user.foe?.alive && !user.foe.hidden) abilityOf(user.foe).onFoeUlt?.(this, user.foe);
+      return true;
+    }
+    if (chain) {
+      user.cancelAction();
+      user.busy = 0;
+      user.chainT = 0;
+    }
+    const move = chargedMove(base, chargeLevel);
+    user.cooldowns[id] = base.cooldown;
     user.action = new move.Action(move, user, this);
+    this.hud.callout(user.side, chargeLevel >= 1 ? `${base.name}! MAX` : `${base.name}!`);
+    this.ui.log(`${user.species.name} used ${base.name}!`, user.side);
+    if (base.selfBuff) this.buff(user, ...base.selfBuff);
+    abilityOf(user).onUse?.(this, user, base);
+    if (user === this.player) this.ai.onThreat();
+    return true;
+  }
+
+  // True while either side's ultimate is underway (cutscene or the attack itself): no switching out of it.
+  ultActive() {
+    return this.cinematic?.kind === 'ult' || [this.player, this.opponent].some(m => m.action?.move.ultimate && !m.action.done);
+  }
+
+  moveCD(mon, id) {
+    return MOVES[id]?.ultimate ? 100 - mon.ult : mon.cooldown(id);
+  }
+
+  // ── Hold-to-charge ──
+  beginCharge(mon, id) {
+    const move = MOVES[id];
+    if (this.state !== 'fighting' || this.cinematic || !move?.chargeable || !mon.canAct() || mon.cooldown(id) > 0) return false;
+    mon.charging = { id, move, t: 0, color: TYPE_COLORS[move.type][0] };
+    mon.sprite.play('Charge', { loop: true, force: true });
+    sfx.zap(0.3);
+    return true;
+  }
+
+  updateCharge(mon, dt) {
+    const c = mon.charging;
+    if (this.state !== 'fighting' || mon.recallT > 0) {
+      mon.charging = null;
+      return;
+    }
+    const before = c.t;
+    c.t += dt;
+    const k = Math.min(1, c.t / CHARGE_MAX);
+    if (Math.random() < 0.5 + k) {
+      const a = rand(0, Math.PI * 2), r = rand(18, 30), life = 0.3, x = mon.x + Math.cos(a) * r, y = mon.y + Math.sin(a) * r * 0.6;
+      this.particles.spawn({ x, y, z: mon.bodyZ + rand(-8, 8), vx: (mon.x - x) / life, vy: (mon.y - y) / life, life, size: 2 + 2 * k, sizeEnd: 1, colors: ['#ffffff', c.color], fade: false });
+    }
+    if (before < CHARGE_MAX && c.t >= CHARGE_MAX) {
+      this.spawn(new Ring(mon.x, mon.y, { r0: 30, r1: 4, life: 0.25, color: '#ffffff', width: 3 }));
+      this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 16, 'MAX CHARGE!', c.color, 7));
+      sfx.shard();
+    }
+    // Holding past the cap fires automatically, so a charge can never be kept forever.
+    if (c.t >= CHARGE_MAX + 0.5) this.releaseCharge(mon);
+  }
+
+  releaseCharge(mon) {
+    const c = mon.charging;
+    if (!c) return false;
+    mon.charging = null;
+    const lvl = c.t < 0.15 ? 0 : Math.min(1, c.t / CHARGE_MAX);
+    return this.useMove(mon, c.id, lvl);
+  }
+
+  // ── Ability, status and buff plumbing used by abilities.js, status.js and moves ──
+  abilityPop(mon, text) {
+    const ab = abilityOf(mon), key = mon, now = performance.now();
+    this.ui.log(`${mon.species.name}'s ${ab.name}: ${text}`, mon.side);
+    if (now - (this.popT.get(key) ?? 0) < 700) return;
+    this.popT.set(key, now);
+    this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 26, ab.name.toUpperCase(), '#ffd84a', 7, 1.3));
+    this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 17, text, '#ffffff', 6, 1.3));
+    this.hud.ability(mon.side, ab.name, text);
+  }
+
+  floatText(mon, text, color) {
+    this.spawn(new FloatText(mon.x + rand(-4, 4), mon.y - mon.headZ - 14, text, color, 7));
+  }
+
+  buff(mon, stat, mult, dur) {
+    return addBuff(this, mon, stat, mult, dur);
+  }
+
+  applyStatus(mon, name, opts) {
+    return applyStatus(this, mon, name, opts);
+  }
+
+  heal(mon, amount) {
+    const before = mon.hp;
+    mon.hp = Math.min(mon.maxHp, mon.hp + Math.round(amount));
+    const got = mon.hp - before;
+    if (got <= 0 || mon.hidden) return;
+    this.spawn(new DamageNumber(mon.x + rand(-4, 4), mon.y - mon.headZ, got, { color: '#6af08a', size: 12 }));
+    for (let i = 0; i < 6; i++) {
+      this.particles.spawn({ x: mon.x + rand(-mon.radius, mon.radius), y: mon.y, z: rand(2, mon.headZ), vz: rand(20, 50), life: 0.6, size: 2, colors: ['#ffffff', '#9fffc8', '#46d36b'] });
+    }
+  }
+
+  // Damage over time (burn, poison, sandstorm, recoil…): a fraction of max HP, no ultimate charge.
+  dotDamage(mon, frac, color) {
+    if (this.state !== 'fighting' || !mon.alive || mon.hidden) return;
+    const dmg = Math.max(1, Math.round(mon.maxHp * frac));
+    mon.hp = Math.max(0, mon.hp - dmg);
+    mon.trailDelay = 0.45;
+    mon.flash = 0.6;
+    mon.flashColor = color;
+    this.spawn(new DamageNumber(mon.x, mon.y - mon.headZ, dmg, { color, size: 12 }));
+    for (let i = 0; i < 6; i++) {
+      this.particles.spawn({ x: mon.x + rand(-mon.radius, mon.radius), y: mon.y, z: rand(4, mon.headZ), vz: rand(20, 40), life: 0.5, size: rand(2, 4), sizeEnd: 1, colors: ['#ffffff', color] });
+    }
+    if (!mon.alive) this.onFaint(mon, mon.foe);
+  }
+
+  // Alternate sheet for a form change (Aegislash's Blade Forme); null restores the species' own sheet.
+  setForm(mon, spriteId) {
+    if ((spriteId ?? null) === (mon.form ?? null)) return;
+    const set = this.sprites[spriteId ?? mon.species.sprite];
+    if (!set) return;
+    mon.form = spriteId;
+    mon.setSheet(set);
+    this.spawn(new Glow(mon.x, mon.y, mon.bodyZ, 26, [220, 230, 245], 0.25));
+  }
+
+  comboPop(mon, text, big) {
+    this.hud.combo(mon.side, text, big);
+    if (big) {
+      sfx.megaBurst();
+      this.flash(0.05);
+    }
+  }
+
+  onUltReady(mon) {
+    this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 22, 'ULTIMATE READY!', '#ffd84a', 8, 1.4));
+    this.spawn(new Ring(mon.x, mon.y, { r0: 4, r1: 40, life: 0.4, color: '#ffd84a', width: 3 }));
+    this.ui.log(`${mon.species.name}'s ultimate is ready!`, mon.side);
+    if (mon.side === 'player') {
+      sfx.megaBurst();
+      this.ui.ultReady();
+    }
+  }
+
+  // Every ultimate opens with a cutscene: the battle freezes, letterbox bars slide in and the camera
+  // pushes in on the user powering up. Then the move plays out across the whole arena.
+  startUltCutscene(user, move) {
+    this.cinematic = { kind: 'ult', mon: user, move, t: 0, ringT: 0 };
+    user.sprite.play('Charge', { loop: true, force: true });
     this.hud.callout(user.side, `${move.name}!`);
-    this.ui.log(`${user.species.name} used ${move.name}!`, user.side);
+    this.ui.log(`${user.species.name} unleashed ${move.name}!`, user.side);
+    sfx.megaCharge();
+  }
+
+  updateUltCutscene(dt) {
+    const c = this.cinematic, m = c.mon, [c1] = this.ultColors(c);
+    c.t += dt;
+    for (let i = 0; i < 3; i++) {
+      const a = rand(0, Math.PI * 2), r = rand(30, 60), life = 0.35;
+      const x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r * 0.6, z = m.bodyZ + rand(-14, 14);
+      this.particles.spawn({ x, y, z, vx: (m.x - x) / life, vy: (m.y - y) / life, life, size: rand(2, 4), sizeEnd: 1, colors: ['#ffffff', c1], fade: false });
+    }
+    if ((c.ringT -= dt) <= 0) {
+      c.ringT = 0.22;
+      this.spawn(new Ring(m.x, m.y, { r0: 44, r1: 6, life: 0.3, color: c1, width: 3 }));
+    }
+    if (c.t < ULT_CUT) return;
+    this.cinematic = null;
+    this.shake(6, 0.3);
+    this.flash(0.06);
+    m.sprite.play('Idle', { force: true });
+    m.action = new c.move.Action(c.move, m, this);
+  }
+
+  ultColors(c) {
+    return c.move.type === 'fire' && c.mon.species.flame === 'blue' ? ['#6cc8ff', '#1f4cc0'] : TYPE_COLORS[c.move.type];
+  }
+
+  // Letterbox bars plus a name card in the move's type colour.
+  drawUltCard(ctx, c) {
+    const T = ULT_CUT, e = c.t < 0.2 ? ease(c.t / 0.2) : c.t > T - 0.2 ? ease(Math.max(0, (T - c.t) / 0.2)) : 1;
+    const bar = 58 * e, [c1, c2] = this.ultColors(c);
+    ctx.fillStyle = '#05050a';
+    ctx.fillRect(0, 0, WORLD_W, bar);
+    ctx.fillRect(0, WORLD_H - bar, WORLD_W, bar);
+    const slide = (1 - ease(Math.min(1, c.t / 0.3))) * WORLD_W, y = WORLD_H - 150;
+    ctx.globalAlpha = e;
+    ctx.fillStyle = c2;
+    ctx.beginPath();
+    ctx.moveTo(slide - 10, y);
+    ctx.lineTo(slide + WORLD_W + 10, y - 16);
+    ctx.lineTo(slide + WORLD_W + 10, y + 26);
+    ctx.lineTo(slide - 10, y + 42);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = c1;
+    ctx.fillRect(slide, y + 34, WORLD_W, 3);
+    ctx.textAlign = 'center';
+    ctx.font = '400 22px "Luckiest Guy"';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#111';
+    ctx.fillStyle = '#fff';
+    const name = c.move.name.toUpperCase();
+    ctx.strokeText(name, slide + WORLD_W / 2, y + 20);
+    ctx.fillText(name, slide + WORLD_W / 2, y + 20);
+    ctx.font = 'italic 700 8px "Pixelify Sans"';
+    ctx.fillStyle = '#ffe9a8';
+    ctx.fillText(`${c.mon.trainer.name.toUpperCase()}'S ${c.mon.species.name.toUpperCase()} · ULTIMATE`, slide + WORLD_W / 2, y - 6);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  }
+
+  playerUltimate() {
+    if (this.state !== 'fighting') return;
+    initAudio();
+    const p = this.player, ok = this.useMove(p, p.species.ultimate);
+    if (!ok) {
+      sfx.denied();
+      if (p.ult < 100 && p.alive) this.spawn(new FloatText(p.x, p.y - p.headZ - 14, `ULTIMATE ${Math.floor(p.ult)}%`, '#c9d2de', 7));
+    }
+    this.ui.pressedUlt(ok);
+  }
+
+  // Key/button down on a move: chargeable moves start charging, everything else fires at once.
+  playerPress(i) {
+    if (this.state !== 'fighting') return;
+    initAudio();
+    const id = this.player.species.moves[i];
+    if (MOVES[id]?.chargeable && this.beginCharge(this.player, id)) {
+      this.ui.pressed(i, true);
+      return;
+    }
+    this.playerMove(i);
+  }
+
+  playerRelease(i) {
+    const p = this.player, id = p.species.moves[i];
+    if (p.charging?.id === id) this.releaseCharge(p);
+  }
+
+  // Space: dodge along the held direction, or straight away from the opponent when standing still.
+  playerDodge() {
+    if (this.state !== 'fighting') return;
+    const p = this.player, o = this.opponent, v = this.input.vector();
+    const held = v.x || v.y;
+    this.dodge(p, held ? v.x : p.x - o.x || 0.01, held ? v.y : p.y - o.y || 1);
+  }
+
+  dodge(mon, dx, dy) {
+    if (this.state !== 'fighting') return false;
+    const charge = mon.charging;
+    mon.charging = null;
+    if (!mon.dodge(dx, dy)) {
+      mon.charging = charge;
+      return false;
+    }
+    abilityOf(mon).onDodge?.(this, mon);
+    sfx.dash();
+    dustCloud(this, mon.x, mon.y, 5, 3);
     return true;
   }
 
@@ -222,7 +562,7 @@ export class Game {
     if (!id) return;
     const ok = this.useMove(this.player, id);
     // Presses during the last moments of a recovery are buffered instead of dropped.
-    if (!ok && this.player.alive && !this.switching && this.player.cooldown(id) <= 0.25) this.buffered = { i, t: 0.3 };
+    if (!ok && this.player.alive && !this.switching && !this.player.charging && this.moveCD(this.player, id) <= 0.25) this.buffered = { i, t: 0.3 };
     else if (!ok) sfx.denied();
     this.ui.pressed(i, ok);
   }
@@ -231,13 +571,13 @@ export class Game {
     if (this.state !== 'fighting') return;
     initAudio();
     // Pressed mid-attack: wait for the attack to finish instead of ignoring the press.
-    if (!this.megaEvolve(this.player) && this.player.species.mega && !this.playerTeam.megaUsed) this.megaQueued = 0.8;
+    if (!this.megaEvolve(this.player) && this.player.species.mega?.length && !this.playerTeam.megaUsed) this.megaQueued = 0.8;
   }
 
   // One Mega Evolution per trainer per battle. The battle pauses briefly while the camera zooms in.
   megaEvolve(mon) {
     const team = this.teamOf(mon);
-    if (this.state !== 'fighting' || this.cinematic || this.switching || team.megaUsed || !mon.species.mega || !mon.canAct()) return false;
+    if (this.state !== 'fighting' || this.cinematic || this.switching || team.megaUsed || !mon.species.mega?.length || mon.isMega || !mon.canAct()) return false;
     const tr = mon.trainer;
     team.megaUsed = true;
     this.cinematic = { mon, t: 0, swapped: false };
@@ -252,6 +592,7 @@ export class Game {
   }
 
   updateCinematic(dt) {
+    if (this.cinematic.kind === 'ult') return this.updateUltCutscene(dt);
     const c = this.cinematic, m = c.mon;
     c.t += dt;
     if (!c.swapped) {
@@ -268,8 +609,11 @@ export class Game {
       if (c.t >= 0.95) {
         c.swapped = true;
         const baseName = m.species.name;
-        const mega = SPECIES[m.species.mega];
+        const mega = SPECIES[m.species.mega.includes(m.megaChoice) ? m.megaChoice : m.species.mega[0]];
         m.megaEvolve(mega, this.sprites[mega.sprite]);
+        m.ab = {};
+        m.form = null;
+        abilityOf(m).onEnter?.(this, m);
         m.appear = 1;
         rainbowBurst(this, m.x, m.y, m.bodyZ);
         this.spawn(new MegaEmblem(m.x, m.y - m.headZ - 12, 1.3));
@@ -330,33 +674,17 @@ export class Game {
     }
   }
 
-  auraWisp(mon) {
+  auraWisp(mon, colors = mon.species.aura) {
     this.particles.spawn({
       x: mon.x + rand(-mon.radius, mon.radius), y: mon.y + rand(-3, 3), z: mon.z + rand(2, mon.species.headZ),
-      vx: rand(-6, 6), vz: rand(14, 30), life: 0.6, size: rand(2, 3), sizeEnd: 1, colors: mon.species.aura, alpha: 0.85,
+      vx: rand(-6, 6), vz: rand(14, 30), life: 0.6, size: rand(2, 3), sizeEnd: 1, colors, alpha: 0.85,
     });
-  }
-
-  burnDamage(mon) {
-    if (this.state !== 'fighting') return;
-    const dmg = Math.max(1, Math.round(mon.maxHp * 0.02));
-    mon.hp = Math.max(0, mon.hp - dmg);
-    mon.trailDelay = 0.45;
-    mon.flash = 0.6;
-    mon.flashColor = '#ff8a3d';
-    this.spawn(new DamageNumber(mon.x, mon.y - mon.headZ, dmg, { color: '#ff9a5a', size: 12 }));
-    for (let i = 0; i < 8; i++) {
-      this.particles.spawn({
-        x: mon.x + rand(-mon.radius, mon.radius), y: mon.y, z: rand(4, mon.headZ), vz: rand(20, 40),
-        life: 0.5, size: rand(3, 5), sizeEnd: 1, colors: FIRE,
-      });
-    }
-    if (!mon.alive) this.onFaint(mon, mon.foe);
   }
 
   // A fainted Pokémon is replaced automatically by its trainer's next healthy one; the battle ends
   // only when a whole team is down.
-  onFaint(mon, by) {
+  onFaint(mon, by, move) {
+    if (mon.fainted) return;
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
@@ -366,10 +694,13 @@ export class Game {
     if (this.state !== 'fighting') return;
     const team = this.teamOf(mon), next = team.nextAlive();
     if (next < 0) {
-      this.state = 'ending';
-      this.endT = 0;
+      // The battle is decided: stop combat and play the finishing move (if the KO earned one) and victory.
+      this.state = 'finale';
       this.winner = by.side;
-      this.slowT = 0.7;
+      this.cinematic = null;
+      this.toggleSwitchMenu(false);
+      for (const m of [this.player, this.opponent]) m.charging = null;
+      this.finale = new Finale(this, { winner: by, loser: mon, move });
       return;
     }
     this.later(1.7, () => {
@@ -402,6 +733,20 @@ export class Game {
     this.red.update(dt);
     this.gold.update(dt);
 
+    if (this.showcase) {
+      this.showcase.update(dt);
+      this.particles.update(dt);
+      this.hud.update(dt);
+      this.ui.update(this, dt);
+      if (this.showcase.done) this.beginSendOut();
+      return;
+    }
+
+    if (this.finale) {
+      this.updateFinale(dt);
+      return;
+    }
+
     if (this.cinematic) {
       this.updateCinematic(dt);
       this.player.animate(dt);
@@ -426,6 +771,7 @@ export class Game {
     if (this.state === 'fighting') {
       this.time += dt;
       this.switchCD = Math.max(0, this.switchCD - dt);
+      this.updateWeather(dt);
       const v = this.input.vector();
       p.input.x = v.x;
       p.input.y = v.y;
@@ -450,27 +796,132 @@ export class Game {
     this.opponent.update(dt, this);
     this.separate();
     this.updateEffects(dt);
+    this.updateClashes();
     this.particles.update(dt);
     this.arena.update(dt);
     this.hud.update(dt);
     this.updateWinds();
     if (this.switchMenu && this.state !== 'fighting') this.toggleSwitchMenu(false);
 
-    if (this.state === 'ending') {
-      this.endT += dt;
-      if (this.endT > 1.9) {
-        this.state = 'over';
-        const win = this.winner === 'player';
-        (win ? this.red : this.gold).setPose('point');
-        this.hud.showBanner(win ? 'RED WINS!' : 'GOLD WINS!', { sub: win ? 'VICTORY' : 'DEFEAT', band: true, y: 250 });
-        this.ui.showResult(win);
-        if (win) sfx.victory();
-        else sfx.defeat();
-      }
-    }
     this.shakeT -= dt;
     this.punchT = Math.max(0, this.punchT - dt);
     this.ui.update(this, dt);
+  }
+
+  updateFinale(dt) {
+    const f = this.finale;
+    const sdt = f.slow ? dt * 0.35 : dt;
+    f.update(dt);
+    if (this.timers.length) {
+      for (const tm of this.timers) tm.t -= dt;
+      const due = this.timers.filter(tm => tm.t <= 0);
+      this.timers = this.timers.filter(tm => tm.t > 0);
+      for (const tm of due) tm.fn();
+    }
+    for (const m of [this.player, this.opponent]) {
+      if (m !== f.winner || f.t < 1.4) m.animate(sdt);
+      m.faintT += m.fainted ? sdt : 0;
+    }
+    this.red.update(dt);
+    this.gold.update(dt);
+    this.updateEffects(sdt);
+    this.particles.update(sdt);
+    this.arena.update(dt);
+    this.hud.update(dt);
+    this.shakeT -= dt;
+    this.ui.update(this, dt);
+    if (f.done) {
+      this.finale = null;
+      this.state = 'over';
+      const win = this.winner === 'player';
+      this.ui.showResult(win, f.winner);
+      if (!win) sfx.defeat();
+    }
+  }
+
+  // Weather from the abilities of the Pokémon on the field; the most recent arrival wins ties.
+  updateWeather(dt) {
+    const src = [this.player, this.opponent].filter(m => m.alive && !m.hidden && abilityOf(m).weather && abilityOf(m).weather !== 'delta')
+      .sort((a, b) => (b.enteredAt ?? 0) - (a.enteredAt ?? 0))[0];
+    const w = src ? abilityOf(src).weather : null;
+    if (w !== this.weather && w) {
+      const label = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!' }[w];
+      this.hud.showBanner(label.toUpperCase(), { color: '#ffffff', y: 300, life: 1.2, size: 15 });
+      this.ui.log(label);
+    }
+    this.weather = w;
+    if (!w) return;
+    const n = w === 'rain' ? 4 : w === 'sand' ? 3 : 0;
+    for (let i = 0; i < n; i++) {
+      if (w === 'rain') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: 120, vx: -40, vz: -420, life: 0.28, size: 1.5, colors: ['#bfe6ff', '#8fc8f0'] });
+      else this.particles.spawn({ x: rand(-40, 360), y: rand(60, 640), z: rand(2, 40), vx: rand(160, 240), vy: rand(-10, 20), life: 0.5, size: rand(1.5, 2.5), colors: ['#e8d8b0', '#c8b080'] });
+    }
+    if (w === 'sand' && (this.weatherT += dt) >= 1.5) {
+      this.weatherT = 0;
+      for (const m of [this.player, this.opponent]) {
+        const immune = typesOf(m).some(t => t === 'rock' || t === 'ground' || t === 'steel') || abilityOf(m).id === 'sandStream';
+        if (!immune && m.alive && !m.hidden) this.dotDamage(m, 0.01, '#c8b080');
+      }
+    }
+  }
+
+  // Attack clashes: opposing projectiles that meet, and beams fired head-on at the same moment.
+  updateClashes() {
+    const shots = this.effects.filter(e => e.isProjectile && e.move && e.user && !e.dead && e.move.power >= 45);
+    for (let i = 0; i < shots.length; i++) {
+      for (let j = i + 1; j < shots.length; j++) {
+        const a = shots[i], b = shots[j];
+        if (a.dead || b.dead || a.user.side === b.user.side) continue;
+        if (Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius + 4) continue;
+        const pa = a.move.power * soften(typeMultiplier(a.move.type, [b.move.type]));
+        const pb = b.move.power * soften(typeMultiplier(b.move.type, [a.move.type]));
+        this.clashFx((a.x + b.x) / 2, (a.y + b.y) / 2, Math.max(a.z, b.z), pa / pb > 1.3 ? a : pb / pa > 1.3 ? b : null);
+        if (pa / pb > 1.3) {
+          b.impact(false);
+          a.move = { ...a.move, power: Math.round(a.move.power * 0.6) };
+        } else if (pb / pa > 1.3) {
+          a.impact(false);
+          b.move = { ...b.move, power: Math.round(b.move.power * 0.6) };
+        } else {
+          a.impact(false);
+          b.impact(false);
+        }
+      }
+    }
+    const A = this.player.action, B = this.opponent.action;
+    if (A?.firing && B?.firing && A.move.beam && B.move.beam && !A.clashed && !B.clashed && !A.hitDone && !B.hitDone) {
+      const diff = Math.abs(Math.atan2(Math.sin(A.aim - B.aim), Math.cos(A.aim - B.aim)));
+      if (diff > Math.PI - 0.6) {
+        A.clashed = B.clashed = true;
+        const p = this.player, o = this.opponent, pa = A.move.power, pb = B.move.power;
+        const win = pa / pb > 1.25 ? A : pb / pa > 1.25 ? B : null;
+        this.clashFx((p.x + o.x) / 2, (p.y + o.y) / 2, 14, win ? win.user : null, true);
+        for (const act of [A, B]) {
+          if (act === win) continue;
+          act.hitDone = true;
+          act.user.stagger = Math.max(act.user.stagger, 0.35);
+          act.user.vx -= Math.cos(act.aim) * 140;
+          act.user.vy -= Math.sin(act.aim) * 140;
+        }
+      }
+    }
+  }
+
+  clashFx(x, y, z, winner, big = false) {
+    const r = big ? 1.6 : 1;
+    this.spawn(new Ring(x, y, { z, r0: 4, r1: 60 * r, life: 0.4, color: '#ffffff', width: 5, layer: 'air' }));
+    this.spawn(new Ring(x, y, { r0: 4, r1: 110 * r, life: 0.5, color: '#ffd84a', width: 3 }));
+    this.spawn(new Glow(x, y, z, 50 * r, [255, 240, 200], 0.4));
+    for (let i = 0; i < 30; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(120, 260) * r;
+      this.particles.spawn({ x, y, z, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, vz: rand(0, 90), drag: 3, life: 0.5, size: rand(2, 3), colors: ['#ffffff', '#ffe680', '#ff9a3a'] });
+    }
+    this.spawn(new FloatText(x, y - z - 14, winner ? 'OVERPOWERED!' : 'CLASH!', '#ffffff', big ? 10 : 8));
+    this.marks.fracture(x, y, big ? 30 : 16, 5);
+    this.hitstopT = Math.max(this.hitstopT, 0.06);
+    this.slowT = big ? 0.45 : 0.25;
+    this.shake(big ? 10 : 6, 0.4);
+    sfx.explosion();
   }
 
   updateWinds() {
@@ -506,6 +957,11 @@ export class Game {
 
   // Camera: normally the whole arena; during Mega Evolution it zooms onto the evolving Pokémon.
   camera() {
+    if (this.finale) {
+      const f = this.finale.focus(), zoom = f.zoom;
+      const halfW = WORLD_W / (2 * zoom), halfH = WORLD_H / (2 * zoom);
+      return { zoom, cx: clamp(f.x, halfW, WORLD_W - halfW), cy: clamp(f.y, halfH, WORLD_H - halfH), dim: f.dim };
+    }
     const c = this.cinematic;
     if (!c && this.punchT > 0 && this.punchAt) {
       const e = Math.sin(Math.PI * (1 - this.punchT / this.punchDur)), zoom = 1 + this.punchAmt * e;
@@ -518,14 +974,15 @@ export class Game {
       };
     }
     if (!c) return { zoom: 1, cx: WORLD_W / 2, cy: WORLD_H / 2, dim: 0 };
-    const e = c.t < 0.3 ? ease(c.t / 0.3) : c.t > 1.45 ? ease(Math.max(0, 1 - (c.t - 1.45) / 0.3)) : 1;
-    const zoom = 1 + 0.6 * e;
+    const ult = c.kind === 'ult', end = ult ? ULT_CUT - 0.25 : 1.45;
+    const e = c.t < 0.3 ? ease(c.t / 0.3) : c.t > end ? ease(Math.max(0, 1 - (c.t - end) / 0.25)) : 1;
+    const zoom = 1 + (ult ? 0.75 + 0.2 * Math.min(1, c.t / ULT_CUT) : 0.6) * e;
     const halfW = WORLD_W / (2 * zoom), halfH = WORLD_H / (2 * zoom);
     return {
       zoom,
       cx: clamp(WORLD_W / 2 + (c.mon.x - WORLD_W / 2) * e, halfW, WORLD_W - halfW),
       cy: clamp(WORLD_H / 2 + (c.mon.y - c.mon.bodyZ - WORLD_H / 2) * e, halfH, WORLD_H - halfH),
-      dim: 0.45 * e,
+      dim: (ult ? 0.6 : 0.45) * e,
     };
   }
 
@@ -557,10 +1014,16 @@ export class Game {
     const actors = [this.player, this.opponent, this.red, this.gold].sort((a, b) => a.y - b.y);
     for (const a of actors) a.drawShadow(ctx);
     for (const a of actors) a.draw(ctx);
+    if (this.state === 'fighting') this.hud.drawTags(ctx);
     for (const e of this.effects) if (e.layer === 'air') e.draw(ctx);
     this.particles.draw(ctx, 'air');
     this.arena.drawSnow(ctx);
     for (const e of this.effects) if (e.layer === 'top') e.draw(ctx);
+    if (this.finale?.slow) this.finale.drawLines(ctx);
+    if (this.weather === 'sun') {
+      ctx.fillStyle = 'rgba(255,190,90,0.10)';
+      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    }
     if (this.flashT > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, this.flashT * 6)})`;
       ctx.fillRect(0, 0, WORLD_W, WORLD_H);
@@ -568,6 +1031,9 @@ export class Game {
 
     ctx.setTransform(k, 0, 0, k, 0, 0);
     this.hud.draw(ctx);
+    if (this.cinematic?.kind === 'ult') this.drawUltCard(ctx, this.cinematic);
+    if (this.showcase) this.showcase.draw(ctx);
+    if (this.finale) this.finale.draw(ctx);
   }
 
   resize() {

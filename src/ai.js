@@ -15,6 +15,13 @@ export class OpponentAI {
     this.planT = 0;
     this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.strafeT = 1.5;
+    this.dodgeIn = 0;
+    this.chargeFor = 0;
+  }
+
+  // Called when the player starts an attack: sometimes sidestep it a moment later.
+  onThreat() {
+    if (Math.random() < 0.3) this.dodgeIn = 0.1 + Math.random() * 0.2;
   }
 
   update(dt, game) {
@@ -28,6 +35,23 @@ export class OpponentAI {
     const dx = foe.x - me.x, dy = foe.y - me.y;
     const dist = Math.hypot(dx, dy) || 1;
     const ux = dx / dist, uy = dy / dist;
+    // Holding a charged move: release after the planned time.
+    if (me.charging) {
+      if ((this.chargeFor -= dt) <= 0) game.releaseCharge(me);
+      return;
+    }
+    // Mega Evolve once things get serious.
+    const team = game.opponentTeam;
+    if (me.species.mega?.length && !team.megaUsed && me.hp < me.maxHp * 0.7 && me.canAct() && Math.random() < dt * 0.8) game.megaEvolve(me);
+    // A full meter is spent as soon as there is an opening.
+    if (me.ult >= 100 && me.canAct() && this.gap <= 0.3 && game.useMove(me, me.species.ultimate)) {
+      this.gap = 1.2;
+      return;
+    }
+    if (this.dodgeIn > 0 && (this.dodgeIn -= dt) <= 0) {
+      const side = Math.random() < 0.5 ? 1 : -1;
+      game.dodge(me, -uy * side, ux * side);
+    }
 
     if (this.planT <= 0) {
       const close = me.species.moves.some(id => ['melee', 'dash', 'area'].includes(MOVES[id].ai) && me.cooldown(id) <= 0);
@@ -41,6 +65,12 @@ export class OpponentAI {
 
     if (me.canAct() && this.gap <= 0) {
       const id = this.pickMove(me, foe, dist);
+      // Sometimes charge a chargeable move at range instead of firing it straight away.
+      if (id && MOVES[id].chargeable && dist > 150 && Math.random() < 0.35 && game.beginCharge(me, id)) {
+        this.chargeFor = 0.4 + Math.random() * 0.8;
+        this.gap = 1.2;
+        return;
+      }
       if (id && game.useMove(me, id)) {
         this.gap = 0.9 + Math.random() * 0.9;
         if (MOVES[id].ai !== 'ranged') {
@@ -77,8 +107,8 @@ export class OpponentAI {
   pickMove(me, foe, dist) {
     const options = [];
     for (const id of me.species.moves) {
-      if (me.cooldown(id) > 0) continue;
       const mv = MOVES[id];
+      if (me.cooldown(id) > 0) continue;
       let w = 0;
       if (mv.ai === 'melee' && dist <= me.radius + foe.radius + mv.reach + 6) w = 3;
       else if (mv.ai === 'area' && dist <= mv.range) w = 2.5;

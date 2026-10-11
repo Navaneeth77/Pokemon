@@ -36,7 +36,8 @@ class Projectile {
     this.traveled += step;
     this.trail(dt);
     const t = this.target;
-    if (t.alive && !t.hidden && !t.invuln && Math.hypot(t.x - this.x, t.y - this.y) <= this.radius + t.radius) this.impact(true);
+    // A dodging target is untouchable: the projectile flies straight through.
+    if (t.alive && !t.hidden && !t.untouchable && Math.hypot(t.x - this.x, t.y - this.y) <= this.radius + t.radius) this.impact(true);
     else if (this.traveled >= this.maxDist || this.outside()) this.impact(false);
     return !this.dead;
   }
@@ -107,13 +108,76 @@ const ORBS = {
     speed: 380, radius: 6, shard: true, glow: [150, 230, 255], knockback: 50,
     trail: ['#ffffff', '#c8f2ff'], mark: (g, x, y) => g.marks.frost(x, y, 7),
   },
+  aura: {
+    speed: 290, radius: 9, glow: [90, 150, 255], core: '#eef6ff', knockback: 150,
+    trail: ['#dff0ff', '#6aa8ff', '#2a5ad8'], mark: (g, x, y) => g.marks.energy(x, y, 13, [90, 150, 255]),
+  },
+  ghost: {
+    speed: 240, radius: 10, glow: [130, 70, 200], core: '#24122e', knockback: 120,
+    trail: ['#c8a0ff', '#7a48b8', '#2a1838'], mark: (g, x, y) => g.marks.energy(x, y, 13, [110, 60, 170]),
+  },
+  poison: {
+    speed: 220, radius: 9, glow: [180, 70, 200], core: '#f0c0ff', knockback: 100,
+    trail: ['#e0a0f0', '#a040a0', '#5a1f5a'], mark: (g, x, y) => g.marks.energy(x, y, 14, [160, 60, 170]),
+  },
+  shuriken: {
+    speed: 360, radius: 8, shape: 'shuriken', glow: [90, 170, 255], knockback: 70,
+    trail: ['#ffffff', '#9fd8ff', '#3a8ae8'], mark: (g, x, y) => g.marks.wet(x, y, 7),
+  },
+  star: {
+    speed: 330, radius: 7, shape: 'star', glow: [255, 230, 120], knockback: 50, homing: 2.2,
+    trail: ['#ffffff', '#fff2a8', '#ffd040'], mark: () => {},
+  },
+  moon: {
+    speed: 200, radius: 15, scale: 1.8, glow: [255, 160, 210], core: '#fff4fa', knockback: 260,
+    trail: ['#ffffff', '#ffc8e4', '#f080b0'], mark: (g, x, y) => { g.marks.energy(x, y, 26, [255, 150, 210], 5); g.marks.fracture(x, y, 22, 5); },
+  },
+  // Extreme Evoboost: one orb per Eeveelution colour.
+  evo: {
+    speed: 280, radius: 8, glow: [255, 255, 255], core: '#ffffff', knockback: 70, evo: true,
+    trail: ['#ffffff', '#ffe8a0', '#ffb070'], mark: () => {},
+  },
 };
+const orb = (glow, core, trail, mark, extra = {}) => ({ speed: 260, radius: 9, glow, core, knockback: 120, trail, mark, ...extra });
+const energyMark = (rgb, r = 13) => (g, x, y) => g.marks.energy(x, y, r, rgb);
+const FIRE_TRAIL = ['#fff0a0', '#ff9a3a', '#b8461c'];
+Object.assign(ORBS, {
+  fire: orb([255, 140, 60], '#fff2c0', FIRE_TRAIL, (g, x, y) => g.marks.scorch(x, y, 12)),
+  bigFire: orb([255, 120, 40], '#fff6d0', FIRE_TRAIL, (g, x, y) => { g.marks.scorch(x, y, 20); g.marks.fracture(x, y, 14, 5); },
+    { radius: 13, scale: 1.6, speed: 230, knockback: 210 }),
+  water: orb([90, 160, 255], '#e6f6ff', ['#ffffff', '#86ccff', '#3a8ae8'], (g, x, y) => g.marks.wet(x, y, 12)),
+  psy: orb([255, 120, 200], '#fff0fa', ['#ffe0f0', '#ff8ad0', '#c040a0'], energyMark([255, 120, 200]), { speed: 300 }),
+  fairy: orb([255, 170, 220], '#fff6fb', ['#ffffff', '#ffc8e4', '#f080b0'], energyMark([255, 160, 210], 16), { radius: 11, scale: 1.2, speed: 230, knockback: 160 }),
+  dark: orb([90, 50, 120], '#1a0f24', ['#c8a0ff', '#6a3a8a', '#2a1838'], energyMark([110, 60, 170])),
+  gem: orb([255, 150, 200], '#ffffff', ['#ffffff', '#ffc0e0', '#c0508a'], (g, x, y) => g.marks.fracture(x, y, 7, 4), { radius: 6, scale: 0.7, speed: 340, knockback: 60 }),
+  leaf: orb([130, 235, 90], '#f6ffe6', ['#e0ffc0', '#8ad84f', '#3f8f2c'], (g, x, y) => g.marks.leaves(x, y, 7),
+    { radius: 6, scale: 0.65, speed: 300, knockback: 50, homing: 1.8, leaves: true }),
+});
+
+const EVO_COLORS = [[255, 120, 70], [80, 150, 255], [255, 220, 60], [190, 120, 255], [60, 50, 80], [120, 220, 110], [120, 210, 255]];
 
 export class Orb extends Projectile {
-  constructor(game, user, move, x, y, z, angle, style) {
-    const s = ORBS[style];
-    super(game, user, move, x, y, z, angle, s.speed, move.range, s.radius);
-    this.s = s;
+  constructor(game, user, move, x, y, z, angle, style, variant = 0) {
+    let s = ORBS[style];
+    if (s.evo) {
+      const [R, G, B] = EVO_COLORS[variant % EVO_COLORS.length];
+      s = { ...s, glow: [R, G, B], trail: ['#ffffff', `rgb(${R},${G},${B})`, `rgb(${R >> 1},${G >> 1},${B >> 1})`] };
+    }
+    // Charged shots fly bigger and hit harder (power is already scaled on the move itself).
+    const k = 1 + 0.6 * (move.chargeLevel ?? 0);
+    super(game, user, move, x, y, z, angle, s.speed, move.range, s.radius * k);
+    this.s = k > 1 ? { ...s, scale: (s.scale ?? 1) * k, knockback: s.knockback * k } : s;
+    this.power = move.power;
+  }
+
+  update(dt) {
+    // Homing projectiles (Swift) curve toward the target.
+    const t = this.target;
+    if (this.s.homing && t.alive && !t.hidden) {
+      const want = Math.atan2(t.y - this.y, t.x - this.x);
+      this.angle += Math.max(-this.s.homing * dt, Math.min(this.s.homing * dt, Math.atan2(Math.sin(want - this.angle), Math.cos(want - this.angle))));
+    }
+    return super.update(dt);
   }
 
   trail() {
@@ -149,6 +213,10 @@ export class Orb extends Projectile {
 
   draw(ctx) {
     const s = this.s, cy = this.y - this.z;
+    if (s.shape) {
+      this.drawShape(ctx, cy);
+      return;
+    }
     if (s.shard) {
       ctx.save();
       ctx.translate(this.x, cy);
@@ -167,16 +235,41 @@ export class Orb extends Projectile {
       ctx.restore();
       return;
     }
-    const pulse = 1 + Math.sin(this.age * 30) * 0.12;
+    const pulse = (1 + Math.sin(this.age * 30) * 0.12) * (s.scale ?? 1);
     const [R, G, B] = s.glow;
     const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, 15 * pulse);
     g.addColorStop(0, `rgba(${R},${G},${B},0.95)`);
     g.addColorStop(1, `rgba(${R},${G},${B},0)`);
     ctx.fillStyle = g;
-    ctx.fillRect(this.x - 16, cy - 16, 32, 32);
+    ctx.fillRect(this.x - 16 * pulse, cy - 16 * pulse, 32 * pulse, 32 * pulse);
     ctx.fillStyle = s.core;
     ctx.beginPath();
-    ctx.arc(this.x, cy, 4.5, 0, Math.PI * 2);
+    ctx.arc(this.x, cy, 4.5 * (s.scale ?? 1), 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // Spinning water shuriken or Swift star.
+  drawShape(ctx, cy) {
+    const s = this.s, points = s.shape === 'star' ? 5 : 4, outer = s.shape === 'star' ? 6 : 8, inner = outer * 0.38;
+    ctx.save();
+    ctx.translate(this.x, cy);
+    ctx.rotate(this.age * 18);
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 ? inner : outer, a = (i / (points * 2)) * Math.PI * 2;
+      if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      else ctx.moveTo(r, 0);
+    }
+    ctx.closePath();
+    ctx.fillStyle = s.trail[1];
+    ctx.fill();
+    ctx.strokeStyle = s.trail[2];
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }

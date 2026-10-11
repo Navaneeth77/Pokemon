@@ -3,10 +3,8 @@ import '@fontsource/pixelify-sans/700.css';
 import '@fontsource/luckiest-guy/400.css';
 import './style.css';
 import { loadSpecies } from './assets.js';
-import { SPECIES } from './data/species.js';
-import { WINGS } from './data/wings.js';
-import { addFlapAnim } from './flap.js';
-import { Game } from './game.js';
+import { DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
+import { Game, prepareSprites } from './game.js';
 import { UI } from './ui.js';
 
 async function main() {
@@ -14,8 +12,10 @@ async function main() {
     document.fonts.load('700 16px "Pixelify Sans"'),
     document.fonts.load('400 16px "Luckiest Guy"'),
   ]);
-  const sprites = await loadSpecies([...new Set(Object.values(SPECIES).map(s => s.sprite))]);
-  for (const [id, cfg] of Object.entries(WINGS)) addFlapAnim(sprites[id], cfg);
+  // Only the default team and the opponent's are loaded up front; other picks load when a battle starts.
+  const first = spritesFor([...DEFAULT_TEAM, ...OPPONENT_TEAM]);
+  const sprites = await loadSpecies(first);
+  prepareSprites(sprites, first);
   const ui = new UI();
   const game = new Game(document.getElementById('game'), sprites, ui);
   ui.bind(game);

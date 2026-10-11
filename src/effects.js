@@ -765,32 +765,36 @@ export class Pillar extends Effect {
   }
 }
 
-// Swirling dragon-fire aura that follows a Pokémon; larger as a diving comet.
+// Swirling energy aura that follows a Pokémon (dragon fire by default); larger as a diving comet.
 export class EnergyAura extends Effect {
-  constructor(mon, life, comet = false) {
+  constructor(mon, life, comet = false, tint = null) {
     super('air', life);
-    Object.assign(this, { mon, comet });
+    Object.assign(this, { mon, comet, tint });
   }
 
   draw(ctx) {
     const m = this.mon, t = this.age / this.life;
     const a = Math.min(1, this.age / 0.12) * (t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1);
     const cx = m.x, cy = m.y - m.bodyZ, r = this.comet ? 42 : 34;
+    const [R, G, B] = this.tint?.glow ?? [90, 230, 140];
+    const [r1, r2] = this.tint?.rings ?? ['rgba(160,255,200,1)', 'rgba(255,230,120,1)'];
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, `rgba(220,255,230,${0.55 * a})`);
-    g.addColorStop(0.5, `rgba(90,230,140,${0.35 * a})`);
-    g.addColorStop(1, 'rgba(30,140,70,0)');
+    g.addColorStop(0, `rgba(230,255,240,${0.55 * a})`);
+    g.addColorStop(0.5, `rgba(${R},${G},${B},${0.35 * a})`);
+    g.addColorStop(1, `rgba(${R},${G},${B},0)`);
     ctx.fillStyle = g;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     ctx.lineCap = 'round';
     ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.85 * a;
     for (let i = 0; i < 3; i++) {
       const rot = this.age * (8 + i * 3) + i * 2.1, rr = r * (0.55 + 0.15 * i);
-      ctx.strokeStyle = i === 1 ? `rgba(255,230,120,${0.8 * a})` : `rgba(160,255,200,${0.85 * a})`;
+      ctx.strokeStyle = i === 1 ? r2 : r1;
       ctx.beginPath();
       ctx.ellipse(cx, cy, rr, rr * 0.45, 0.4 * i - 0.4, rot, rot + 2.2);
       ctx.stroke();
     }
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -840,5 +844,365 @@ export class WindStreaks extends Effect {
       ctx.lineTo(s.x - s.len, s.y + s.len * 0.18);
       ctx.stroke();
     }
+  }
+}
+
+// Thorny vines or jagged stone blades bursting out of the ground.
+const SPIKE_COLORS = {
+  vine: ['#3f9a3a', '#1f5a22', '#8fe060'], stone: ['#8a8f98', '#4f545e', '#e2e6ec'], ice: ['#bfefff', '#4fa8c8', '#ffffff'],
+  crystal: ['#ffc0e0', '#c0508a', '#ffffff'], dark: ['#3a2a4a', '#140c1c', '#a080d0'], magma: ['#b8461c', '#5a1a08', '#ffd060'],
+};
+
+export class Spike extends Effect {
+  constructor(x, y, style, life) {
+    super('air', life);
+    Object.assign(this, { x, y, style });
+    this.blades = Array.from({ length: 4 }, () => ({ dx: rand(-9, 9), dy: rand(-3, 3), h: rand(16, 30), w: rand(4, 7), lean: rand(-0.35, 0.35) }))
+      .sort((p, q) => p.dy - q.dy);
+  }
+
+  draw(ctx) {
+    const t = this.age / this.life, grow = Math.min(1, this.age / 0.1), sink = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
+    const [fill, edge, ridge] = SPIKE_COLORS[this.style] ?? SPIKE_COLORS.stone;
+    ctx.lineWidth = 1;
+    for (const b of this.blades) {
+      const h = b.h * grow * sink, bx = this.x + b.dx, by = this.y + b.dy, tx = bx + b.lean * h, ty = by - h;
+      ctx.beginPath();
+      ctx.moveTo(bx - b.w, by);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(bx + b.w, by);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(tx, ty);
+      ctx.strokeStyle = ridge;
+      ctx.stroke();
+    }
+  }
+}
+
+// A meteor (draco) or boulder (rock) dropping from the sky onto (x, y), then calling onLand.
+export class Falling extends Effect {
+  constructor(x, y, dur, style, onLand, rgb = [255, 255, 255]) {
+    super('air', dur);
+    Object.assign(this, { x, y, style, onLand, rgb, h: 280, dx: style === 'draco' || style === 'orb' ? -70 : 0 });
+  }
+
+  update(dt) {
+    this.age += dt;
+    if (this.age < this.life) return true;
+    this.onLand();
+    return false;
+  }
+
+  draw(ctx) {
+    const k = Math.min(1, this.age / this.life), e = k * k;
+    const x = this.x + this.dx * (1 - e), y = this.y - this.h * (1 - e);
+    ctx.globalAlpha = 0.25 * k;
+    ctx.fillStyle = '#1d2433';
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, 4 + 8 * k, 2 + 3 * k, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (this.style === 'orb' || this.style === 'star' || this.style === 'crystal') {
+      const [R, G, B] = this.rgb;
+      ctx.strokeStyle = `rgba(${R},${G},${B},0.5)`;
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - this.dx * 0.4, y - 50);
+      ctx.stroke();
+      const r = ctx.createRadialGradient(x, y, 0, x, y, 12);
+      r.addColorStop(0, '#ffffff');
+      r.addColorStop(0.45, `rgba(${R},${G},${B},0.9)`);
+      r.addColorStop(1, `rgba(${R},${G},${B},0)`);
+      ctx.fillStyle = r;
+      ctx.fillRect(x - 12, y - 12, 24, 24);
+      if (this.style !== 'orb') {
+        ctx.fillStyle = this.style === 'star' ? '#fff6b0' : '#ffd8ec';
+        ctx.beginPath();
+        const n = this.style === 'star' ? 5 : 4;
+        for (let i = 0; i < n * 2; i++) {
+          const rr = i % 2 ? 2.5 : 6, a = (i / (n * 2)) * Math.PI * 2 + this.age * 6;
+          if (i) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          else ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (this.style === 'draco') {
+      const g = ctx.createLinearGradient(x, y, x - this.dx * 0.5, y - 60);
+      g.addColorStop(0, 'rgba(255,200,120,0.9)');
+      g.addColorStop(1, 'rgba(160,80,255,0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - this.dx * 0.5, y - 60);
+      ctx.stroke();
+      const r = ctx.createRadialGradient(x, y, 0, x, y, 12);
+      r.addColorStop(0, '#fff4d0');
+      r.addColorStop(0.5, 'rgba(255,140,60,0.9)');
+      r.addColorStop(1, 'rgba(160,60,255,0)');
+      ctx.fillStyle = r;
+      ctx.fillRect(x - 12, y - 12, 24, 24);
+    } else {
+      ctx.fillStyle = '#7a7266';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 7, 6, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#b4ab9c';
+      ctx.beginPath();
+      ctx.ellipse(x - 2, y - 2, 3.5, 2.5, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#3e3a34';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 7, 6, 0.4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+// A projectile flying from (x0, y0) to (x1, y1), drawn at height z, calling onArrive when it lands.
+export class Missile extends Effect {
+  constructor(x0, y0, x1, y1, z, dur, style, onArrive, rgb = [255, 255, 255], scale = 1) {
+    super('air', dur);
+    Object.assign(this, { x0, y0, x1, y1, z, style, onArrive, rgb, scale });
+    this.isProjectile = true; // frozen during cutscenes like real projectiles
+  }
+
+  update(dt) {
+    this.age += dt;
+    if (this.age < this.life) return true;
+    this.onArrive();
+    return false;
+  }
+
+  draw(ctx) {
+    const k = Math.min(1, this.age / this.life);
+    const x = this.x0 + (this.x1 - this.x0) * k, y = this.y0 + (this.y1 - this.y0) * k - this.z;
+    const [R, G, B] = this.rgb;
+    ctx.strokeStyle = `rgba(${R},${G},${B},0.45)`;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - (this.x1 - this.x0) * 0.12, y - (this.y1 - this.y0) * 0.12);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(this.scale, this.scale);
+    if (this.style === 'shuriken') {
+      ctx.rotate(this.age * 20);
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const r = i % 2 ? 3 : 9, a = (i / 8) * Math.PI * 2;
+        if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.moveTo(r, 0);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#9fd8ff';
+      ctx.fill();
+      ctx.strokeStyle = '#2a6ac8';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 13);
+      g.addColorStop(0, `rgba(${R},${G},${B},0.95)`);
+      g.addColorStop(1, `rgba(${R},${G},${B},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(-13, -13, 26, 26);
+      ctx.fillStyle = this.style === 'ghost' ? '#24122e' : '#ffffff';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// A wall of water sweeping across the whole arena from y0 to y1.
+export class TidalWave extends Effect {
+  constructor(y0, y1, dur, rgb = [70, 140, 230]) {
+    super('air', dur);
+    Object.assign(this, { y0, y1, rgb: rgb.join(',') });
+  }
+
+  get y() {
+    return this.y0 + (this.y1 - this.y0) * Math.min(1, this.age / this.life);
+  }
+
+  draw(ctx) {
+    const y = this.y, dir = Math.sign(this.y1 - this.y0) || 1, t = this.age / this.life;
+    ctx.globalAlpha = t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
+    const g = ctx.createLinearGradient(0, y, 0, y - dir * 70);
+    g.addColorStop(0, `rgba(${this.rgb},0.85)`);
+    g.addColorStop(1, `rgba(${this.rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, Math.min(y, y - dir * 70), 360, 70);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let x = 0; x <= 360; x += 8) {
+      const wy = y - dir * (6 + Math.sin(x * 0.08 + this.age * 18) * 4);
+      if (x) ctx.lineTo(x, wy);
+      else ctx.moveTo(x, wy);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Gardevoir's moon hanging in the sky above the arena.
+export class Moon extends Effect {
+  constructor(x, y, life) {
+    super('air', life);
+    Object.assign(this, { x, y });
+  }
+
+  draw(ctx) {
+    const t = this.age / this.life, grow = Math.min(1, this.age / 0.35), a = t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
+    const r = 26 * grow;
+    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 2.4);
+    g.addColorStop(0, `rgba(255,190,225,${0.8 * a})`);
+    g.addColorStop(1, 'rgba(255,150,210,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(this.x - r * 2.4, this.y - r * 2.4, r * 4.8, r * 4.8);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#fff4fa';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(240,170,205,0.6)';
+    for (const [dx, dy, cr] of [[-8, -6, 5], [7, 4, 6], [-3, 10, 3]]) {
+      ctx.beginPath();
+      ctx.arc(this.x + dx * grow, this.y + dy * grow, cr * grow, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Psychic tether: a wavy, sparkling line of light from one Pokémon to the one it's holding.
+export class Tether extends Effect {
+  constructor(a, b, life, rgb = [230, 150, 255]) {
+    super('air', life);
+    Object.assign(this, { a, b, rgb });
+  }
+
+  draw(ctx) {
+    const { a, b } = this, t = this.age / this.life;
+    const fade = Math.min(1, this.age / 0.1) * (t > 0.85 ? (1 - t) / 0.15 : 1);
+    const x0 = a.x, y0 = a.y - a.bodyZ, x1 = b.x, y1 = b.y - b.bodyZ;
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+    const [R, G, B] = this.rgb;
+    const at = k => {
+      const w = Math.sin(k * 10 - this.age * 16) * 4 * Math.sin(Math.PI * k);
+      return [x0 + dx * k + nx * w, y0 + dy * k + ny * w];
+    };
+    for (let s = 0; s <= len; s += 3.5) {
+      const [x, y] = at(s / len), tw = 0.5 + 0.5 * Math.sin(s * 0.8 + this.age * 22);
+      ctx.fillStyle = tw > 0.85 ? `rgba(255,255,255,${fade})` : `rgba(${R},${G},${B},${fade * (0.45 + 0.5 * tw)})`;
+      ctx.fillRect(x - 1, y - 1, 2, 2);
+    }
+    // Sparkles travelling along the line toward the held Pokémon.
+    ctx.strokeStyle = `rgba(255,255,255,${fade})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const [x, y] = at((this.age * 1.6 + i / 3) % 1), r = 3;
+      ctx.beginPath();
+      ctx.moveTo(x - r, y);
+      ctx.lineTo(x + r, y);
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x, y + r);
+      ctx.stroke();
+    }
+  }
+}
+
+// A boulder torn out of the ground by telekinesis: rises, hangs in the air, then flies at a target.
+export class FloatingRock extends Effect {
+  constructor(x, y, size) {
+    super('air', 99);
+    this.isProjectile = true; // frozen during cutscenes
+    const verts = [];
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2, r = size * rand(0.75, 1.1);
+      verts.push([Math.cos(a) * r, Math.sin(a) * r * 0.8]);
+    }
+    Object.assign(this, { x, y, z: 0, size, verts, hover: rand(26, 44), seed: rand(0, 6), fly: null });
+  }
+
+  throwAt(target, dur, onHit) {
+    this.fly = { target, t: 0, dur, x: this.x, y: this.y, z: this.z, onHit };
+  }
+
+  update(dt) {
+    this.age += dt;
+    if (this.dead) return false;
+    const f = this.fly;
+    if (!f) {
+      this.z = Math.min(this.hover, this.z + dt * 110);
+      return true;
+    }
+    f.t += dt;
+    const k = Math.min(1, f.t / f.dur), tg = f.target;
+    this.x = f.x + (tg.x - f.x) * k;
+    this.y = f.y + (tg.y - f.y) * k;
+    this.z = f.z + (tg.bodyZ - f.z) * k;
+    if (k < 1) return true;
+    f.onHit();
+    return false;
+  }
+
+  draw(ctx) {
+    const s = this.size, bob = this.fly ? 0 : Math.sin(this.age * 3 + this.seed) * 2;
+    ctx.fillStyle = `rgba(0,0,0,${0.3 * Math.max(0.3, 1 - this.z / 120)})`;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, s * 0.9, s * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const cx = this.x, cy = this.y - this.z - s * 0.4 + bob;
+    ctx.beginPath();
+    this.verts.forEach(([vx, vy], i) => (i ? ctx.lineTo(cx + vx, cy + vy) : ctx.moveTo(cx + vx, cy + vy)));
+    ctx.closePath();
+    ctx.fillStyle = '#8c7a66';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(240,200,255,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,240,220,0.35)';
+    ctx.fillRect(cx - s * 0.4, cy - s * 0.45, s * 0.5, s * 0.25);
+  }
+}
+
+// A translucent psychic sphere that swells out from (x, y) over the whole arena.
+export class PsyDome extends Effect {
+  constructor(x, y, r1, life, rgb = [170, 90, 255]) {
+    super('air', life);
+    Object.assign(this, { x, y, r1, rgb: rgb.join(',') });
+  }
+
+  draw(ctx) {
+    const t = this.age / this.life, g0 = Math.min(1, t / 0.55), r = this.r1 * (1 - (1 - g0) * (1 - g0));
+    const a = t > 0.55 ? 1 - (t - 0.55) / 0.45 : 1;
+    if (r < 1) return;
+    const g = ctx.createRadialGradient(this.x, this.y - r * 0.25, r * 0.05, this.x, this.y, r);
+    g.addColorStop(0, `rgba(255,200,255,${0.06 * a})`);
+    g.addColorStop(0.75, `rgba(${this.rgb},${0.22 * a})`);
+    g.addColorStop(1, `rgba(245,210,255,${0.55 * a})`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,235,255,${0.85 * a})`;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
   }
 }
