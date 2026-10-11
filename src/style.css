@@ -454,6 +454,9 @@ footer .legal { font-size: 11px; line-height: 1.35; opacity: 0.75; }
 .mon-info .mv span { font-size: 9.5px; color: var(--muted); }
 .mon-info .mv em { font-style: normal; }
 .mega-line { margin-top: 3px; font-size: 10px; color: #d8c8f0; }
+.mini-btn { padding: 2px 8px; color: #fff; font: inherit; font-size: 11px; font-weight: 700; background: #2a3342; border: 1px solid #3a4558; border-radius: 999px; cursor: pointer; }
+.mini-btn:hover { background: #3a4558; }
+.difficulty { justify-content: center; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
 .slot .xy { display: flex; gap: 3px; margin-top: 2px; }
 .slot .xy em { padding: 0 6px; font-size: 10px; font-style: normal; font-weight: 700; color: #d8c8f0; background: #2a2236; border: 1px solid #5a3a7a; border-radius: 5px; }
 .slot .xy em.on { color: #fff; background: #a03ac0; }

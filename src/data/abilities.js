@@ -232,19 +232,14 @@ export const ABILITIES = {
   pixilate: { name: 'Pixilate', desc: 'Normal-type moves become Fairy-type and hit 20% harder.', convert: { from: 'normal', to: 'fairy', mult: 1.2 } },
   shellArmor: { name: 'Shell Armor', desc: 'Immune to critical hits and takes 10% less damage.', noCrit: true, takeMult: () => 0.9 },
   stanceChange: {
-    name: 'Stance Change', desc: 'Attacking switches to Blade Forme (+30% attack, takes 25% more damage) for 3.5s; otherwise Shield Forme (−20% damage taken).',
-    onUse(g, me) {
-      if (!(me.ab.blade > 0)) g.abilityPop(me, 'Blade Forme!');
-      me.ab.blade = 3.5;
-      g.setForm(me, 'aegislash-blade');
+    name: 'Stance Change', desc: 'Attacking switches to Blade Forme (+35% damage and speed, takes 25% more). King\'s Shield switches back to Shield Forme (takes 30% less, deals 20% less, slower) until it attacks again.',
+    onUse(g, me, move) {
+      if (move.cat !== 'status' && !me.ab.blade) g.toggleForm(me, true);
     },
-    tick(g, me, dt) {
-      if (me.ab.blade > 0 && (me.ab.blade -= dt) <= 0 && !me.action) g.setForm(me, null);
-      else if (me.ab.blade <= 0 && me.action) me.ab.blade = 0.2;
-    },
-    dealMult: (g, me) => (me.ab.blade > 0 ? 1.3 : 1),
-    takeMult: (g, me) => (me.ab.blade > 0 ? 1.25 : 0.8),
-    pill: me => [me.ab.blade > 0 ? 'BLADE' : 'SHIELD', me.ab.blade > 0 ? '#c84a4a' : '#5f6d84'],
+    dealMult: (g, me) => (me.ab.blade ? 1.35 : 0.8),
+    takeMult: (g, me) => (me.ab.blade ? 1.25 : 0.7),
+    speedMult: me => (me.ab.blade ? 1.1 : 0.9),
+    pill: me => [me.ab.blade ? 'BLADE FORME' : 'SHIELD FORME', me.ab.blade ? '#c84a4a' : '#4a7aa8'],
   },
   moonlitRecovery: {
     name: 'Moonlit Recovery', desc: 'Regenerates 1.2% max HP per second after 3s without taking damage.',
@@ -460,6 +455,49 @@ export const ABILITIES = {
   },
   shadowTag: { name: 'Shadow Tag', desc: "While it is on the field, the foe can't switch out.", shadowTag: true },
   insomnia: { name: 'Insomnia', desc: "Can't fall asleep or be stunned.", immune: ['sleep', 'stun'] },
+  // ── Newcomers ──
+  swarm: { name: 'Swarm', ...pinch('bug', 'SWARM', '#a8b820') },
+  sharpness: { name: 'Sharpness', desc: 'Slicing moves (blades, claws, cuts) hit 30% harder.', dealMult: (g, me, foe, move) => (move.slice ? 1.3 : 1) },
+  sereneWings: {
+    name: 'Serene Wings', desc: 'Doubles the chance of status effects and flinches, and Fairy hits heal it for 10% of the damage.', serene: true,
+    onDeal(g, me, foe, move, dmg, i) {
+      if (i.type === 'fairy') g.heal(me, dmg * 0.1);
+    },
+  },
+  mudArmor: {
+    name: 'Mud Armor', desc: "Can't be paralyzed, and takes 25% less damage from Electric and Fire moves.", immune: ['para'],
+    takeMult: (g, me, atk, move, i) => (i.type === 'electric' || i.type === 'fire' ? 0.75 : 1),
+  },
+  iceClaws: {
+    name: 'Ice Claws', desc: 'Ice and Dark moves deal 50% more to frozen or slowed foes.',
+    dealMult: (g, me, foe, move, i) => ((i.type === 'ice' || i.type === 'dark') && (foe.frozen > 0 || foe.status.slow > 0) ? 1.5 : 1),
+  },
+  galeWings: {
+    name: 'Gale Wings', desc: 'At over half HP, its Flying moves recharge 40% faster.',
+    onUse(g, me, move) {
+      if (move.type === 'flying' && me.hp > me.maxHp / 2 && me.cooldowns[move.id]) me.cooldowns[move.id] *= 0.6;
+    },
+  },
+  magicGuard: { name: 'Magic Guard', desc: 'Only takes damage from direct attacks: no burn, poison, sandstorm or recoil damage.', noIndirect: true },
+  marvelScale: {
+    name: 'Marvel Scale', desc: 'Takes 30% less damage while it has a status condition.',
+    takeMult: (g, me) => (me.frozen > 0 || ['burn', 'poison', 'para', 'slow', 'stun', 'sleep'].some(k => me.status[k] > 0) ? 0.7 : 1),
+  },
+  moldBreaker: { name: 'Mold Breaker', desc: "Its attacks ignore the foe's defensive abilities.", moldBreaker: true },
+  triFury: {
+    name: 'Tri-Fury', desc: 'Every third attack it uses is unleashed by all three heads: +40% damage.',
+    onUse(g, me, move) {
+      if (move.cat === 'status' || move.ultimate) return;
+      me.ab.n = ((me.ab.n ?? 0) + 1) % 3;
+      if (me.ab.n === 0) g.abilityPop(me, 'Three heads strike!');
+    },
+    dealMult: (g, me) => (me.ab.n === 0 && me.action ? 1.4 : 1),
+    pill: me => [`FURY ${((me.ab.n ?? 0) % 3) + 1}/3`, '#6a3a8a'],
+  },
+  analytic: {
+    name: 'Analytic', desc: 'Hits 30% harder against a foe that is attacking or recovering from an attack.',
+    dealMult: (g, me, foe) => (foe.action || foe.busy > 0 ? 1.3 : 1),
+  },
 };
 
 const NONE = { name: '—', desc: '' };

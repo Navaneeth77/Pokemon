@@ -31,8 +31,11 @@ export class Pokemon {
   get alive() { return this.hp > 0; }
   get isMega() { return this.species !== this.baseSpecies; }
   // Heights of the body centre and head above the ground, including flight altitude.
-  get bodyZ() { return this.species.bodyZ + this.z; }
-  get headZ() { return this.species.headZ + this.z; }
+  get bodyZ() { return this.species.bodyZ + this.lift; }
+  get headZ() { return this.species.headZ + this.lift; }
+  // Height off the ground: flight altitude plus any launch from an aerial combo.
+  get lift() { return this.z + (this.air?.h ?? 0); }
+  get airborne() { return !!this.air; }
   // Can't be hit: soaring out of reach (invuln) or inside a dodge's invulnerability window.
   get untouchable() { return this.invuln || this.dodgeInv > 0; }
 
@@ -56,7 +59,7 @@ export class Pokemon {
       shownHp: this.hp, trailHp: this.hp, trailDelay: 0,
       action: null, cooldowns: {}, busy: 0, root: 0, stagger: 0, frozen: 0, status: this.status ?? {}, sGuard: {}, buffs: {},
       combo: { n: 0, uses: 0, t: 0, chain: 0, lastRole: -1, foe: null }, chainT: 0, chainRole: -1, comboHits: 0, comboTimer: 0, escapeT: 0,
-      ab: {}, charging: null, typeOverride: null, shield: 0, chill: 0, form: null,
+      ab: {}, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
       flash: 0, flashColor: '#fff', appear: 0, recallT: 0, landT: 0, zOverride: null, invuln: false, phasing: false, held: false,
       fainted: !this.alive, faintT: 0, moving: false, windT: 0, flyT: 0, auraT: 0, hidden: true,
       dodgeT: 0, dodgeInv: 0, dodgeCD: 0, dodgeDir: { x: 0, y: 1 }, ghostT: 0, buffT: 0,
@@ -74,6 +77,33 @@ export class Pokemon {
     const name = this.sprite.anim?.name ?? 'Idle';
     this.sprite.set = set;
     this.sprite.play(name, { force: true, loop: this.sprite.loop });
+  }
+
+  // Launched into the air (aerial combos). Repeated launches rise less and fall faster.
+  launch(vz) {
+    if (this.zOverride != null || this.held || !this.alive) return false;
+    const a = this.air ?? (this.air = { h: 0, vz: 0, t: 0, juggle: 0, g: 950 });
+    a.vz = Math.max(a.vz, vz);
+    a.h = Math.max(a.h, 1);
+    a.g = 950 + a.juggle * 320;
+    this.cancelAction();
+    return true;
+  }
+
+  updateAir(dt, game) {
+    const a = this.air;
+    if (!a) return;
+    a.t += dt;
+    a.vz -= a.g * dt;
+    a.h += a.vz * dt;
+    if (a.h > 0) return;
+    // Touchdown: a short landing recovery, then free to act (no infinite juggles).
+    this.air = null;
+    if (!this.fainted) {
+      this.stagger = Math.max(this.stagger, 0.22);
+      this.sprite.play('Hurt', { loop: false, force: true });
+    }
+    game.onLand(this, -a.vz);
   }
 
   // Ultimate charge (0–100). Crossing 100 plays the ready cue once.
@@ -107,7 +137,8 @@ export class Pokemon {
 
   canAct() {
     return this.alive && !this.hidden && this.recallT <= 0 && !this.action && this.busy <= 0 && this.root <= 0
-      && this.stagger <= 0 && this.frozen <= 0 && this.dodgeT <= 0 && !this.held && !(this.status.sleep > 0) && !this.charging;
+      && this.stagger <= 0 && this.frozen <= 0 && this.dodgeT <= 0 && !this.held && !(this.status.sleep > 0) && !this.charging
+      && (!this.air || (this.species.fly && this.air.t > 0.35));
   }
 
   cooldown(id) { return this.cooldowns[id] ?? 0; }
@@ -144,6 +175,7 @@ export class Pokemon {
 
   // Quick evasive dash with a short invulnerability window. Not allowed mid-attack, stunned or frozen.
   dodge(dx, dy) {
+    if (this.air && this.air.t < 0.4) return false; // can air-dodge out of a juggle only after a moment
     if (!this.alive || this.hidden || this.held || this.status.sleep > 0 || this.recallT > 0 || this.frozen > 0 || this.stagger > 0 || this.root > 0 || this.dodgeCD > 0) return false;
     if (this.action && !this.action.allowMove) return false;
     const len = Math.hypot(dx, dy);
@@ -216,6 +248,7 @@ export class Pokemon {
     this.vx *= drag;
     this.vy *= drag;
     this.updateFlight(dt);
+    this.updateAir(dt, game);
 
     if (this.fainted) {
       this.faintT += dt;
@@ -237,6 +270,16 @@ export class Pokemon {
     this.buffT = Math.max(0, this.buffT - dt);
     tickBuffs(this, dt);
     this.chainT = Math.max(0, this.chainT - dt);
+    if (this.guard && (this.guard.t -= dt) <= 0) this.guard = null;
+    if (this.regen) {
+      this.regen.t -= dt;
+      this.regen.acc += this.maxHp * this.regen.rate * dt;
+      if (this.regen.acc >= 10 && game.state === 'fighting') {
+        game.heal(this, this.regen.acc);
+        this.regen.acc = 0;
+      }
+      if (this.regen.t <= 0) this.regen = null;
+    }
     this.combo.t = Math.max(0, this.combo.t - dt);
     this.comboTimer = Math.max(0, this.comboTimer - dt);
     this.escapeT = Math.max(0, this.escapeT - dt);
@@ -263,7 +306,7 @@ export class Pokemon {
       if (this.action?.done) this.action = null;
     }
 
-    const free = !this.held && !(this.status.sleep > 0) && this.dodgeT <= 0 && this.stagger <= 0 && this.root <= 0 && (!this.action || this.action.allowMove);
+    const free = !this.held && !(this.status.sleep > 0) && (!this.air || this.species.fly) && this.dodgeT <= 0 && this.stagger <= 0 && this.root <= 0 && (!this.action || this.action.allowMove);
     const len = Math.hypot(this.input.x, this.input.y);
     this.moving = free && len > 0.01;
     if (this.moving) {
@@ -321,7 +364,7 @@ export class Pokemon {
     const [rx, ry] = this.species.shadow;
     const fade = this.fainted ? Math.max(0, 1 - Math.max(0, this.faintT - 0.9) / 0.9) : 1;
     const recall = this.recallT > 0 ? 1 - Math.min(1, this.recallT / RECALL_TIME) : 1;
-    const lift = Math.max(0.4, 1 - this.z / 60);
+    const lift = Math.max(0.4, 1 - this.lift / 60);
     ctx.globalAlpha = 0.3 * fade * lift * recall;
     ctx.fillStyle = '#1d2433';
     ctx.beginPath();
@@ -368,10 +411,26 @@ export class Pokemon {
     // Capped so a white hit-flash never makes the sprite vanish against the snow,
     // except during send-out/recall/Mega Evolution where a full silhouette is intended.
     const cap = this.appear > 0.05 || this.recallT > 0 ? 1 : 0.65;
-    this.sprite.draw(ctx, this.x, this.y - this.z + sink, this.dir, { alpha, scale, flash: Math.min(flash, cap), flashColor: color });
+    this.sprite.draw(ctx, this.x, this.y - this.lift + sink, this.dir, { alpha, scale, flash: Math.min(flash, cap), flashColor: color });
+    if (this.guard) this.drawGuard(ctx);
     if (this.frozen > 0) this.drawIce(ctx);
     if (this.status.sleep > 0) this.drawSleep(ctx);
     if (this.charging) this.drawCharge(ctx);
+  }
+
+  // Protective bubble while King's Shield / Quick Guard is up.
+  drawGuard(ctx) {
+    const g = this.guard, r = this.radius + 9, y = this.y - this.bodyZ;
+    ctx.globalAlpha = 0.25 + 0.15 * Math.sin(performance.now() / 60);
+    ctx.fillStyle = g.color;
+    ctx.beginPath();
+    ctx.ellipse(this.x, y, r, r * 1.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = g.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   drawSleep(ctx) {
@@ -402,7 +461,7 @@ export class Pokemon {
 
   drawIce(ctx) {
     const w = this.radius * 2 + 8, h = this.species.headZ + 6;
-    const x = Math.round(this.x - w / 2), y = Math.round(this.y - this.z - h + 3);
+    const x = Math.round(this.x - w / 2), y = Math.round(this.y - this.lift - h + 3);
     ctx.globalAlpha = 0.45;
     ctx.fillStyle = '#bfefff';
     ctx.fillRect(x, y, w, h);

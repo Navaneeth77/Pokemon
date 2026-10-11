@@ -1,6 +1,8 @@
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
 import { SPECIES, ROSTER, OPPONENT_TEAM, DEFAULT_TEAM, CLASS_LABEL } from './data/species.js';
+
+const CAT = { physical: 'Physical', special: 'Special', status: 'Status' };
 import { ABILITIES } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
 
@@ -26,6 +28,8 @@ export class UI {
     this.megaPick = {};
     this.lead = 0;
     this.filter = 'all';
+    this.foes = [...OPPONENT_TEAM];
+    this.difficulty = 'medium';
     this.query = '';
     this.logEl = $('#log');
     this.selectOverlay = $('#select-overlay');
@@ -73,8 +77,10 @@ export class UI {
     btn.disabled = true;
     btn.textContent = 'Loading…';
     try {
-      await this.game.ensureSprites([...this.selection, ...OPPONENT_TEAM]);
+      await this.game.ensureSprites([...this.selection, ...this.foes]);
       this.game.selection = [...this.selection];
+      this.game.opponentSelection = [...this.foes];
+      this.game.difficulty = this.difficulty;
       this.game.lead = this.lead;
       this.game.megaPicks = { ...this.megaPick };
       this.game.start();
@@ -118,12 +124,31 @@ export class UI {
         this.applyFilter();
       });
     }
-    $('#foe-team').innerHTML = OPPONENT_TEAM.map(id => {
+    $('#reroll-btn').addEventListener('click', e => {
+      e.currentTarget.blur();
+      this.rollFoes();
+    });
+    for (const b of document.querySelectorAll('#difficulty button')) {
+      b.addEventListener('click', () => {
+        this.difficulty = b.dataset.d;
+        for (const o of document.querySelectorAll('#difficulty button')) o.classList.toggle('on', o === b);
+        b.blur();
+      });
+    }
+    this.rollFoes();
+    this.showInfo(this.selection[0]);
+    this.renderSelection();
+  }
+
+  // The bot fields three random, distinct Pokémon; rolled again for every new battle.
+  rollFoes() {
+    const pool = [...ROSTER];
+    this.foes = [];
+    while (this.foes.length < 3) this.foes.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    $('#foe-team').innerHTML = this.foes.map(id => {
       const s = SPECIES[id];
       return `<span class="foe-mon"><img src="${portrait(s)}" alt="">${s.name}</span>`;
     }).join('');
-    this.showInfo(this.selection[0]);
-    this.renderSelection();
   }
 
   applyFilter() {
@@ -228,12 +253,14 @@ export class UI {
   }
 
   showSelect() {
+    if (this.game?.state === 'select' && this.started) this.rollFoes();
     this.renderSelection();
     this.selectOverlay.classList.remove('hidden');
     this.resultOverlay.classList.add('hidden');
   }
 
   onStart() {
+    this.started = true;
     this.selectOverlay.classList.add('hidden');
     this.resultOverlay.classList.add('hidden');
     this.logEl.innerHTML = '';
@@ -251,7 +278,7 @@ export class UI {
       btn.style.setProperty('--c1', c1);
       btn.style.setProperty('--c2', c2);
       btn.innerHTML = `<span class="key">${i + 1}</span>
-        <span class="info"><span class="name">${m.name}${m.chargeable ? ' <em class="hold">⚡ HOLD</em>' : ''}</span><span class="meta">${m.power} · ${esc(m.tag)}</span></span>
+        <span class="info"><span class="name">${m.name}${m.chargeable ? ' <em class="hold">⚡ HOLD</em>' : ''}</span><span class="meta">${m.cat === 'status' ? CAT.status : `${CAT[m.cat]} · ${m.power}`} · ${esc(m.tag)}</span></span>
         <span class="type">${m.type.toUpperCase()}</span><span class="cd"></span><span class="cdt"></span>`;
       btn.addEventListener('mousedown', e => {
         e.preventDefault();
@@ -265,7 +292,7 @@ export class UI {
       }, { passive: false });
       btn.addEventListener('touchend', () => this.game.playerRelease(i));
       box.appendChild(btn);
-      return { btn, id, cd: btn.querySelector('.cd'), cdt: btn.querySelector('.cdt'), last: '' };
+      return { btn, id, cd: btn.querySelector('.cd'), cdt: btn.querySelector('.cdt'), meta: btn.querySelector('.meta'), last: '' };
     });
     const ult = MOVES[mon.species.ultimate];
     this.ult.name.textContent = ult.name;
@@ -316,6 +343,12 @@ export class UI {
     const p = game.player;
     const locked = game.state !== 'fighting' || p.frozen > 0 || !p.alive || game.switching;
     for (const m of this.moveEls) {
+      // Copy shows which move it would take right now.
+      if (MOVES[m.id].copy) {
+        const src = MOVES[game.lastUsed?.[p.foe?.side]];
+        const text = src ? `Copy → ${src.name} (${src.type})` : 'Nothing to copy yet — wait for the foe to attack';
+        if (m.meta.textContent !== text) m.meta.textContent = text;
+      }
       const cd = game.moveCD(p, m.id), charging = p.charging?.id === m.id;
       const key = `${locked ? 1 : 0}|${Math.ceil(cd * 10)}|${charging ? Math.floor(p.charging.t * 10) : -1}`;
       if (key === m.last) continue;

@@ -29,7 +29,7 @@ const LIST = [
   mon('gyarados', 'Gyarados', ['water', 'flying'], R, [1630, 66, 1.1, 1.05, 1.6], ['waterfall', 'crunch', 'iceFang', 'hyperBeam'], 'hydroPump', 'angerPoint', {
     radius: 20, shadow: [20, 7], mouth: { z: 46, fwd: 12 }, bodyZ: 28, headZ: 62, faintAnim: null,
   }),
-  mon('sceptile', 'Sceptile', ['grass'], R, [1300, 104, 1, 0.95, 0.9], ['leafBlade', 'energyBall', 'quickAttack', 'earthquake'], 'frenzyPlant', 'leafRush', {
+  mon('sceptile', 'Sceptile', ['grass'], R, [1300, 104, 1, 0.95, 0.9], ['dragonPulse', 'leafStorm', 'leafBlade', 'aerialAce'], 'frenzyPlant', 'leafRush', {
     radius: 11, shadow: [10, 4], mouth: { z: 18, fwd: 8 }, bodyZ: 13, headZ: 32, faintAnim: null, mega: ['sceptileMega'],
   }),
   mon('articuno', 'Articuno', ['ice', 'flying'], L, [1400, 88, 1.05, 1.08, 1], ['iceBeam', 'airSlash', 'aerialAce', 'iceShard'], 'blizzard', 'glacialBuild', {
@@ -52,7 +52,7 @@ const LIST = [
 
   // ── New regular Pokémon ──
   mon('venusaur', 'Venusaur', ['grass', 'poison'], R, [1560, 74, 1.05, 1.12, 1.6], ['solarBeam', 'sludgeBomb', 'earthquake', 'razorLeaf'], 'petalBlizzard', 'overgrow'),
-  mon('blastoise', 'Blastoise', ['water'], R, [1560, 74, 1.05, 1.15, 1.6], ['waterPulse', 'flashCannon', 'aquaTail', 'surf'], 'hydroCannon', 'torrent'),
+  mon('blastoise', 'Blastoise', ['water'], R, [1560, 74, 1.05, 1.15, 1.6], ['waterPulse', 'flashCannon', 'rapidSpin', 'surf'], 'hydroCannon', 'torrent'),
   mon('infernape', 'Infernape', ['fire', 'fighting'], R, [1260, 112, 1.1, 0.92, 0.9], ['closeCombat', 'flareBlitz', 'machPunch', 'firePunch'], 'infernoOverdrive', 'ironFist'),
   mon('salamence', 'Salamence', ['dragon', 'flying'], R, [1480, 98, 1.12, 1, 1.3], ['dragonClaw', 'dragonRush', 'flamethrower', 'aerialAce'], 'outrage', 'intimidate', hover(10)),
   mon('scizor', 'Scizor', ['bug', 'steel'], R, [1380, 82, 1.12, 1.12, 1.1], ['bulletPunch', 'xScissor', 'ironHead', 'uTurn'], 'bulletBarrage', 'technician'),
@@ -60,9 +60,22 @@ const LIST = [
   mon('zoroark', 'Zoroark', ['dark'], R, [1180, 112, 1.12, 0.9, 0.9], ['shadowClaw', 'nightDaze', 'flamethrower', 'suckerPunch'], 'illusionAmbush', 'illusion'),
   mon('sylveon', 'Sylveon', ['fairy'], R, [1380, 88, 1.05, 1.08, 0.8], ['moonblastShot', 'dazzlingGleam', 'hyperVoice', 'quickAttack'], 'fairyRibbons', 'pixilate'),
   mon('lapras', 'Lapras', ['water', 'ice'], R, [1700, 68, 1, 1.12, 1.7], ['iceBeam', 'surf', 'bodySlam', 'iceShard'], 'sheerCold', 'shellArmor'),
-  mon('aegislash', 'Aegislash', ['steel', 'ghost'], R, [1400, 72, 1, 1, 1.1], ['sacredSword', 'shadowSneak', 'shadowBall', 'flashCannon'], 'kingsJudgment', 'stanceChange', { forms: ['aegislash-blade'] }),
+  mon('aegislash', 'Aegislash', ['steel', 'ghost'], R, [1400, 72, 1, 1, 1.1], ['shadowSneak', 'kingsShield', 'ironHead', 'sacredSword'], 'kingsJudgment', 'stanceChange', { forms: ['aegislash-blade'] }),
   mon('umbreon', 'Umbreon', ['dark'], R, [1600, 86, 0.95, 1.18, 0.9], ['darkPulse', 'foulPlay', 'quickAttack', 'shadowBall'], 'lunarEclipse', 'moonlitRecovery'),
   mon('espeon', 'Espeon', ['psychic'], R, [1180, 112, 1.1, 0.92, 0.8], ['psychic', 'psybeam', 'swift', 'dazzlingGleam'], 'psychicPrism', 'magicBounce'),
+
+  // ── Newcomers ──
+  mon('scyther', 'Scyther', ['bug', 'flying'], R, [1200, 114, 1.1, 0.95, 0.8], ['xScissor', 'aerialAce', 'quickAttack', 'swordsDance'], 'razorwindExecution', 'swarm', hover(6, 2, 4)),
+  mon('gallade', 'Gallade', ['psychic', 'fighting'], R, [1300, 100, 1.12, 1, 0.9], ['psychoCut', 'sacredSword', 'leafBlade', 'quickGuard'], 'psychicBladeDance', 'sharpness'),
+  mon('togekiss', 'Togekiss', ['fairy', 'flying'], R, [1450, 90, 1.05, 1.08, 0.9], ['airSlash', 'dazzlingGleam', 'auraSphere', 'roost'], 'celestialRadiance', 'sereneWings', hover(12, 2.5, 2.6)),
+  mon('swampert', 'Swampert', ['water', 'ground'], R, [1650, 76, 1.12, 1.12, 1.7], ['mudShot', 'waterfall', 'earthquake', 'icePunch'], 'tidalEarthquake', 'mudArmor'),
+  mon('weavile', 'Weavile', ['dark', 'ice'], R, [1150, 120, 1.12, 0.88, 0.7], ['iceShard', 'nightSlash', 'icePunch', 'swordsDance'], 'frozenShadowBarrage', 'iceClaws'),
+  mon('talonflame', 'Talonflame', ['fire', 'flying'], R, [1250, 116, 1.08, 0.92, 0.7], ['braveBird', 'flameCharge', 'flareBlitz', 'roost'], 'infernoSkyDive', 'galeWings', hover(14, 3, 3.2)),
+  mon('alakazam', 'Alakazam', ['psychic'], R, [1100, 114, 1.2, 0.85, 0.8], ['psychic', 'psybeam', 'shadowBall', 'recover'], 'psychicCataclysm', 'magicGuard'),
+  mon('milotic', 'Milotic', ['water'], R, [1550, 84, 1, 1.15, 1.3], ['surf', 'iceBeam', 'aquaRing', 'dragonTail'], 'sereneTidalTempest', 'marvelScale'),
+  mon('haxorus', 'Haxorus', ['dragon'], R, [1400, 100, 1.2, 1, 1.3], ['dragonClaw', 'breakingSwipe', 'earthquake', 'ironTail'], 'dragonAxeCataclysm', 'moldBreaker'),
+  mon('hydreigon', 'Hydreigon', ['dark', 'dragon'], R, [1500, 98, 1.15, 1, 1.4], ['darkPulse', 'dragonPulse', 'flamethrower', 'flashCannon'], 'triDragonAnnihilation', 'triFury', hover(10, 2, 2.4)),
+  mon('porygonZ', 'Porygon-Z', ['normal'], R, [1350, 96, 1.18, 0.92, 0.9], ['triAttack', 'thunderbolt', 'iceBeam', 'recover'], 'digitalDistortion', 'analytic', { sprite: 'porygon-z', ...hover(8, 2, 3) }),
 
   // ── Legendary ──
   mon('lugia', 'Lugia', ['psychic', 'flying'], L, [1700, 92, 1.08, 1.2, 1.6], ['airSlash', 'surf', 'extrasensory', 'dragonPulse'], 'aeroblast', 'multiscale', hover(14, 2.5, 2.4)),
@@ -96,7 +109,7 @@ const LIST = [
   mon('regidrago', 'Regidrago', ['dragon'], L, [1850, 70, 1.18, 0.95, 2], ['dragonClaw', 'dragonPulse', 'crunch', 'hammerArm'], 'dragonEnergy', 'dragonsMaw'),
 
   // ── Mythical ──
-  mon('mew', 'Mew', ['psychic'], M, [1500, 104, 1.1, 1.05, 0.7], ['psychic', 'auraSphere', 'flamethrower', 'iceBeam'], 'psychicGenesis', 'transformMastery', hover(12, 3, 2.6)),
+  mon('mew', 'Mew', ['psychic'], M, [1500, 104, 1.1, 1.05, 0.7], ['psychic', 'auraSphere', 'flamethrower', 'copy'], 'psychicGenesis', 'transformMastery', hover(12, 3, 2.6)),
   mon('celebi', 'Celebi', ['psychic', 'grass'], M, [1450, 100, 1.05, 1.05, 0.7], ['magicalLeaf', 'psybeam', 'energyBall', 'dazzlingGleam'], 'futureSight', 'naturalCure', hover(12, 3, 2.6)),
   mon('jirachi', 'Jirachi', ['steel', 'psychic'], M, [1500, 98, 1.05, 1.1, 0.8], ['ironHead', 'zenHeadbutt', 'swift', 'flashCannon'], 'doomDesire', 'sereneGrace', hover(10, 3, 2.6)),
   mon('deoxys', 'Deoxys', ['psychic'], M, [1150, 120, 1.25, 0.85, 1], ['psyshock', 'extremeSpeed', 'zenHeadbutt', 'shadowBall'], 'psychoBoost', 'formShift'),

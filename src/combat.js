@@ -1,6 +1,6 @@
 import { typeMultiplier } from './data/types.js';
 import { abilityOf, isContact, typesOf } from './data/abilities.js';
-import { DamageNumber, FloatText, sparkBurst, rand } from './effects.js';
+import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { sfx } from './audio.js';
 
@@ -14,7 +14,7 @@ export function soften(m) {
 }
 
 // Combo roles from a move's own properties: quick openers chain into launchers, launchers into finishers.
-export const comboRole = m => (m.ultimate ? 3 : m.cooldown <= 1.6 ? 0 : m.cooldown <= 2.5 ? 1 : 2);
+export const comboRole = m => (m.ultimate || m.cat === 'status' ? 3 : m.cooldown <= 1.6 ? 0 : m.cooldown <= 2.5 ? 1 : 2);
 export const COMBO_WINDOW = 1.5;
 const ROLE_NAME = ['OPENER', 'LAUNCHER', 'FINISHER'];
 
@@ -36,7 +36,7 @@ function weatherMult(game, type) {
 export function applyHit(game, attacker, target, move, o = {}) {
   if (game.state !== 'fighting' || !target.alive || target.hidden || (target.invuln && !o.unblockable)) return false;
   const stack = o.stack ?? {};
-  const A = abilityOf(attacker), D = abilityOf(target), Dfull = D;
+  const A = abilityOf(attacker), Dfull = abilityOf(target), D = A.moldBreaker ? {} : Dfull;
   const head = target.y - target.headZ;
   if (target.dodgeInv > 0 && !o.unblockable) {
     if (!stack.dodged) {
@@ -44,6 +44,18 @@ export function applyHit(game, attacker, target, move, o = {}) {
       game.spawn(new FloatText(target.x, head - 10, 'DODGED!', '#bff3ff'));
       target.gainUlt(game, 3);
       Dfull.onDodged?.(game, target, attacker);
+    }
+    return false;
+  }
+
+  // King's Shield / Quick Guard: most of the hit is blocked; contact against King's Shield saps attack.
+  const guard = !o.unblockable && target.guard;
+  if (guard && guard.mult === 0) {
+    if (!stack.blocked) {
+      stack.blocked = true;
+      game.spawn(new FloatText(target.x, head - 10, 'BLOCKED!', guard.color));
+      game.spawn(new Ring(target.x, target.y, { z: target.bodyZ, r0: 6, r1: target.radius + 18, life: 0.25, color: guard.color, width: 3, layer: 'air' }));
+      sfx.clang();
     }
     return false;
   }
@@ -102,6 +114,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   let dmg = power * stats * eff * stab * convertMult * auraMult * weatherMult(game, type) * comboMult * (crit ? 1.5 : 1) * rand(0.92, 1.04);
   dmg *= (A.dealMult?.(game, attacker, target, move, info) ?? 1);
   if (move.hex && (target.frozen > 0 || Object.values(target.status).some(v => v > 0))) dmg *= 1.6;
+  // Aerial combos: each hit on a juggled foe scales down; flyers fight better in the air.
+  if (target.air) dmg *= 0.9 ** target.air.juggle * (attacker.species.fly ? 1.15 : 1);
 
   if (!o.unblockable && D.evade?.(game, target, attacker, move, dmg)) {
     game.spawn(new FloatText(target.x, head - 10, 'EVADED!', '#d8c8ff'));
@@ -113,6 +127,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     return false;
   }
   dmg *= (D.takeMult?.(game, target, attacker, move, info) ?? 1);
+  if (guard) dmg *= guard.mult;
   dmg = Math.max(1, Math.round(dmg));
   if (target.shield > 0) {
     const soak = Math.min(target.shield, dmg);
@@ -134,11 +149,43 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.spawn(new FloatText(target.x, head - 20, 'BREAK FREE!', '#9fffc8', 8));
   }
   target.combo.t = 0;
-  const stagger = target.escapeT > 0 ? 0 : (o.stagger ?? 0.22) * (c.uses > 3 ? 0.6 : 1) * (Dfull.staggerMult ?? 1);
+  // Physical reactions: light hits barely move the foe, heavy ones send it flying; special moves push less.
+  const weight = move.ultimate ? 1.4 : power < 70 ? 0.6 : power >= 105 ? 1.3 : 1;
+  const catMult = move.cat === 'special' ? 0.8 : 1;
+  const stagger = target.escapeT > 0 || guard ? 0 : (o.stagger ?? 0.22) * (c.uses > 3 ? 0.6 : 1) * (Dfull.staggerMult ?? 1) * (power < 70 ? 0.75 : power >= 105 ? 1.2 : 1);
+  let dirX = o.dirX ?? 0, dirY = o.dirY ?? 0;
+  if (move.pull) {
+    // Pulls the foe in toward the attacker instead (stopping short of it).
+    dirX = -dirX;
+    dirY = -dirY;
+  }
+  const knock = guard ? 0 : (o.knockback ?? 100) * weight * catMult * (move.push ?? 1) * (move.pull ? 0.6 : 1) * (Dfull.kbMult ?? 1);
+  // Heavy hits and launchers interrupt the foe's attack (never an ultimate).
+  const interrupt = !guard && !move.ultimate && (power >= 100 || move.launch) && target.action && !target.action.move.ultimate;
 
-  target.takeHit(dmg, {
-    dirX: o.dirX ?? 0, dirY: o.dirY ?? 0, knockback: (o.knockback ?? 100) * (Dfull.kbMult ?? 1), stagger, flinch,
-  }, game);
+  target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
+
+  // Launchers start an aerial combo; up to three hits keep a juggled foe up, then it drops.
+  if (target.alive && !guard && !(Dfull.kbMult < 1) && !target.action?.move.ultimate) {
+    const air = target.air;
+    let launch = (move.launch ?? (move.ultimate && (o.knockback ?? 0) >= 280 ? 240 : 0)) * (move.cat === 'special' ? 0.6 : 1);
+    if (air && !stack.juggled) {
+      stack.juggled = true;
+      air.juggle++;
+      if (air.juggle <= 3) {
+        launch = Math.max(launch, 150) * 0.78 ** air.juggle;
+        game.comboPop(attacker, `AIR COMBO ×${air.juggle}`, air.juggle >= 3);
+      } else {
+        launch = 0;
+        air.g += 900;
+      }
+    }
+    if (launch > 0 && (!air || air.juggle <= 3) && target.launch(launch) && !air) game.comboPop(attacker, 'LAUNCHED!', false);
+  }
+  if (guard?.punish && contact && attacker.alive && !stack.punished) {
+    stack.punished = true;
+    game.buff(attacker, 'atk', 0.75, 4);
+  }
   wakeOnHit(target);
 
   // Ultimate charge: from damage dealt and taken (never from ultimates), capped per move use.
@@ -189,12 +236,17 @@ export function applyHit(game, attacker, target, move, o = {}) {
     if (o.freezeChance) rolls.push(['freeze', o.freezeChance]);
     if (o.burnChance) rolls.push(['burn', o.burnChance]);
     if (move.status) rolls.push(move.status);
+    if (move.statusPool) rolls.push(move.statusPool[Math.floor(Math.random() * move.statusPool.length)]);
     if (!rolls.length && TYPE_STATUS[type]) rolls.push(TYPE_STATUS[type]);
     for (const [name, chance] of rolls) {
       if (Math.random() < chance * serene) applyStatus(game, target, name, { source: attacker });
     }
   }
 
+  if (move.debuff && target.alive && !stack.debuffed) {
+    stack.debuffed = true;
+    game.buff(target, ...move.debuff);
+  }
   if (move.recoil && attacker.alive && !stack.recoiled) {
     stack.recoiled = true;
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');

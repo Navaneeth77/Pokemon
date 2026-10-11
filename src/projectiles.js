@@ -12,6 +12,8 @@ class Projectile {
     this.dead = false;
     this.stack = {};
     this.span = Math.max(30, Math.hypot(this.target.x - x, this.target.y - y));
+    this.elem = move.type; // element used for projectile-vs-attack reactions
+    this.reacted = new Set();
   }
 
   // Height descends from the launch point toward the target's body height.
@@ -46,6 +48,7 @@ class Projectile {
 export class AirBlade extends Projectile {
   constructor(game, user, move, x, y, z, angle) {
     super(game, user, move, x, y, z, angle, 330, move.range, 8);
+    this.elem = 'flying';
   }
 
   trail() {
@@ -152,7 +155,16 @@ Object.assign(ORBS, {
   gem: orb([255, 150, 200], '#ffffff', ['#ffffff', '#ffc0e0', '#c0508a'], (g, x, y) => g.marks.fracture(x, y, 7, 4), { radius: 6, scale: 0.7, speed: 340, knockback: 60 }),
   leaf: orb([130, 235, 90], '#f6ffe6', ['#e0ffc0', '#8ad84f', '#3f8f2c'], (g, x, y) => g.marks.leaves(x, y, 7),
     { radius: 6, scale: 0.65, speed: 300, knockback: 50, homing: 1.8, leaves: true }),
+  stormLeaf: orb([150, 245, 100], '#ffffff', ['#ffffff', '#b8ff7a', '#3f8f2c'], (g, x, y) => g.marks.leaves(x, y, 10),
+    { radius: 8, scale: 0.85, speed: 330, knockback: 70, homing: 2.6, leaves: true }),
+  electric: orb([255, 230, 90], '#ffffff', ['#ffffff', '#fff27a', '#e0b000'], (g, x, y) => g.marks.burn(x, y, 9), { speed: 320, radius: 8 }),
+  mud: orb([150, 110, 60], '#e8d0a0', ['#d8b878', '#8a6630', '#4a3418'], (g, x, y) => g.marks.fracture(x, y, 9, 4), { speed: 250, radius: 9 }),
 });
+// Element of each orb style (Tri Attack's orbs carry their own element).
+const STYLE_ELEM = {
+  fire: 'fire', bigFire: 'fire', water: 'water', shuriken: 'water', ice: 'ice', electric: 'electric', grass: 'grass', leaf: 'grass', stormLeaf: 'grass',
+  mud: 'ground', psy: 'psychic', fairy: 'fairy', moon: 'fairy', dark: 'dark', ghost: 'ghost', poison: 'poison', aura: 'fighting', gem: 'rock',
+};
 
 const EVO_COLORS = [[255, 120, 70], [80, 150, 255], [255, 220, 60], [190, 120, 255], [60, 50, 80], [120, 220, 110], [120, 210, 255]];
 
@@ -168,6 +180,7 @@ export class Orb extends Projectile {
     super(game, user, move, x, y, z, angle, s.speed, move.range, s.radius * k);
     this.s = k > 1 ? { ...s, scale: (s.scale ?? 1) * k, knockback: s.knockback * k } : s;
     this.power = move.power;
+    this.elem = STYLE_ELEM[style] ?? move.type;
   }
 
   update(dt) {

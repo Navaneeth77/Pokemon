@@ -238,6 +238,9 @@ export class Hud {
       const ab = abilityOf(mon).pill?.(mon);
       if (ab) tags.push(ab);
       if (mon.shield > 0 && !ab) tags.push(['SHIELD', '#ff70b0']);
+      if (mon.air) tags.unshift([`AIRBORNE${mon.air.juggle ? ` ×${mon.air.juggle}` : ''}`, '#5a6ad8']);
+      if (mon.guard) tags.push([mon.guard.label, '#a8881a']);
+      if (mon.regen) tags.push(['AQUA RING', '#3a8ae8']);
       if (!tags.length) continue;
       ctx.font = '700 4.5px "Pixelify Sans"';
       const widths = tags.map(([l]) => Math.ceil(ctx.measureText(l).width) + 5);

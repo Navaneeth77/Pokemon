@@ -99,9 +99,14 @@ class MoveAction {
     return { ...this.front(m.fwd), z: m.z + this.user.z };
   }
 
+  // Contact moves from the ground can't reach a foe juggled high above; flyers and aerial moves can.
+  canReachAir() {
+    return (this.target.air?.h ?? 0) < 60 || !!this.user.species.fly || !!this.move.aerial;
+  }
+
   inReach(extra) {
     const u = this.user, t = this.target;
-    if (!t.alive || t.hidden) return false;
+    if (!t.alive || t.hidden || !this.canReachAir()) return false;
     const d = u.distTo(t);
     if (d > u.radius + t.radius + extra) return false;
     const off = Math.abs(turnToward(this.aim, u.aimAt(t), Infinity) - this.aim);
@@ -414,7 +419,7 @@ class Dash extends MoveAction {
       this.ghostT = 0.025;
       this.game.spawn(new Afterimage(u, 0.22, c.ghost));
     }
-    if (!this.struck && (u.distTo(t) <= u.radius + t.radius + 8 || (this.sure && k >= 1))) {
+    if (!this.struck && this.canReachAir() && (u.distTo(t) <= u.radius + t.radius + 8 || (this.sure && k >= 1))) {
       this.struck = true;
       this.impact();
     }
@@ -487,8 +492,9 @@ class Shot extends MoveAction {
   fire(off, i) {
     this.retarget();
     const c = this.move.shot, m = this.mouth(), ang = this.aim + off;
-    this.game.spawn(c.style
-      ? new Orb(this.game, this.user, this.move, m.x, m.y, m.z, ang, c.style, i)
+    const style = c.styles ? c.styles[i % c.styles.length] : c.style;
+    this.game.spawn(style
+      ? new Orb(this.game, this.user, this.move, m.x, m.y, m.z, ang, style, i)
       : new AirBlade(this.game, this.user, this.move, m.x, m.y, m.z, ang));
     sfx[c.sound]();
     this.allowMove = true;
@@ -600,6 +606,93 @@ class Shockwave extends MoveAction {
       }));
     }
     this.at(this.t + 0.42, () => this.finish(0.15));
+  }
+}
+
+// Status moves: self buffs, healing, regeneration and protective stances.
+class Utility extends MoveAction {
+  start() {
+    const c = this.move.util;
+    this.anim(c.anim ?? 'Charge', 1);
+    this.at(c.at ?? 0.22, () => UTIL_FX[c.kind](this, this.game, this.user, c));
+    this.at(c.end ?? 0.5, () => this.finish(0.08));
+  }
+}
+
+const UTIL_FX = {
+  buff(a, g, u, c) {
+    g.buff(u, c.stat, c.mult, c.dur);
+    // Swords Dance: blades circle the user.
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      g.spawn(new SlashArc(u.x, u.y, u.bodyZ, ang, { radius: u.radius + 10, spread: 1.2, colors: ['#dfe7f2', '#ffffff'], width: 3, life: 0.4 }));
+    }
+    g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 40, life: 0.4, color: '#ffe680', width: 3 }));
+    sfx.shard();
+  },
+  heal(a, g, u, c) {
+    g.heal(u, u.maxHp * c.pct);
+    g.spawn(new Glow(u.x, u.y, u.bodyZ, 34, [140, 255, 170], 0.45));
+    g.spawn(new Ring(u.x, u.y, { r0: 34, r1: 6, life: 0.4, color: '#9fffc8', width: 3 }));
+    if (c.land) u.landT = 1.2; // Roost: touches down to rest
+    sfx.pulse();
+  },
+  regen(a, g, u, c) {
+    u.regen = { t: c.dur, rate: c.rate, acc: 0 };
+    g.spawn(new Ring(u.x, u.y, { r0: 8, r1: 30, life: 0.5, color: '#9fd8ff', width: 3 }));
+    waterSplash(g, u.x, u.y);
+  },
+  guard(a, g, u, c) {
+    if (c.shieldForm && u.ab.blade) g.toggleForm(u, false);
+    u.guard = { t: c.dur, mult: c.mult, punish: !!c.punish, color: c.color, label: c.label };
+    g.spawn(new Ring(u.x, u.y, { z: u.bodyZ, r0: 4, r1: u.radius + 16, life: 0.3, color: c.color, width: 3, layer: 'air' }));
+    sfx.clang();
+  },
+};
+
+// Rapid Spin: spins in place while drifting forward, spraying water all around; hits anything close.
+class Spin extends MoveAction {
+  start() {
+    const c = this.move.spin;
+    this.allowMove = true;
+    this.hits = 0;
+    this.tickT = 0.05;
+    this.turnT = 0;
+    this.user.sprite.play('Rotate', { loop: true, force: true, speed: 1.6 });
+    sfx.whoosh();
+    sfx.hydro(c.dur);
+    this.at(c.dur, () => this.finish(0.15));
+  }
+
+  tick(dt) {
+    const c = this.move.spin, u = this.user, g = this.game, t = this.target;
+    this.spinning = true;
+    this.retarget(1.5 * dt);
+    u.x = clampX(u.x + Math.cos(this.aim) * c.drive * dt);
+    u.y = clampY(u.y + Math.sin(this.aim) * c.drive * dt);
+    // Cycling the facing direction makes the sprite visibly spin.
+    if ((this.turnT -= dt) <= 0) {
+      this.turnT = 0.045;
+      u.dir = (u.dir + 1) % 8;
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(150, 230);
+      g.particles.spawn({ x: u.x + Math.cos(a) * 8, y: u.y + Math.sin(a) * 6, z: u.bodyZ * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, vz: rand(20, 70), gz: 260, life: 0.32, size: rand(2, 3.5), sizeEnd: 1, colors: WATER_JET });
+    }
+    if (Math.random() < dt * 8) g.marks.wet(u.x + rand(-c.radius, c.radius) * 0.7, u.y + rand(-c.radius, c.radius) * 0.5, rand(6, 10));
+    if ((this.tickT -= dt) > 0) return;
+    this.tickT = c.tick;
+    g.spawn(new Ring(u.x, u.y, { r0: 6, r1: c.radius, life: 0.22, color: '#bfe6ff', width: 2 }));
+    const d = u.distTo(t);
+    if (this.hits < c.maxHits && t.alive && !t.hidden && d <= c.radius + t.radius) {
+      this.hits++;
+      this.hit({ dirX: (t.x - u.x) / (d || 1), dirY: (t.y - u.y) / (d || 1), knockback: c.knockback, stagger: 0.22, hitstop: 0.03 });
+      waterSplash(g, t.x, t.y);
+    }
+  }
+
+  cleanup() {
+    this.spinning = false;
   }
 }
 
@@ -1065,6 +1158,7 @@ class Slam extends MoveAction {
 // `land` runs when it hits the ground; the held Pokémon can't act or move meanwhile.
 function telekinesis(action, mon, to, dur, height, land) {
   mon.cancelAction();
+  mon.air = null;
   mon.held = true;
   mon.zOverride = mon.z;
   action.tk = { mon, from: { x: mon.x, y: mon.y, z: mon.z }, to, t: 0, dur, height, land };
@@ -2234,6 +2328,33 @@ const NEW_MOVES = {
   }, { status: ['para', 0.25] }),
 };
 
+const util = (name, type, cooldown, tag, u, more = {}) => ({ name, type, power: 0, cooldown, range: 999, minRange: 0, ai: 'self', tag, Action: Utility, util: u, ...more });
+
+Object.assign(NEW_MOVES, {
+  swordsDance: util('Swords Dance', 'normal', 7, 'Attack +40% for 6s', { kind: 'buff', stat: 'atk', mult: 1.4, dur: 6, anim: 'Pose' }),
+  roost: util('Roost', 'flying', 9, 'Lands to heal 25% HP', { kind: 'heal', pct: 0.25, land: true }),
+  recover: util('Recover', 'normal', 10, 'Heals 30% HP', { kind: 'heal', pct: 0.3 }),
+  aquaRing: util('Aqua Ring', 'water', 12, 'Regenerates 1.5% HP/s for 8s', { kind: 'regen', dur: 8, rate: 0.015 }),
+  quickGuard: util('Quick Guard', 'fighting', 7, 'Blocks every hit for 0.6s', { kind: 'guard', dur: 0.6, mult: 0, color: '#ffd8a0', label: 'GUARD', at: 0.02, end: 0.25 }),
+  kingsShield: util("King's Shield", 'steel', 7, 'Shield Forme · blocks 80% for 1.2s · contact lowers foe attack', {
+    kind: 'guard', dur: 1.2, mult: 0.2, punish: true, shieldForm: true, color: '#ffe680', label: 'KING\'S SHIELD', at: 0.02, end: 0.3,
+  }),
+  copy: { name: 'Copy', type: 'normal', power: 0, cooldown: 1, range: 999, minRange: 0, ai: 'self', tag: "Uses the foe's last move", copy: true },
+
+  rapidSpin: { name: 'Rapid Spin', type: 'water', power: 30, cooldown: 3, range: 70, ai: 'area', tag: 'Spinning water spray · up to 4 hits', Action: Spin,
+    spin: { dur: 0.9, drive: 70, tick: 0.2, maxHits: 4, radius: 36, knockback: 150 } },
+  mudShot: shot('Mud Shot', 'ground', 60, 1.6, 'Mud ball · may slow', { style: 'mud', sound: 'splash' }, { status: ['slow', 0.5] }),
+  leafStorm: shot('Leaf Storm', 'grass', 26, 5, '6 homing leaves · lowers own attack', {
+    style: 'stormLeaf', spread: [-0.3, -0.18, -0.06, 0.06, 0.18, 0.3], stagger: 0.03, sound: 'shard', charge: 0.3, chargeColors: ['#ffffff', '#c8ff8a', '#3f9a3a'], glow: [140, 240, 100],
+  }, { selfBuff: ['atk', 0.8, 4] }),
+  triAttack: shot('Tri Attack', 'normal', 30, 2, 'Fire · ice · electric orbs', { styles: ['fire', 'ice', 'electric'], spread: [-0.12, 0, 0.12], stagger: 0.05 },
+    { statusPool: [['burn', 0.2], ['freeze', 0.1], ['para', 0.2]] }),
+  dragonTail: melee('Dragon Tail', 'dragon', 70, 2.4, 'Tail whip · hurls the foe away', { anim: 'Rotate', colors: ['#7a4cf2', '#e0d0ff'], lunge: 30,
+    hits: [{ knockback: 260, stagger: 0.45, hitstop: 0.06 }] }, { push: 1.8 }),
+  breakingSwipe: melee('Breaking Swipe', 'dragon', 70, 1.8, "Wide swipe · lowers the foe's attack", { anim: 'Swing', colors: ['#8a5cff', '#f0e0ff'], spread: 3.2, width: 7,
+    hits: [{ knockback: 150, hitstop: 0.05 }] }, { debuff: ['atk', 0.85, 4] }),
+});
+
 const sig = (name, type, power, c, beats, len) => ({ name, type, power, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate, sig: { c, beats, len } });
 
 const SIGNATURES = {
@@ -2317,6 +2438,29 @@ const SIGNATURES = {
   soulStealing: sig('Soul-Stealing 7-Star Strike', 'ghost', 290, ['#d0ffe0', '#3a8a5a', '#0a1a10'], [[0, 'dim', { alpha: 0.75 }], [0.1, 'flurry', { n: 7, frac: 0.6 }], [1.2, 'dive', { frac: 0.4 }]], 2.6),
   plasmaFists: sig('Plasma Fists', 'electric', 280, ['#ffffff', '#ffe066', '#3a8ae8'],
     [[0, 'dim'], [0.1, 'flurry', { n: 6, frac: 0.6 }], [1, 'sky', { kind: 'bolt', n: 3, frac: 0.4 }], [1.5, 'status', { name: 'para' }]]),
+  razorwindExecution: sig('Razorwind Execution', 'bug', 280, ['#ffffff', '#a8d848', '#2a3a10'],
+    [[0, 'dim'], [0.1, 'flurry', { n: 8, frac: 0.55 }], [1.2, 'slash', { n: 3, frac: 0.45 }]], 2.1),
+  psychicBladeDance: sig('Psychic Blade Dance', 'psychic', 280, ['#ffffff', '#ff8ad0', '#2a8a5a'],
+    [[0, 'dim'], [0.1, 'slash', { n: 2, frac: 0.3 }], [0.6, 'flurry', { n: 6, frac: 0.4 }], [1.5, 'slash', { n: 1, big: true, frac: 0.3 }]], 2.2),
+  celestialRadiance: sig('Celestial Radiance', 'fairy', 280, ['#ffffff', '#fff2b0', '#f080b0'],
+    [[0, 'dim'], [0.1, 'rain', { style: 'star', n: 14, frac: 0.4 }], [1.1, 'dome', { frac: 0.35 }], [1.5, 'sky', { kind: 'light', frac: 0.25 }]], 2.2),
+  tidalEarthquake: sig('Tidal Earthquake', 'ground', 285, ['#e6f6ff', '#5aa6f0', '#6a4a20'],
+    [[0, 'dim'], [0.1, 'quake', { frac: 0.35 }], [0.4, 'wave', { frac: 0.4 }], [1.4, 'spikes', { style: 'stone', frac: 0.25 }]], 2.8),
+  frozenShadowBarrage: sig('Frozen Shadow Barrage', 'ice', 280, ['#ffffff', '#9be6ff', '#2a1838'],
+    [[0, 'dim', { alpha: 0.6 }], [0.1, 'flurry', { n: 7, frac: 0.5 }], [1, 'spikes', { style: 'ice', frac: 0.3 }], [2.1, 'nova', { frac: 0.2 }], [2.1, 'status', { name: 'freeze', dur: 1 }]], 2.6),
+  infernoSkyDive: sig('Inferno Sky Dive', 'fire', 285, ['#fff0a0', '#ff7a2a', '#8a1a08'],
+    [[0, 'dim'], [0.1, 'rain', { n: 10, frac: 0.3 }], [0.5, 'dive', { frac: 0.5, height: 360 }], [1.4, 'pillars', { n: 4, frac: 0.2 }]], 2.3),
+  psychicCataclysm: sig('Psychic Cataclysm', 'psychic', 285, ['#ffffff', '#ffb0e0', '#a04aa0'],
+    [[0, 'dim', { alpha: 0.6 }], [0.1, 'throw', { frac: 0.35 }], [1.4, 'barrage', { n: 8, from: 'ring', frac: 0.35 }], [2.3, 'dome', { frac: 0.3 }]], 3),
+  sereneTidalTempest: sig('Serene Tidal Tempest', 'water', 280, ['#ffffff', '#9fe8ff', '#f080b0'],
+    [[0, 'dim'], [0.1, 'vortex', { frac: 0.25, dur: 0.7 }], [0.9, 'wave', { frac: 0.45 }], [1, 'heal', { pct: 0.12 }], [1.8, 'nova', { frac: 0.3 }], [1.9, 'status', { name: 'slow', dur: 3 }]], 2.4),
+  dragonAxeCataclysm: sig('Dragon Axe Cataclysm', 'dragon', 290, ['#fff0a0', '#c8a030', '#3a2a10'],
+    [[0, 'dim', { alpha: 0.6 }], [0.1, 'rush', { passes: 2, frac: 0.3 }], [0.8, 'slash', { n: 2, big: true, frac: 0.45 }], [1.4, 'quake', { frac: 0.25 }]], 2.2),
+  triDragonAnnihilation: sig('Tri-Dragon Annihilation', 'dark', 290, ['#e0c8ff', '#6a3a8a', '#1a0a30'],
+    [[0, 'dim', { alpha: 0.65 }], [0, 'charge', { dur: 0.6 }], [0.6, 'beam', { width: 22, off: -12, frac: 0.25 }], [0.72, 'beam', { width: 22, frac: 0.25 }],
+      [0.84, 'beam', { width: 22, off: 12, frac: 0.25 }], [1.4, 'nova', { frac: 0.25 }]]),
+  digitalDistortion: sig('Digital Distortion', 'normal', 285, ['#ffffff', '#ff5ac8', '#3a6ad0'],
+    [[0, 'dim', { alpha: 0.6 }], [0.1, 'barrage', { n: 9, frac: 0.4 }], [1, 'sky', { kind: 'bolt', n: 3, frac: 0.3 }], [1.5, 'vortex', { frac: 0.3, dur: 0.5 }], [2.1, 'status', { name: 'para' }]], 2.6),
   malignantChain: sig('Malignant Chain', 'poison', 280, ['#ffe0ff', '#c060d0', '#3a0a3a'],
     [[0, 'dim', { alpha: 0.65 }], [0.1, 'throw', { frac: 0.5 }], [1.4, 'vortex', { frac: 0.5, dur: 0.6 }], [2, 'status', { name: 'poison', dur: 7 }]], 2.6),
 };
@@ -2505,6 +2649,24 @@ export const MOVES = {
   moonblast: { name: 'Moonblast', type: 'fairy', power: 270, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
 };
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
+
+// Physical moves hit up close and knock harder; special moves work at range; status moves don't attack.
+for (const m of Object.values(MOVES)) {
+  m.cat = m.util || m.copy ? 'status' : m.shot || m.beam || m.stream || m.shockwave || m.ultimate || ['thunderbolt', 'psychic'].includes(m.id) ? 'special' : 'physical';
+}
+// Moves that send the foe flying upward (start of an aerial combo), with launch speed.
+const LAUNCH = {
+  aerialAce: 230, ironTail: 220, aquaTail: 200, hammerArm: 240, dragonTail: 160, breakingSwipe: 170, sacredSword: 200, blazeKick: 190, extremeSpeed: 180,
+  megahorn: 240, waterfall: 260, closeCombat: 150, playRough: 150, xScissor: 170, ironHead: 180, zenHeadbutt: 170, bodySlam: 200, earthquake: 230, voltTackle: 200,
+  flareBlitz: 220, dragonRush: 220, drillPeck: 190, braveBird: 200, uTurn: 160, firePunch: 170, thunderPunch: 170, icePunch: 170, shadowPunch: 150,
+};
+for (const [id, v] of Object.entries(LAUNCH)) MOVES[id].launch = v;
+// Moves that can follow a juggled foe into the air.
+for (const id of ['aerialAce', 'braveBird', 'drillPeck', 'uTurn', 'extremeSpeed', 'quickAttack', 'xScissor', 'shadowSneak', 'machPunch', 'aquaJet', 'voltSwitch', 'suckerPunch']) MOVES[id].aerial = true;
+// Slicing moves (Gallade's Sharpness).
+for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw']) MOVES[id].slice = true;
+// Moves that drag the foe toward the user instead of pushing it away.
+for (const id of ['psychoCut', 'shadowSneak', 'hex']) MOVES[id].pull = true;
 
 // Hold-to-charge moves: up to +60% power, bigger projectiles and beams, and a shorter wind-up on release.
 const CHARGEABLE = ['hyperBeam', 'solarBeam', 'dragonPulse', 'darkPulse', 'iceBeam', 'flashCannon', 'psybeam', 'auroraBeam', 'auraSphere', 'shadowBall',

@@ -2,6 +2,13 @@ import { MOVES } from './moves.js';
 import { BOUNDS } from './arena.js';
 import { typeMultiplier } from './data/types.js';
 
+// Difficulty only changes behaviour (reaction speed, dodging, charging, combos) — never damage or HP.
+const LEVELS = {
+  easy: { gap: [1.7, 2.7], dodge: 0.08, charge: 0, ultWait: 4, typeAware: false, chain: false, mega: 0.45, guard: 0.3 },
+  medium: { gap: [0.9, 1.8], dodge: 0.3, charge: 0.35, ultWait: 0.8, typeAware: true, chain: false, mega: 0.7, guard: 0.6 },
+  hard: { gap: [0.45, 0.95], dodge: 0.55, charge: 0.45, ultWait: 0, typeAware: true, chain: true, mega: 0.9, guard: 0.9 },
+};
+
 // Drives whichever opponent Pokémon is currently active.
 export class OpponentAI {
   constructor() {
@@ -21,11 +28,12 @@ export class OpponentAI {
 
   // Called when the player starts an attack: sometimes sidestep it a moment later.
   onThreat() {
-    if (Math.random() < 0.3) this.dodgeIn = 0.1 + Math.random() * 0.2;
+    if (Math.random() < (this.cfg?.dodge ?? 0.3)) this.dodgeIn = 0.1 + Math.random() * 0.2;
   }
 
   update(dt, game) {
     const me = game.opponent, foe = game.player;
+    const cfg = (this.cfg = LEVELS[game.difficulty] ?? LEVELS.medium);
     me.input.x = me.input.y = 0;
     if (game.state !== 'fighting' || me.hidden || !me.alive || !foe.alive || foe.hidden) return;
 
@@ -42,9 +50,11 @@ export class OpponentAI {
     }
     // Mega Evolve once things get serious.
     const team = game.opponentTeam;
-    if (me.species.mega?.length && !team.megaUsed && me.hp < me.maxHp * 0.7 && me.canAct() && Math.random() < dt * 0.8) game.megaEvolve(me);
+    if (me.species.mega?.length && !team.megaUsed && me.hp < me.maxHp * cfg.mega && me.canAct() && Math.random() < dt * 0.8) game.megaEvolve(me);
     // A full meter is spent as soon as there is an opening.
-    if (me.ult >= 100 && me.canAct() && this.gap <= 0.3 && game.useMove(me, me.species.ultimate)) {
+    if (me.ult >= 100) this.ultT = (this.ultT ?? 0) + dt;
+    if (me.ult >= 100 && this.ultT >= cfg.ultWait && me.canAct() && this.gap <= 0.3 && game.useMove(me, me.species.ultimate)) {
+      this.ultT = 0;
       this.gap = 1.2;
       return;
     }
@@ -63,16 +73,21 @@ export class OpponentAI {
       this.strafeT = 1.2 + Math.random() * 1.8;
     }
 
+    // Hard bots cancel recovery into a follow-up the moment a hit lands (combo chains).
+    if (cfg.chain && me.chainT > 0 && !me.canAct()) {
+      const id = this.pickMove(me, foe, dist, game);
+      if (id && game.useMove(me, id)) return;
+    }
     if (me.canAct() && this.gap <= 0) {
-      const id = this.pickMove(me, foe, dist);
+      const id = this.pickMove(me, foe, dist, game);
       // Sometimes charge a chargeable move at range instead of firing it straight away.
-      if (id && MOVES[id].chargeable && dist > 150 && Math.random() < 0.35 && game.beginCharge(me, id)) {
+      if (id && MOVES[id].chargeable && dist > 150 && Math.random() < cfg.charge && game.beginCharge(me, id)) {
         this.chargeFor = 0.4 + Math.random() * 0.8;
         this.gap = 1.2;
         return;
       }
       if (id && game.useMove(me, id)) {
-        this.gap = 0.9 + Math.random() * 0.9;
+        this.gap = cfg.gap[0] + Math.random() * (cfg.gap[1] - cfg.gap[0]);
         if (MOVES[id].ai !== 'ranged') {
           this.plan = 'range';
           this.planT = 1.5;
@@ -103,19 +118,35 @@ export class OpponentAI {
     }
   }
 
+  // When status moves are worth it: heal when hurt, guard against an incoming attack, buff at range…
+  selfWeight(me, foe, mv, dist, game) {
+    if (mv.copy) return game.lastUsed[foe.side] && MOVES[game.lastUsed[foe.side]].cat !== 'status' ? 1.3 : 0;
+    const u = mv.util;
+    if (u.kind === 'heal') return me.hp < me.maxHp * 0.5 ? 2.5 : 0;
+    if (u.kind === 'regen') return !me.regen && me.hp < me.maxHp * 0.8 ? 1.2 : 0;
+    if (u.kind === 'buff') return !(me.buffs[u.stat]?.t > 0) && dist > 110 ? 1.2 : 0;
+    if (u.kind === 'guard') return foe.action && dist < 160 && Math.random() < (this.cfg?.guard ?? 0.6) ? 4 : 0;
+    return 0;
+  }
+
   // Weighted pick among ready moves that suit the current distance, favouring good type matchups.
-  pickMove(me, foe, dist) {
+  pickMove(me, foe, dist, game) {
     const options = [];
     for (const id of me.species.moves) {
       const mv = MOVES[id];
       if (me.cooldown(id) > 0) continue;
       let w = 0;
+      if (mv.ai === 'self') {
+        w = this.selfWeight(me, foe, mv, dist, game);
+        if (w) options.push([id, w]);
+        continue;
+      }
       if (mv.ai === 'melee' && dist <= me.radius + foe.radius + mv.reach + 6) w = 3;
       else if (mv.ai === 'area' && dist <= mv.range) w = 2.5;
       else if (mv.ai === 'dash' && dist >= mv.minRange && dist <= mv.range) w = 1.6;
       else if (mv.ai === 'ranged' && dist >= (mv.minRange ?? 0) && dist <= mv.range) w = mv.aiWeight ?? 1;
       if (!w) continue;
-      const eff = typeMultiplier(mv.type, foe.species.types);
+      const eff = this.cfg?.typeAware === false ? 1 : typeMultiplier(mv.type, foe.species.types);
       options.push([id, w * (eff > 1 ? 2 : eff < 1 ? 0.5 : 1)]);
     }
     const total = options.reduce((s, [, w]) => s + w, 0);
