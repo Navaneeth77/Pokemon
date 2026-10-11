@@ -22,11 +22,11 @@ import {
   ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash,
 } from './effects.js';
 import { initAudio, sfx } from './audio.js';
-import { music } from './music.js';
+import { music, ARENA_TRACK } from './music.js';
 
 export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
-const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
+export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -109,7 +109,7 @@ export class Game {
     this.particles.clear();
     this.arena.reset();
     this.playerTeam.reset(this.lead, HOME.player);
-    this.opponentTeam.reset(0, HOME.opponent);
+    this.opponentTeam.reset(this.foeLead ?? 0, HOME.opponent);
     this.link();
     this.red.reset();
     this.gold.reset();
@@ -121,12 +121,14 @@ export class Game {
       winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, switching: false,
       switchMenu: false, windsOn: false, winds: null, punchT: 0, punchDur: 1, punchAmt: 0, punchAt: null,
       weather: null, weatherT: 0, finale: null, showcase: null, popT: new Map(), lastUsed: { player: null, opponent: null },
+      musicT: 0, legendT: 0,
     });
     this.ui.showSwitchMenu(false);
   }
 
   // Team selection screen; the lead chosen there is used by start().
   toSelect() {
+    this.online = null;
     this.endPractice();
     this.paused = false;
     this.reset();
@@ -137,6 +139,7 @@ export class Game {
 
   // Opening, trainer setup and format screens (flow.js): no battle input, battle overlays hidden.
   toMenu() {
+    this.online = null;
     this.paused = false;
     this.reset();
     this.state = 'menu';
@@ -173,30 +176,58 @@ export class Game {
     if (!practice && this.selection.length !== this.ui.format) return;
     initAudio();
     document.activeElement?.blur?.();
+    if (practice) this.online = null;
+    if (!this.online) {
+      // Against the bot: Gold leads with the first Pokémon and Megas into its first form.
+      this.foeLead = 0;
+      this.foeMegaPicks = null;
+      this.gold.name = 'Gold';
+      this.gold.setPalette({});
+    }
     this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
     this.opponentTeam = this.makeTeam(this.opponentSelection, 'opponent', this.gold);
-    for (const m of this.opponentTeam.members) m.faceFoeWhileMoving = true;
+    // Online, the opposing team is the other player's: their game drives it (see online.js).
+    for (const m of this.opponentTeam.members) {
+      m.faceFoeWhileMoving = !this.online;
+      m.remote = !!this.online;
+    }
     this.playerTeam.members.forEach((m, i) => { m.megaPick = this.megaPicks?.[this.selection[i]] ?? null; });
     this.ui.buildTeam(this);
     this.reset();
     for (const m of this.playerTeam.members) m.megaChoice = m.megaPick;
+    this.opponentTeam.members.forEach((m, i) => { m.megaChoice = this.foeMegaPicks?.[this.opponentSelection[i]] ?? null; });
     this.arena.setTheme(practice ? 'mtSilver' : this.arenaId ?? 'mtSilver');
     if (practice) this.opponent.y = 330; // below the tutorial dialogue
     this.ui.setLocation(this.arena.theme.name, this.playerTeam.members.length);
     this.state = 'intro';
     this.ui.onStart();
     this.ui.setActive(this.player);
-    music.play('battle');
+    this.ui.setVersus(this.gold.name);
+    music.play(practice ? 'battle' : this.battleTrack(0, true));
+    this.online?.begin();
     if (practice) {
       this.hud.showBanner('PRACTICE', { color: '#ffd84a', y: 330, life: 1.2, size: 22 });
       this.beginSendOut();
     } else this.showcase = new Showcase(this);
   }
 
+  // Battle theme: the arena's own, or the legendary theme while a legendary or mythical Pokémon is out
+  // (held for a few seconds after it leaves so switches don't flip the music back and forth).
+  battleTrack(dt = 0, atStart = false) {
+    const legend = [this.player, this.opponent].some(m => m?.alive && (atStart || !m.hidden) && m.species.class !== 'regular');
+    this.legendT = legend ? 4 : Math.max(0, this.legendT - dt);
+    return this.legendT > 0 ? 'legend' : ARENA_TRACK[this.arena.theme?.id] ?? 'battle';
+  }
+
+  // Online: tells the other player's game what our Pokémon just did.
+  netSend(mon, msg) {
+    if (this.online && !mon.remote) this.online.send(msg);
+  }
+
   // After the team showcase (or when it is skipped): both trainers throw out their leads.
   beginSendOut() {
     this.showcase = null;
-    this.sendOut(this.opponent, 0.1, `Gold sent out ${this.opponent.species.name}!`);
+    this.sendOut(this.opponent, 0.1, `${this.gold.name} sent out ${this.opponent.species.name}!`);
     this.sendOut(this.player, 0.5, `Go, ${this.player.species.name}!`);
     this.later(1.45, () => {
       this.state = 'fighting';
@@ -205,7 +236,8 @@ export class Game {
   }
 
   skipCinema() {
-    if (this.showcase) this.showcase.skip();
+    // Online both players watch the same intro, so it can't be skipped on one side.
+    if (this.showcase) !this.online && this.showcase.skip();
     else if (this.finale) this.finale.skip();
   }
 
@@ -280,6 +312,7 @@ export class Game {
     if (!forced) this.switchCD = SWITCH_COOLDOWN;
     this.toggleSwitchMenu(false);
     this.switching = true;
+    this.netSend(cur, { t: 'switch', i: index });
     this.buffered = null;
     this.megaQueued = 0;
     const spot = cur.alive && !cur.hidden ? { x: cur.x, y: cur.y } : HOME.player;
@@ -327,6 +360,26 @@ export class Game {
     this.sendOut(mon, 0.25, `Gold sent out ${mon.species.name}!`);
   }
 
+  // Online: the other player switched (or replaced a fainted Pokémon).
+  remoteSwitch(index) {
+    const team = this.opponentTeam, cur = team.active, next = team.members[index];
+    if (!next || next === cur) return;
+    // Their game decides who can still battle.
+    if (next.fainted || !next.alive) Object.assign(next, { fainted: false, hp: Math.max(1, next.hp) });
+    const spot = cur.alive && !cur.hidden ? { x: cur.x, y: cur.y } : HOME.opponent;
+    const bringIn = () => {
+      team.index = index;
+      next.enter(spot.x, spot.y, HOME.opponent.dir);
+      this.link();
+      this.sendOut(next, 0.05, `${this.gold.name} sent out ${next.species.name}!`);
+    };
+    if (cur.alive && !cur.hidden && !cur.fainted) {
+      this.ui.log(`${this.gold.name} withdrew ${cur.species.name}!`, 'opponent');
+      this.leaveField(cur);
+      this.recall(cur, bringIn);
+    } else bringIn();
+  }
+
   denied() {
     sfx.denied();
   }
@@ -339,20 +392,29 @@ export class Game {
       && !user.action?.move.ultimate;
   }
 
-  useMove(user, id, chargeLevel = 0) {
+  // `force` replays a move the other player already used (online): no readiness or cooldown checks.
+  useMove(user, id, chargeLevel = 0, force = false, copied = null) {
     const base = MOVES[id];
     if (!base || this.state !== 'fighting' || this.cinematic) return false;
-    const chain = !user.canAct() && !base.ultimate && this.canChain(user, base);
-    if (!user.canAct() && !chain) return false;
-    if (this.moveCD(user, id) > 0) return false;
+    let chain = false;
+    if (force) {
+      user.charging = null;
+      user.cancelAction();
+      user.busy = 0;
+    } else {
+      chain = !user.canAct() && !base.ultimate && this.canChain(user, base);
+      if (!user.canAct() && !chain) return false;
+      if (this.moveCD(user, id) > 0) return false;
+    }
     if (base.ultimate) {
       user.ult = 0;
       abilityOf(user).onUse?.(this, user, base);
       this.startUltCutscene(user, base);
       if (user.foe?.alive && !user.foe.hidden) abilityOf(user.foe).onFoeUlt?.(this, user.foe);
+      this.netSend(user, { t: 'move', id });
       return true;
     }
-    if (base.copy) return this.useCopy(user);
+    if (base.copy) return this.useCopy(user, copied);
     if (chain) {
       user.cancelAction();
       user.busy = 0;
@@ -367,6 +429,7 @@ export class Game {
     if (base.selfBuff) this.buff(user, ...base.selfBuff);
     abilityOf(user).onUse?.(this, user, base);
     if (user === this.player) this.ai.onThreat();
+    this.netSend(user, { t: 'move', id, l: chargeLevel });
     return true;
   }
 
@@ -375,8 +438,8 @@ export class Game {
     return this.cinematic?.kind === 'ult' || [this.player, this.opponent].some(m => m.action?.move.ultimate && !m.action.done);
   }
 
-  useCopy(user) {
-    const id = this.lastUsed[user.foe?.side], src = MOVES[id];
+  useCopy(user, forced = null) {
+    const id = forced ?? this.lastUsed[user.foe?.side], src = MOVES[id];
     if (!src) {
       user.cooldowns.copy = 1;
       this.spawn(new FloatText(user.x, user.y - user.headZ - 14, 'NOTHING TO COPY YET', '#c9d2de', 7));
@@ -391,6 +454,7 @@ export class Game {
     abilityOf(user).onUse?.(this, user, src);
     this.lastUsed[user.side] = id;
     if (user === this.player) this.ai.onThreat();
+    this.netSend(user, { t: 'move', id: 'copy', cp: id });
     return true;
   }
 
@@ -448,7 +512,7 @@ export class Game {
       sfx.shard();
     }
     // Holding past the cap fires automatically, so a charge can never be kept forever.
-    if (c.t >= CHARGE_MAX + 0.5) this.releaseCharge(mon);
+    if (c.t >= CHARGE_MAX + 0.5 && !mon.remote) this.releaseCharge(mon);
   }
 
   releaseCharge(mon) {
@@ -483,6 +547,7 @@ export class Game {
   }
 
   heal(mon, amount) {
+    if (mon.remote || !mon.alive || mon.fainted) return;
     const before = mon.hp;
     mon.hp = Math.min(mon.maxHp, mon.hp + Math.round(amount));
     const got = mon.hp - before;
@@ -495,7 +560,7 @@ export class Game {
 
   // Damage over time (burn, poison, sandstorm, recoil…): a fraction of max HP, no ultimate charge.
   dotDamage(mon, frac, color) {
-    if (this.state !== 'fighting' || !mon.alive || mon.hidden || abilityOf(mon).noIndirect) return;
+    if (this.state !== 'fighting' || !mon.alive || mon.hidden || mon.remote || abilityOf(mon).noIndirect) return;
     const dmg = Math.max(1, Math.round(mon.maxHp * frac));
     mon.hp = Math.max(0, mon.hp - dmg);
     mon.trailDelay = 0.45;
@@ -641,14 +706,15 @@ export class Game {
     this.dodge(p, held ? v.x : p.x - o.x || 0.01, held ? v.y : p.y - o.y || 1);
   }
 
-  dodge(mon, dx, dy) {
+  dodge(mon, dx, dy, force = false) {
     if (this.state !== 'fighting') return false;
     const charge = mon.charging;
     mon.charging = null;
-    if (!mon.dodge(dx, dy)) {
+    if (!mon.dodge(dx, dy, force)) {
       mon.charging = charge;
       return false;
     }
+    this.netSend(mon, { t: 'dodge', x: dx, y: dy });
     abilityOf(mon).onDodge?.(this, mon);
     sfx.dash();
     dustCloud(this, mon.x, mon.y, 5, 3);
@@ -675,11 +741,13 @@ export class Game {
   }
 
   // One Mega Evolution per trainer per battle. The battle pauses briefly while the camera zooms in.
-  megaEvolve(mon) {
+  megaEvolve(mon, force = false) {
     const team = this.teamOf(mon);
-    if (this.state !== 'fighting' || this.cinematic || this.switching || team.megaUsed || !mon.species.mega?.length || mon.isMega || !mon.canAct()) return false;
+    if (this.state !== 'fighting' || this.cinematic || !mon.species.mega?.length || mon.isMega) return false;
+    if (!force && (this.switching || team.megaUsed || !mon.canAct())) return false;
     const tr = mon.trainer;
     team.megaUsed = true;
+    this.netSend(mon, { t: 'mega', c: mon.megaChoice });
     this.cinematic = { mon, t: 0, swapped: false };
     tr.setPose('point', 1.7);
     const h = tr.hand();
@@ -783,12 +851,19 @@ export class Game {
 
   // A fainted Pokémon is replaced automatically by its trainer's next healthy one; the battle ends
   // only when a whole team is down.
-  onFaint(mon, by, move) {
-    if (mon.fainted) return;
+  onFaint(mon, by, move, net = null) {
+    if (mon.remote && !net) return; // online: the other player's game says when their Pokémon faints
+    if (mon.fainted) {
+      // Online: their last Pokémon going down always ends the battle, even if it was already down here.
+      if (net?.last && this.state === 'fighting') this.startFinale(by, mon, move);
+      return;
+    }
     if (this.practice) {
       mon.hp = mon.maxHp;
       return;
     }
+    const team = this.teamOf(mon), next = net ? (net.last ? -1 : 0) : team.nextAlive();
+    this.netSend(mon, { t: 'faint', i: team.members.indexOf(mon), mv: move?.id, last: next < 0 });
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
@@ -796,22 +871,26 @@ export class Game {
     this.shake(6, 0.4);
     sfx.faint();
     if (this.state !== 'fighting') return;
-    const team = this.teamOf(mon), next = team.nextAlive();
     if (next < 0) {
-      // The battle is decided: stop combat and play the finishing move (if the KO earned one) and victory.
-      this.state = 'finale';
-      this.winner = by.side;
-      this.cinematic = null;
-      this.toggleSwitchMenu(false);
-      for (const m of [this.player, this.opponent]) m.charging = null;
-      this.finale = new Finale(this, { winner: by, loser: mon, move });
+      this.startFinale(by, mon, move);
       return;
     }
+    if (mon.remote) return; // their game sends in the replacement
     this.later(1.7, () => {
       if (this.state !== 'fighting' || team.active !== mon) return;
       if (team === this.playerTeam) this.switchTo(next, true);
       else this.replaceOpponent(next);
     });
+  }
+
+  // The battle is decided: stop combat and play the finishing move (if the KO earned one) and victory.
+  startFinale(by, mon, move) {
+    this.state = 'finale';
+    this.winner = by.side;
+    this.cinematic = null;
+    this.toggleSwitchMenu(false);
+    for (const m of [this.player, this.opponent]) m.charging = null;
+    this.finale = new Finale(this, { winner: by, loser: mon, move });
   }
 
   updateEffects(dt, cosmeticOnly = false) {
@@ -824,6 +903,7 @@ export class Game {
   }
 
   update(dt) {
+    this.online?.tick(dt);
     if (this.paused) {
       this.ui.update(this, 0);
       return;
@@ -884,6 +964,11 @@ export class Game {
       this.time += dt;
       this.switchCD = Math.max(0, this.switchCD - dt);
       this.updateWeather(dt);
+      this.online?.processEvents();
+      if (!this.practice && (this.musicT -= dt) <= 0) {
+        this.musicT = 0.5;
+        music.play(this.battleTrack(0.5));
+      }
       const v = this.input.vector();
       p.input.x = v.x;
       p.input.y = v.y;
@@ -903,9 +988,11 @@ export class Game {
       p.input.x = p.input.y = 0;
     }
 
-    this.ai.update(dt, this);
+    if (!this.online) this.ai.update(dt, this);
     p.update(dt, this);
+    const puppet = this.online?.beforePuppet();
     this.opponent.update(dt, this);
+    if (puppet) this.online.afterPuppet(dt, puppet);
     this.separate();
     this.updateEffects(dt);
     this.updateClashes();

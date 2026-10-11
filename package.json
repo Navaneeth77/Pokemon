@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@fontsource/luckiest-guy": "^5.0.0",
-    "@fontsource/pixelify-sans": "^5.0.0"
+    "@fontsource/pixelify-sans": "^5.0.0",
+    "peerjs": "^1.5.4"
   },
   "devDependencies": {
     "vite": "^6.3.5"

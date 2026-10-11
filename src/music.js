@@ -8,14 +8,15 @@ const freq = name => {
   const m = /^([A-G]#?)(\d)$/.exec(name);
   return 440 * 2 ** ((NOTE[m[1]] + (Number(m[2]) + 1) * 12 - 69) / 12);
 };
-const CHORD = { '': [0, 4, 7], m: [0, 3, 7] };
+const CHORD = { '': [0, 4, 7], m: [0, 3, 7], dim: [0, 3, 6] };
 const chordNotes = (name, octave) => {
-  const m = /^([A-G]#?)(m?)$/.exec(name);
+  const m = /^([A-G]#?)(m|dim)?$/.exec(name);
   const root = NOTE[m[1]] + (octave + 1) * 12;
-  return CHORD[m[2]].map(i => 440 * 2 ** ((root + i - 69) / 12));
+  return CHORD[m[2] ?? ''].map(i => 440 * 2 ** ((root + i - 69) / 12));
 };
 
 // 8 steps (eighth notes) per bar. Lead: note, '-' holds the previous note, '.' rests.
+// Battles pick a theme by arena; a legendary or mythical Pokémon on the field brings in its own.
 const TRACKS = {
   title: {
     bpm: 132, chords: ['C', 'Am', 'F', 'G', 'C', 'Am', 'Dm', 'G'], bass: 'R.O.R.O.', drums: 'k.h.s.hh',
@@ -32,7 +33,40 @@ const TRACKS = {
     lead: `A5 A5 E5 A5 C6 - B5 A5 | F5 - A5 C6 F6 - E6 C6 | D6 - B5 G5 D6 - B5 D6 | E6 - - B5 G5 - E5 G5
            A5 C6 E6 - D6 C6 B5 A5 | C6 - A5 F5 A5 C6 F6 - | G6 F6 E6 D6 B5 - G5 B5 | G#5 - B5 - E6 - D6 B5`,
   },
+  // Viridian Forest: bright and bouncy.
+  forest: {
+    bpm: 150, chords: ['G', 'D', 'Em', 'C', 'G', 'D', 'C', 'D'], bass: 'R.ORR.O.', drums: 'k.hsk.hs', wave: 'square', vol: 0.065,
+    lead: `G5 . B5 D6 B5 . G5 A5 | F#5 - A5 - D6 - C6 A5 | G5 . E5 G5 B5 . A5 G5 | E5 - G5 - C6 - B5 A5
+           B5 - D6 B5 G5 - B5 D6 | A5 - F#5 A5 D6 - E6 F#6 | G6 - E6 C6 E6 - D6 C6 | A5 - - - D6 C6 B5 A5`,
+  },
+  // Cinnabar Volcano: fast, driving, saw lead.
+  volcano: {
+    bpm: 170, chords: ['Em', 'Em', 'C', 'D', 'Em', 'Em', 'C', 'B'], bass: 'RRRORROR', drums: 'khskkhss', wave: 'sawtooth', vol: 0.045,
+    lead: `E5 E5 G5 E5 B5 - A5 G5 | F#5 G5 A5 - B5 - E6 - | D6 C6 B5 C6 G5 - E5 G5 | F#5 - A5 - D6 - F#6 -
+           E6 - D6 B5 G5 B5 D6 E6 | G6 - F#6 E6 D6 - B5 - | C6 - E6 - G6 - E6 C6 | D#6 - - F#5 B5 - D#6 F#6`,
+  },
+  // Seafoam Islands: flowing and cool, soft triangle lead.
+  sea: {
+    bpm: 144, chords: ['F#m', 'D', 'E', 'C#m', 'F#m', 'D', 'A', 'E'], bass: 'R..OR.O.', drums: 'k.hhs.hh', wave: 'triangle', vol: 0.15,
+    lead: `C#6 - A5 F#5 A5 - C#6 E6 | F#6 - - E6 D6 - A5 - | B5 - G#5 E5 G#5 - B5 E6 | G#6 - - E6 C#6 - B5 -
+           A5 - C#6 - F#6 - E6 C#6 | D6 - F#6 - A6 - F#6 D6 | E6 - C#6 - A5 - C#6 E6 | G#6 - - - B5 - G#5 -`,
+  },
+  // Indigo Plateau: heroic league finals.
+  league: {
+    bpm: 172, chords: ['Cm', 'G#', 'A#', 'G', 'Cm', 'G#', 'A#', 'G'], bass: 'RORORORO', drums: 'khskkhsk', wave: 'square', vol: 0.065,
+    lead: `C6 - G5 C6 D#6 - D6 C6 | D#6 - C6 D#6 G#6 - G6 F6 | F6 - D6 A#5 F6 - D#6 D6 | D6 - - B5 G5 - B5 D6
+           G6 - D#6 C6 G6 - G#6 G6 | F6 - D#6 C6 G#5 - C6 D#6 | D6 - F6 A#6 G#6 - G6 F6 | G6 - F6 D#6 D6 - B5 -`,
+  },
+  // Legendary or mythical on the field: urgent, dramatic, saw lead over a pounding bass.
+  legend: {
+    bpm: 176, chords: ['Bm', 'G', 'Bm', 'A', 'Bm', 'G', 'F#', 'F#'], bass: 'RRORRROR', drums: 'kkshkhss', wave: 'sawtooth', vol: 0.05,
+    lead: `B5 B5 F#5 B5 D6 - C#6 B5 | D6 - B5 D6 G6 - F#6 E6 | F#6 - D6 B5 F#6 - G6 F#6 | E6 - C#6 A5 E6 - C#6 E6
+           B6 - A6 F#6 D6 - F#6 B6 | A6 - G6 D6 B5 - D6 G6 | F#6 - E6 C#6 A#5 - C#6 E6 | F#6 - - - A#5 B5 C#6 E6`,
+  },
 };
+
+// Battle theme for each arena (arena.js ids).
+export const ARENA_TRACK = { mtSilver: 'battle', viridian: 'forest', cinnabar: 'volcano', seafoam: 'sea', indigo: 'league' };
 
 function compile(t) {
   const steps = t.lead.replace(/\|/g, ' ').trim().split(/\s+/);
@@ -178,7 +212,7 @@ export class Music {
   scheduleStep(ac, t, step, t0) {
     const s = t.song, out = t.gain, sd = s.stepDur, bar = Math.floor(step / 8), beat = step % 8;
     const note = s.lead[step];
-    if (note) this.voice(ac, out, 'square', note.f, t0, note.len * sd * 0.95, 0.07);
+    if (note) this.voice(ac, out, s.wave ?? 'square', note.f, t0, note.len * sd * 0.95, s.vol ?? 0.07);
     const chord = s.chords[bar % s.chords.length];
     // Arpeggio on every eighth note, root–third–fifth–octave.
     const arp = chordNotes(chord, 4);

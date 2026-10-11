@@ -49,9 +49,17 @@ export class UI {
     for (const sel of ['#again-btn', '#restart-btn']) {
       $(sel).addEventListener('click', e => {
         e.currentTarget.blur();
-        game.toSelect();
+        // Online, "again" is a rematch in the same room.
+        const online = game.flow?.online;
+        if (online?.connected) online.toLobby();
+        else if (this.online) game.flow?.leaveOnline();
+        else game.toSelect();
       });
     }
+    $('#leave-btn').addEventListener('click', e => {
+      e.currentTarget.blur();
+      game.flow?.leaveOnline();
+    });
     const mute = $('#mute-btn');
     mute.addEventListener('click', () => {
       setMuted(!isMuted());
@@ -75,6 +83,11 @@ export class UI {
     if (this.selection.length !== this.format || this.loading) return;
     const btn = $('#start-btn');
     this.game.flow?.enterFullscreen();
+    if (this.online) {
+      // Online: lock in the team; the battle starts once both players are ready.
+      this.game.flow.online.ready(this.selection, this.lead, this.megaPick);
+      return;
+    }
     this.loading = true;
     btn.disabled = true;
     btn.textContent = 'Loading…';
@@ -217,6 +230,7 @@ export class UI {
   }
 
   toggle(id) {
+    if (this.online?.locked) return; // team is locked in once READY is pressed
     const i = this.selection.indexOf(id);
     if (i >= 0) {
       this.selection.splice(i, 1);
@@ -245,10 +259,43 @@ export class UI {
 
   // The player's trainer name and portrait in the side panel and on the team-select header.
   setTrainer(name, bust) {
+    this.trainerName = name;
+    this.trainerBust = bust;
+    this.setVersus(this.online?.friend ?? 'Gold');
+  }
+
+  setVersus(foe) {
+    const name = esc(this.trainerName ?? 'Red');
     const icon = `<canvas class="pt-icon" width="24" height="24"></canvas>`;
-    $('#panel .title').innerHTML = `${icon}${name} <span>vs</span> Gold`;
-    $('#panel .title canvas').getContext('2d').drawImage(bust, 0, 0);
-    $('.matchup').innerHTML = `<span class="red">${name}</span> <span class="vs">VS</span> <span class="gold">GOLD</span>`;
+    $('#panel .title').innerHTML = `${icon}${name} <span>vs</span> ${esc(foe)}`;
+    if (this.trainerBust) $('#panel .title canvas').getContext('2d').drawImage(this.trainerBust, 0, 0);
+    $('.matchup').innerHTML = `<span class="red">${name}</span> <span class="vs">VS</span> <span class="gold">${esc(foe.toUpperCase())}</span>`;
+  }
+
+  // Online room state on the team-select screen: null when playing the bot.
+  // info: { code, friend, format, arena, locked, friendReady, loading, ping }
+  setOnline(info) {
+    this.online = info;
+    document.body.classList.toggle('online', !!info);
+    this.setVersus(info?.friend ?? 'Gold');
+    $('.select-card .sub').textContent = info
+      ? `Online · ${info.format} vs ${info.format} · ${info.arena} — pick your team, then press READY`
+      : 'Pick your team · click a team slot to set your lead';
+    this.renderOnline();
+    this.renderSelection();
+  }
+
+  renderOnline() {
+    const bar = $('#online-bar'), o = this.online;
+    if (!o) {
+      bar.innerHTML = '';
+      return;
+    }
+    const friend = esc(o.friend);
+    const state = o.loading ? 'Loading Pokémon…' : o.friendReady ? `${friend} is READY ✓` : `${friend} is choosing…`;
+    bar.innerHTML = `<span class="ob-room">ROOM <b>${esc(o.code ?? '')}</b></span><span class="ob-state${o.friendReady ? ' ok' : ''}">${state}</span>`
+      + `<span class="ob-ping">${o.ping != null ? `${o.ping} ms` : ''}</span><button class="mini-btn" data-a="leave">Leave room</button>`;
+    bar.querySelector('[data-a="leave"]').addEventListener('click', () => this.game.flow?.leaveOnline());
   }
 
   renderSelection() {
@@ -286,6 +333,10 @@ export class UI {
     const start = $('#start-btn');
     start.disabled = !full;
     start.textContent = full ? `Start ${this.format}v${this.format} Battle` : `Pick ${this.format - this.selection.length} more`;
+    if (this.online && full) {
+      start.disabled = !!this.online.locked;
+      start.textContent = this.online.loading ? 'Loading…' : this.online.locked ? `Waiting for ${this.online.friend}…` : 'READY ▶';
+    }
     this.applyFilter();
   }
 
@@ -368,10 +419,24 @@ export class UI {
   }
 
   showResult(win, winner) {
-    const who = winner ? `<img class="win-mon" src="${winner.portrait.src}" alt="">${winner.species.name} wins the battle for ${winner.trainer.name}!` : '';
+    const who = winner ? `<img class="win-mon" src="${winner.portrait.src}" alt="">${winner.species.name} wins the battle for ${esc(winner.trainer.name)}!` : '';
+    const foe = esc(this.game.gold.name);
     this.resultText.innerHTML = win
-      ? `<b class="win">Victory!</b>${who}<br>Gold is out of usable Pokémon.`
+      ? `<b class="win">Victory!</b>${who}<br>${foe} is out of usable Pokémon.`
       : `<b class="lose">Defeat…</b>${who}<br>All of your Pokémon fainted.`;
+    $('#again-btn').textContent = this.online ? 'Rematch' : 'Restart Battle';
+    $('#again-btn').classList.remove('hidden');
+    $('#leave-btn').hidden = false;
+    this.resultOverlay.classList.remove('hidden');
+  }
+
+  // Online: the other player left or the connection dropped.
+  showNotice(title, text) {
+    this.resultText.innerHTML = `<b class="lose">${esc(title)}</b>${esc(text)}`;
+    $('#again-btn').textContent = 'Main Menu';
+    $('#again-btn').classList.remove('hidden');
+    $('#leave-btn').hidden = true;
+    this.selectOverlay.classList.add('hidden');
     this.resultOverlay.classList.remove('hidden');
   }
 

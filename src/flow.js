@@ -9,7 +9,8 @@ import { DEFAULT_TEAM, ROSTER, SPECIES, CLASS_LABEL } from './data/species.js';
 import { ABILITIES } from './data/abilities.js';
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
-import { ARENAS, paintArena } from './arena.js';
+import { ARENAS, paintArena, arenaById } from './arena.js';
+import { Online, cleanCode, CODE_LEN } from './online.js';
 
 // Screen flow before (and around) the battle:
 // opening → PRESS START → [title menu for returning players] → trainer setup → tutorial → format → team select → battle.
@@ -26,6 +27,10 @@ export class Flow {
     this.screen = null;
     this.opening = new Opening($('#intro-canvas'), game.sprites, () => this.pressStart());
     this.tutorial = new Tutorial(game, skipped => this.endTutorial(skipped));
+    this.online = new Online(game, this);
+    // Invite links (?room=CODE) jump straight into that room after the title screen.
+    this.pendingRoom = cleanCode(new URLSearchParams(location.search).get('room')) || null;
+    if (this.pendingRoom) history.replaceState(null, '', location.pathname);
     game.flow = this;
     if (isTouchDevice()) {
       document.body.classList.add('touch');
@@ -69,8 +74,8 @@ export class Flow {
   }
 
   show(id) {
-    for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
-    this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#title-menu': 'title' }[id] ?? this.screen;
+    for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#online-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
+    this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#online-screen': 'online', '#title-menu': 'title' }[id] ?? this.screen;
   }
 
   // ── Opening ──
@@ -94,7 +99,8 @@ export class Flow {
     initAudio();
     sfx.startup();
     music.play('title');
-    if (this.save.name) this.showTitleMenu();
+    if (this.save.name && this.pendingRoom) this.joinRoom(this.pendingRoom);
+    else if (this.save.name) this.showTitleMenu();
     else this.showTrainer();
   }
 
@@ -107,6 +113,7 @@ export class Flow {
     }
     const items = [
       ['START BATTLE', () => this.showFormat()],
+      ['ONLINE BATTLE', () => this.showOnline()],
       ['EDIT TRAINER', () => this.showTrainer()],
       ['TUTORIAL', () => this.startTutorial()],
     ];
@@ -189,7 +196,8 @@ export class Flow {
     this.save.look = LOOKS[this.pick].id;
     this.persist();
     this.applyTrainer(this.save.name, LOOKS[this.pick]);
-    if (!this.save.tutorialDone) this.startTutorial();
+    if (this.pendingRoom) this.joinRoom(this.pendingRoom);
+    else if (!this.save.tutorialDone) this.startTutorial();
     else this.showFormat();
   }
 
@@ -466,15 +474,205 @@ export class Flow {
   }
 
   // ── Pause (P / Esc on desktop, the II button on touch) ──
-  togglePause(open = !this.game.paused) {
-    const g = this.game;
+  // Online the battle can't stop for one player: the menu opens over it and the battle carries on.
+  togglePause(open = !this.pauseOpen) {
+    const g = this.game, online = this.online.inBattle;
     if (open && !['fighting', 'intro'].includes(g.state)) return;
-    g.paused = open;
+    this.pauseOpen = open;
+    g.paused = open && !online;
     $('#pause-menu').classList.toggle('hidden', !open);
+    $('#pause-menu h2').textContent = online ? 'MENU · BATTLE GOES ON' : 'PAUSED';
+    $('#pause-menu [data-p="menu"]').textContent = online ? 'LEAVE BATTLE' : 'MAIN MENU';
     if (open) g.input.clear();
   }
 
+  // ── Online battles (custom rooms) ──
+  showOnline(view = 'home', msg = '') {
+    music.play('menu');
+    if (this.game.state !== 'menu') this.game.toMenu();
+    $('#intro').classList.remove('hidden');
+    if (!this.opening.running) {
+      this.opening.start();
+      this.opening.skip();
+    }
+    this.onlineView = view;
+    const win = $('#online-screen .px-window'), o = this.online;
+    if (view === 'home') {
+      this.onlineFormat ??= this.save.format === 6 ? 6 : 3;
+      this.onlineArena ??= this.save.arena ?? 'mtSilver';
+      const arenas = [...ARENAS, { id: 'random', name: 'Random' }];
+      win.innerHTML = `<h2>ONLINE BATTLE</h2>
+        <p class="ol-note">Battle a friend over the internet: one of you creates a room and sends the code, the other joins with it.</p>
+        <div class="ol-cols">
+          <section class="ol-box"><h3>CREATE A ROOM</h3>
+            <div class="ol-label">FORMAT</div><div class="ol-fmt"><button data-n="3">3 VS 3</button><button data-n="6">6 VS 6</button></div>
+            <div class="ol-label">ARENA</div><div class="ol-arenas">${arenas.map(a => `<button data-id="${a.id}">${a.name}</button>`).join('')}</div>
+            <button class="px-btn primary" data-a="create">CREATE ROOM ▶</button>
+          </section>
+          <section class="ol-box"><h3>JOIN A ROOM</h3>
+            <div class="ol-label">ROOM CODE</div>
+            <input class="ol-code" maxlength="${CODE_LEN}" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+            <button class="px-btn primary" data-a="join">JOIN ROOM ▶</button>
+          </section>
+        </div>
+        <div class="ol-msg">${escapeHtml(msg)}</div>
+        <div class="fm-btns"><button class="px-btn" data-a="back">◀ MENU</button></div>`;
+      const sync = () => {
+        win.querySelectorAll('.ol-fmt button').forEach(b => b.classList.toggle('on', +b.dataset.n === this.onlineFormat));
+        win.querySelectorAll('.ol-arenas button').forEach(b => b.classList.toggle('on', b.dataset.id === this.onlineArena));
+      };
+      win.querySelectorAll('.ol-fmt button').forEach(b => b.addEventListener('click', () => {
+        this.onlineFormat = +b.dataset.n;
+        sync();
+      }));
+      win.querySelectorAll('.ol-arenas button').forEach(b => b.addEventListener('click', () => {
+        this.onlineArena = b.dataset.id;
+        sync();
+      }));
+      sync();
+      const input = win.querySelector('.ol-code');
+      input.addEventListener('input', () => { input.value = cleanCode(input.value); });
+      win.querySelector('[data-a="create"]').addEventListener('click', () => this.createRoom());
+      win.querySelector('[data-a="join"]').addEventListener('click', () => this.joinRoom(input.value));
+      win.querySelector('[data-a="back"]').addEventListener('click', () => this.showTitleMenu());
+    } else if (view === 'hosting') {
+      const room = o.room, invite = `${location.origin}${location.pathname}?room=${o.code}`;
+      win.innerHTML = `<h2>ROOM CREATED</h2>
+        <div class="ol-label">ROOM CODE</div><div class="ol-bigcode">${o.code}</div>
+        <div class="ol-share"><button class="px-btn small" data-a="copy">COPY CODE</button><button class="px-btn small" data-a="link">COPY INVITE LINK</button></div>
+        <p class="ol-wait">Send the code to your friend: they pick ONLINE BATTLE → JOIN A ROOM.<br>Waiting for them to join<span class="ol-dots"></span></p>
+        <p class="ol-sub">${room.format} VS ${room.format} · ${escapeHtml(arenaById(room.arena)?.name ?? '')}</p>
+        <div class="fm-btns"><button class="px-btn" data-a="cancel">CLOSE ROOM</button></div>`;
+      const copy = (btn, text, done) => {
+        const ok = () => { btn.textContent = done; };
+        navigator.clipboard?.writeText(text).then(ok, () => { btn.textContent = text; });
+      };
+      win.querySelector('[data-a="copy"]').addEventListener('click', e => copy(e.currentTarget, o.code, 'COPIED!'));
+      win.querySelector('[data-a="link"]').addEventListener('click', e => copy(e.currentTarget, invite, 'LINK COPIED!'));
+      win.querySelector('[data-a="cancel"]').addEventListener('click', () => this.cancelOnline());
+    } else {
+      win.innerHTML = `<h2>ONLINE BATTLE</h2><p class="ol-wait">${escapeHtml(msg)}<span class="ol-dots"></span></p>
+        <div class="fm-btns"><button class="px-btn" data-a="cancel">CANCEL</button></div>`;
+      win.querySelector('[data-a="cancel"]').addEventListener('click', () => this.cancelOnline());
+    }
+    this.show('#online-screen');
+  }
+
+  async createRoom() {
+    const pick = this.onlineArena, arena = pick === 'random' ? ARENAS[Math.floor(Math.random() * ARENAS.length)].id : pick;
+    this.save.format = this.onlineFormat;
+    this.persist();
+    sfx.sendOut();
+    this.showOnline('busy', 'Creating a room');
+    try {
+      await this.online.create(this.onlineFormat, arena);
+      if (this.onlineView === 'busy' && !this.online.friend) this.showOnline('hosting');
+    } catch (err) {
+      this.online.close();
+      if (this.onlineView === 'busy') this.showOnline('home', this.netMessage(err));
+    }
+  }
+
+  async joinRoom(raw) {
+    const code = cleanCode(raw);
+    this.pendingRoom = null;
+    if (code.length !== CODE_LEN) {
+      sfx.denied();
+      this.showOnline('home', `Enter the ${CODE_LEN}-character room code.`);
+      return;
+    }
+    sfx.sendOut();
+    this.showOnline('busy', `Joining room ${code}`);
+    try {
+      await this.online.join(code);
+      if (this.onlineView === 'busy' && this.screen === 'online') this.showOnline('busy', 'Connected! Getting the room ready');
+    } catch (err) {
+      this.online.close();
+      if (this.onlineView === 'busy') this.showOnline('home', this.netMessage(err, code));
+    }
+  }
+
+  netMessage(err, code) {
+    const t = err?.type;
+    if (t === 'peer-unavailable') return `Room ${code} wasn't found. Check the code (rooms close when their creator leaves).`;
+    if (t === 'timeout') return 'The connection timed out. Check the code and try again — some strict networks block online play.';
+    if (t === 'browser-incompatible') return "This browser doesn't support online play.";
+    return "Couldn't reach the online service. Check your internet connection and try again.";
+  }
+
+  cancelOnline() {
+    this.online.close();
+    this.showOnline('home');
+  }
+
+  onlineError(msg) {
+    this.ui.setOnline(null);
+    this.showOnline('home', msg);
+  }
+
+  // Both players are connected: team select in room mode (format and arena come from the room).
+  enterOnlineLobby() {
+    const room = this.online.room;
+    this.closeDexEntry();
+    this.togglePause(false);
+    this.show(null);
+    this.screen = 'select';
+    this.opening.stop();
+    $('#intro').classList.add('hidden');
+    this.game.arenaId = room.arena;
+    this.ui.setFormat(room.format);
+    this.ui.setOnline(this.onlineInfo());
+    this.game.toSelect();
+    sfx.megaBurst();
+  }
+
+  onlineInfo() {
+    const o = this.online;
+    return {
+      code: o.code, friend: o.friend?.name ?? 'FRIEND', format: o.room?.format ?? 3, arena: arenaById(o.room?.arena)?.name ?? '',
+      locked: !!o.me, friendReady: !!o.them, loading: o.loading, ping: o.ping,
+    };
+  }
+
+  onlineUpdate() {
+    if (!this.ui.online) return;
+    Object.assign(this.ui.online, this.onlineInfo());
+    if (this.game.state === 'select') {
+      this.ui.renderOnline();
+      this.ui.renderSelection();
+    } else if (this.online.inBattle && this.online.ping != null) {
+      $('#panel .loc').textContent = `ONLINE · ROOM ${this.online.code} · ${this.online.ping} MS`;
+    }
+  }
+
+  // The friend left or the connection dropped.
+  onlineLost(text) {
+    if (this.screen === 'online') {
+      this.onlineError(text);
+      return;
+    }
+    const g = this.game;
+    this.togglePause(false);
+    if (['fighting', 'intro', 'finale'].includes(g.state)) {
+      g.state = 'over';
+      Object.assign(g, { cinematic: null, showcase: null, finale: null });
+    }
+    if (!this.ui.online) return;
+    this.ui.showNotice('Disconnected', text);
+  }
+
+  leaveOnline() {
+    this.online.leave();
+    this.ui.setOnline(null);
+    this.toTitle();
+  }
+
   toTitle() {
+    if (this.online.net) {
+      // Leaving to the title always leaves the room.
+      this.online.leave();
+      this.ui.setOnline(null);
+    }
     this.togglePause(false);
     this.tutorial.active && this.tutorial.finish(true);
     this.game.endPractice();
@@ -485,7 +683,7 @@ export class Flow {
 
   onKey(e) {
     const s = this.screen;
-    if (this.game.paused && (e.code === 'Escape' || e.code === 'KeyP')) {
+    if (this.pauseOpen && (e.code === 'Escape' || e.code === 'KeyP')) {
       e.preventDefault();
       this.togglePause(false);
       return;
@@ -535,6 +733,11 @@ export class Flow {
         e.preventDefault();
         this.confirmArena();
       } else if (e.code === 'Escape') this.showFormat();
+    } else if (s === 'online') {
+      if (e.code === 'Escape') {
+        if (this.onlineView === 'home') this.showTitleMenu();
+        else this.cancelOnline();
+      } else if (e.code === 'Enter' && e.target.classList?.contains('ol-code')) this.joinRoom(e.target.value);
     } else if (s === 'format') {
       if (e.target.tagName === 'INPUT') return; // typing in the Pokédex search
       if (this.dex && e.code === 'Escape') {
@@ -588,7 +791,7 @@ export class Flow {
     $('#pause-menu').addEventListener('click', e => {
       const a = e.target.closest('[data-p]')?.dataset.p;
       if (a === 'resume') this.togglePause(false);
-      else if (a === 'menu') this.toTitle();
+      else if (a === 'menu') this.online.inBattle ? this.leaveOnline() : this.toTitle();
       else if (a === 'sfx') {
         setMuted(!isMuted());
         this.syncAudioUi();

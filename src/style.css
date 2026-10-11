@@ -887,3 +887,36 @@ body:not(.with-panel) #panel, body[data-state="select"] #panel, body[data-state=
 .ar-format button, .fmt-switch button { padding: 4px 12px; color: #282838; font: 700 12px 'Pixelify Sans', monospace; background: #e8eef8; border: 3px solid #283058; border-radius: 999px; cursor: pointer; }
 .ar-format button.on, .fmt-switch button.on { color: #2a1a05; background: #ffd84a; }
 @media (max-width: 520px) { .dm-stats { grid-template-columns: 1fr; } .pg-head { padding-left: 76px; } .dex-lens { width: 44px; height: 44px; margin-top: -22px; } }
+
+/* ── Online battles: room screen, team-select room bar ────────────────────── */
+.online-win { width: min(640px, 100%); margin: auto; }
+.ol-note { margin: 0 0 12px; font-size: 13px; line-height: 1.35; }
+.ol-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ol-box { display: flex; flex-direction: column; gap: 6px; padding: 10px; background: #e8eef8; border: 3px solid #a8b0c8; border-radius: 4px; }
+.ol-box h3 { margin: 0 0 2px; font-size: 15px; letter-spacing: 1px; color: #283058; }
+.ol-box .px-btn { margin-top: auto; }
+.ol-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #5870b8; }
+.ol-fmt, .ol-arenas { display: flex; flex-wrap: wrap; gap: 4px; }
+.ol-fmt button, .ol-arenas button { padding: 4px 9px; color: #282838; font: 700 11px 'Pixelify Sans', monospace; background: #f8f8f0; border: 3px solid #283058; border-radius: 999px; cursor: pointer; }
+.ol-fmt button.on, .ol-arenas button.on { color: #2a1a05; background: #ffd84a; }
+.ol-code { width: 100%; padding: 8px 10px; color: #282838; font: 700 26px 'Pixelify Sans', monospace; letter-spacing: 8px; text-align: center; text-transform: uppercase; background: #fff; border: 3px solid #283058; border-radius: 4px; outline: none; user-select: text; -webkit-user-select: text; }
+.ol-code::placeholder { color: #c0c4d4; }
+.ol-msg { min-height: 1.3em; margin-top: 10px; font-size: 13px; font-weight: 700; color: #c0302a; }
+.ol-bigcode { margin: 4px 0 8px; font-size: 52px; font-weight: 700; letter-spacing: 12px; text-align: center; color: #283058; text-shadow: 3px 3px 0 #ffd84a; }
+.ol-share { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.ol-wait { margin: 12px 0 4px; font-size: 14px; line-height: 1.4; text-align: center; }
+.ol-sub { margin: 0; font-size: 12px; font-weight: 700; text-align: center; color: #5870b8; }
+.ol-dots::after { content: ''; animation: ol-dots 1.2s steps(4) infinite; }
+@keyframes ol-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+@media (max-width: 560px) { .ol-cols { grid-template-columns: 1fr; } .ol-bigcode { font-size: 40px; letter-spacing: 8px; } }
+
+.online-bar { display: none; }
+body.online .online-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 6px 0; font-size: 12px; font-weight: 700; }
+.ob-room b { padding: 1px 6px; color: #2a1a05; letter-spacing: 2px; background: #ffd84a; border-radius: 3px; }
+.ob-state { color: #ffb347; }
+.ob-state.ok { color: #6af08a; }
+.ob-ping { color: #9aa6b8; }
+body.online .foe, body.online #difficulty, body.online .fmt-switch, body.online .format-link, body.online #restart-btn { display: none; }
+.leave-btn { display: none; margin-top: 8px; }
+body.online .leave-btn { display: inline-block; }
+.leave-btn[hidden] { display: none !important; }

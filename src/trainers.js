@@ -146,4 +146,12 @@ export function backPalette(look) {
   };
 }
 
+// The same look on the front-facing trainer at the top of the arena (the other player, online).
+export function frontPalette(look) {
+  return {
+    y: look.cap ?? look.hair, h: look.hair, r: look.jacket, R: shade(look.jacket, 0.72),
+    b: look.pants, B: shade(look.pants, 0.72), s: look.skin, S: shade(look.skin, 0.82),
+  };
+}
+
 export const lookById = id => LOOKS.find(l => l.id === id) ?? LOOKS[0];

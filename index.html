@@ -26,6 +26,7 @@
             <div id="team-summary" class="team-summary"></div>
             <div class="foe"><span>Gold's random team:</span><span id="foe-team" class="foe-team"></span><button id="reroll-btn" class="mini-btn" title="Roll a new random team">🎲 Reroll</button></div>
             <div id="difficulty" class="filters difficulty"><span>Bot difficulty:</span><button data-d="easy">Easy</button><button data-d="medium" class="on">Medium</button><button data-d="hard">Hard</button></div>
+            <div id="online-bar" class="online-bar"></div>
             <button id="start-btn" class="big-btn">Start Battle</button>
             <div class="hint"><kbd>WASD</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack (hold ⚡ moves to charge) · <kbd>R</kbd>/<kbd>5</kbd> ultimate · <kbd>Q</kbd> switch · <kbd>Space</kbd> dodge · <kbd>M</kbd> Mega</div>
           </div>
@@ -40,6 +41,7 @@
           <div class="overlay-card">
             <div id="result-text"></div>
             <button id="again-btn" class="big-btn">Restart Battle</button>
+            <button id="leave-btn" class="mini-btn leave-btn">Leave room</button>
           </div>
         </div>
       </div>
@@ -80,6 +82,7 @@
       <div id="title-menu" class="px-window title-menu hidden"></div>
       <div id="trainer-screen" class="screen hidden"><div class="px-window trainer-win"></div></div>
       <div id="arena-screen" class="screen hidden"><div class="px-window arena-win"></div></div>
+      <div id="online-screen" class="screen hidden"><div class="px-window online-win"></div></div>
     </div>
     <!-- Battle setup page: format choice and the full list of available Pokémon -->
     <div id="format-screen" class="page hidden"></div>

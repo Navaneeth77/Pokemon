@@ -28,7 +28,7 @@ function text(game, mon, str, color, size = 7) {
 
 export function applyStatus(game, mon, name, { dur, source } = {}) {
   const S = STATUS[name], ab = abilityOf(mon);
-  if (!S || !mon.alive || mon.hidden) return false;
+  if (!S || !mon.alive || mon.hidden || mon.remote) return false;
   if (S.immune?.some(t => typesOf(mon).includes(t)) || ab.immune?.includes(name)) {
     text(game, mon, 'IMMUNE', '#c9d2de', 6);
     return false;
@@ -120,6 +120,7 @@ export function statusPills(mon) {
 
 // Temporary stat changes (atk / def / spd). A new change on the same stat replaces the old one.
 export function addBuff(game, mon, stat, mult, dur) {
+  if (mon.remote) return false; // online: the owner's game applies it and sends the result
   if (mult < 1 && abilityOf(mon).noDebuff) {
     game.abilityPop(mon, "Stats can't be lowered!");
     return false;

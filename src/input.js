@@ -27,7 +27,7 @@ export class Input {
     if (e.target?.tagName === 'INPUT') return; // typing in the roster search
     const { state } = this.game;
     // Opening, trainer setup, format screens and the pause menu handle their own keys (flow.js).
-    if (state === 'menu' || this.game.paused) return;
+    if (state === 'menu' || this.game.paused || this.game.flow?.pauseOpen) return;
     if (this.game.switchMenu && /^(Digit|Numpad)[1-6]$/.test(e.code)) {
       e.preventDefault();
       if (!e.repeat) this.game.pickSwitch(Number(e.code.slice(-1)) - 1);

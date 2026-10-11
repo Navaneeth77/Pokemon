@@ -81,7 +81,7 @@ export class Pokemon {
 
   // Launched into the air (aerial combos). Repeated launches rise less and fall faster.
   launch(vz) {
-    if (this.zOverride != null || this.held || !this.alive) return false;
+    if (this.remote || this.zOverride != null || this.held || !this.alive) return false;
     const a = this.air ?? (this.air = { h: 0, vz: 0, t: 0, juggle: 0, g: 950 });
     a.vz = Math.max(a.vz, vz);
     a.h = Math.max(a.h, 1);
@@ -108,7 +108,7 @@ export class Pokemon {
 
   // Ultimate charge (0–100). Crossing 100 plays the ready cue once.
   gainUlt(game, amount) {
-    if (!this.alive || this.hidden || game.state !== 'fighting') return;
+    if (this.remote || !this.alive || this.hidden || game.state !== 'fighting') return;
     const before = this.ult;
     this.ult = Math.min(100, this.ult + amount);
     if (before < 100 && this.ult >= 100) game.onUltReady(this);
@@ -117,7 +117,7 @@ export class Pokemon {
   // Holding a chargeable move. Interrupted charges (hit, stun) still cost part of the cooldown.
   cancelCharge(game, broken) {
     const c = this.charging;
-    if (!c) return;
+    if (!c || this.remote) return;
     this.charging = null;
     if (!broken) return;
     if (abilityOf(this).chargeGuard) {
@@ -156,10 +156,12 @@ export class Pokemon {
   }
 
   takeHit(dmg, { dirX, dirY, knockback, stagger, flinch }, game) {
-    this.hp = Math.max(0, this.hp - dmg);
-    this.trailDelay = 0.45;
     this.flash = 1;
     this.flashColor = '#ffffff';
+    // Online: the other player's game owns their Pokémon's HP and reactions; here a hit only flashes.
+    if (this.remote) return;
+    this.hp = Math.max(0, this.hp - dmg);
+    this.trailDelay = 0.45;
     const kb = knockback / this.species.weight;
     this.vx += dirX * kb;
     this.vy += dirY * kb;
@@ -174,10 +176,13 @@ export class Pokemon {
   }
 
   // Quick evasive dash with a short invulnerability window. Not allowed mid-attack, stunned or frozen.
-  dodge(dx, dy) {
-    if (this.air && this.air.t < 0.4) return false; // can air-dodge out of a juggle only after a moment
-    if (!this.alive || this.hidden || this.held || this.status.sleep > 0 || this.recallT > 0 || this.frozen > 0 || this.stagger > 0 || this.root > 0 || this.dodgeCD > 0) return false;
-    if (this.action && !this.action.allowMove) return false;
+  // `force` replays a dodge the other player already made (online).
+  dodge(dx, dy, force = false) {
+    if (!force) {
+      if (this.air && this.air.t < 0.4) return false; // can air-dodge out of a juggle only after a moment
+      if (!this.alive || this.hidden || this.held || this.status.sleep > 0 || this.recallT > 0 || this.frozen > 0 || this.stagger > 0 || this.root > 0 || this.dodgeCD > 0) return false;
+      if (this.action && !this.action.allowMove) return false;
+    }
     const len = Math.hypot(dx, dy);
     if (len < 0.01) return false;
     this.dodgeDir = { x: dx / len, y: dy / len };
@@ -189,6 +194,7 @@ export class Pokemon {
   }
 
   freeze(t) {
+    if (this.remote) return;
     this.cancelAction();
     this.frozen = t;
     this.stagger = 0;

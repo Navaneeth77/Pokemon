@@ -72,6 +72,7 @@ class MoveAction {
 
   cancel() {
     if (this.done) return;
+    this.cancelled = true;
     this.done = true;
     this.cleanup();
   }

@@ -27,7 +27,7 @@ export class Team {
     const n = this.members.length;
     for (let i = 1; i < n; i++) {
       const k = (this.index + i) % n;
-      if (this.members[k].alive) return k;
+      if (this.members[k].alive && !this.members[k].fainted) return k;
     }
     return -1;
   }
