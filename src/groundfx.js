@@ -7,6 +7,21 @@ const pick = list => list[Math.floor(Math.random() * list.length)];
 const MAX_MARKS = 140;
 const SQUASH = 0.72; // ground-plane perspective: circles on the ground read as ellipses
 
+const STAMP_VARIANTS = 4;
+const stampCache = new Map();
+
+// New canvases cost a GPU upload on first draw, so each kind/size keeps a few random variants.
+function cachedStamp(kind, r, paint) {
+  const size = Math.max(2, Math.round(r));
+  const key = `${kind}|${size}|${Math.floor(Math.random() * STAMP_VARIANTS)}`;
+  let img = stampCache.get(key);
+  if (!img) {
+    img = makeStamp(size, paint);
+    stampCache.set(key, img);
+  }
+  return img;
+}
+
 function makeStamp(r, paint) {
   const size = Math.ceil(r * 2 + 6);
   const c = document.createElement('canvas');
@@ -198,36 +213,30 @@ class Fracture {
     ctx.closePath();
   }
 
-  strokeCrack(ctx, pts, front, ox, oy) {
+  strokeCrack(ctx, pts, ox, oy) {
     ctx.beginPath();
-    let started = false;
-    for (const [px, py, r] of pts) {
-      if (r > front) break;
-      if (started) ctx.lineTo(px + ox, py + oy);
-      else {
-        ctx.moveTo(px + ox, py + oy);
-        started = true;
-      }
-    }
-    if (started) ctx.stroke();
+    pts.forEach(([px, py], i) => (i ? ctx.lineTo(px + ox, py + oy) : ctx.moveTo(px + ox, py + oy)));
+    ctx.stroke();
   }
 
-  draw(ctx) {
-    const t = this.age;
-    const front = this.R * 1.15 * Math.min(1, t / this.grow);
-    const pop = Math.min(1, t / 0.12);
-    const jitter = t < 0.4 ? (Math.random() * 2 - 1) * (1 - t / 0.4) * 1.5 : 0;
-    ctx.save();
-    ctx.translate(Math.round(this.x + jitter), Math.round(this.y));
+  // Painted once at world resolution: redrawing hundreds of vector cracks every frame caused
+  // frame spikes, and the pixel look now matches the other ground marks.
+  paint() {
+    const size = Math.ceil(this.R * 2.5 + 12), c = size / 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(c, c);
     ctx.fillStyle = 'rgba(38,36,46,0.6)';
     ctx.beginPath();
-    ctx.ellipse(0, 0, this.R * 0.2 * pop, this.R * 0.14 * pop, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, this.R * 0.2, this.R * 0.14, 0, 0, Math.PI * 2);
     ctx.fill();
     for (const s of this.slabs) {
       Fracture.path(ctx, s.poly, 2);
       ctx.fillStyle = 'rgba(28,30,40,0.42)';
       ctx.fill();
-      Fracture.path(ctx, s.poly, -s.lift * pop);
+      Fracture.path(ctx, s.poly, -s.lift);
       ctx.fillStyle = s.tone;
       ctx.fill();
       ctx.strokeStyle = '#555c6a';
@@ -236,19 +245,37 @@ class Fracture {
     }
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const c of this.cracks) {
+    for (const k of this.cracks) {
       ctx.strokeStyle = '#2b2f39';
-      ctx.lineWidth = c.width;
-      this.strokeCrack(ctx, c.pts, front, 0, 0);
+      ctx.lineWidth = k.width;
+      this.strokeCrack(ctx, k.pts, 0, 0);
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
       ctx.lineWidth = 0.6;
-      this.strokeCrack(ctx, c.pts, front, 0.8, 0.9);
+      this.strokeCrack(ctx, k.pts, 0.8, 0.9);
     }
     for (const r of this.rubble) {
-      if (r.d > front) continue;
       ctx.fillStyle = r.c;
       ctx.fillRect(r.x, r.y, r.s, r.s);
     }
+    return canvas;
+  }
+
+  // Cracks race outward (a growing reveal of the painted image) while the ground briefly shakes.
+  draw(ctx) {
+    this.img ??= this.paint();
+    const t = this.age, reach = this.R * 1.15;
+    const front = reach * Math.min(1, t / this.grow);
+    const jitter = t < 0.4 ? Math.round((Math.random() * 2 - 1) * (1 - t / 0.4) * 1.5) : 0;
+    const x = Math.round(this.x - this.img.width / 2) + jitter, y = Math.round(this.y - this.img.height / 2);
+    if (front >= reach) {
+      ctx.drawImage(this.img, x, y);
+      return;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(this.x + jitter, this.y, front + 2, front * SQUASH + 5, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(this.img, x, y);
     ctx.restore();
   }
 }
@@ -286,16 +313,16 @@ export class GroundFX {
     ctx.globalAlpha = 1;
   }
 
-  stamp(x, y, r, life, paint) {
-    return this.add(new Stamp(makeStamp(r, paint), x, y, life));
+  stamp(kind, x, y, r, life, paint) {
+    return this.add(new Stamp(cachedStamp(kind, r, paint), x, y, life));
   }
 
-  scorch(x, y, r, life = 5) { return this.stamp(x, y, r, life, paintScorch); }
-  burn(x, y, r, life = 5) { return this.stamp(x, y, r, life, paintBurn); }
-  frost(x, y, r, life = 6) { return this.stamp(x, y, r, life, paintFrost); }
-  wet(x, y, r, life = 5) { return this.stamp(x, y, r * 1.2, life, paintWet); }
-  leaves(x, y, r, life = 5) { return this.stamp(x, y, r, life, paintLeaves); }
-  energy(x, y, r, rgb, life = 4) { return this.stamp(x, y, r, life, paintEnergy(rgb.join(','))); }
+  scorch(x, y, r, life = 5) { return this.stamp('scorch', x, y, r, life, paintScorch); }
+  burn(x, y, r, life = 5) { return this.stamp('burn', x, y, r, life, paintBurn); }
+  frost(x, y, r, life = 6) { return this.stamp('frost', x, y, r, life, paintFrost); }
+  wet(x, y, r, life = 5) { return this.stamp('wet', x, y, r * 1.2, life, paintWet); }
+  leaves(x, y, r, life = 5) { return this.stamp('leaves', x, y, r, life, paintLeaves); }
+  energy(x, y, r, rgb, life = 4) { return this.stamp(`energy${rgb}`, x, y, r, life, paintEnergy(rgb.join(','))); }
   dragon(x, y, r, life = 4) { return this.energy(x, y, r, [140, 100, 255], life); }
   fracture(x, y, R, life = 6.5) { return this.add(new Fracture(x, y, R, life)); }
 }

@@ -733,7 +733,8 @@ class DragonAscent extends MoveAction {
       u.x = this.from.x + (this.spot.x - this.from.x) * e;
       u.y = this.from.y + (this.spot.y - this.from.y) * e;
       u.zOverride = H * (1 - e);
-      g.spawn(new Afterimage(u, 0.3, this.mega ? '#fff6b0' : '#9fffc4'));
+      this.ghost = !this.ghost;
+      if (this.ghost) g.spawn(new Afterimage(u, 0.3, this.mega ? '#fff6b0' : '#9fffc4'));
       for (let i = 0; i < (this.mega ? 7 : 4); i++) {
         g.particles.spawn({
           x: u.x + rand(-6, 6), y: u.y + rand(-4, 4), z: u.bodyZ + rand(-10, 10), vx: rand(-20, 20), vy: rand(-20, 20), vz: rand(30, 90),

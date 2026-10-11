@@ -1,7 +1,19 @@
 import { TICK } from './assets.js';
 
-const scratch = document.createElement('canvas');
-const sctx = scratch.getContext('2d');
+// Scratch canvases for tinting, one per frame size: resizing a shared one reallocated it on every flash.
+const scratches = new Map();
+function scratchFor(w, h) {
+  const key = w * 4096 + h;
+  let s = scratches.get(key);
+  if (!s) {
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    s = { canvas, ctx: canvas.getContext('2d') };
+    scratches.set(key, s);
+  }
+  return s;
+}
 
 // PMD row order: Down, DownRight, Right, UpRight, Up, UpLeft, Left, DownLeft.
 export function dirFromVector(dx, dy) {
@@ -76,10 +88,8 @@ export class AnimatedSprite {
 // Draws part of an image, optionally tinted toward a flash colour and mirrored horizontally.
 export function blit(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, { alpha = 1, flash = 0, flashColor = '#fff', flip = false, smooth = false } = {}) {
   if (flash > 0) {
-    if (scratch.width !== sw || scratch.height !== sh) {
-      scratch.width = sw;
-      scratch.height = sh;
-    } else sctx.clearRect(0, 0, sw, sh);
+    const { canvas: scratch, ctx: sctx } = scratchFor(sw, sh);
+    sctx.clearRect(0, 0, sw, sh);
     sctx.globalCompositeOperation = 'source-over';
     sctx.globalAlpha = 1;
     sctx.drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);

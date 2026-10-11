@@ -10,21 +10,28 @@ const ICE = ['#ffffff', '#d8f6ff', '#9be6ff', '#5cc3e6'];
 const SMOKE = ['#9a9aa2', '#7d7e86', '#64656d'];
 
 // Particles live on the ground plane (x, y) with a height z; they are drawn at y - z.
+const PARTICLE_DEFAULTS = {
+  x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, gz: 0, drag: 0, life: 0.5, size: 2, sizeEnd: null,
+  colors: ['#fff'], round: false, fade: true, alpha: 1, layer: 'air', age: 0,
+};
+
 export class ParticleSystem {
   constructor() {
     this.list = [];
+    this.pool = [];
   }
 
   clear() {
+    this.pool.push(...this.list);
     this.list.length = 0;
   }
 
+  // Dead particles are recycled to avoid garbage-collection hitches during heavy effects.
   spawn(p) {
-    if (this.list.length > 1500) return;
-    this.list.push({
-      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, gz: 0, drag: 0, life: 0.5, size: 2, sizeEnd: null,
-      colors: ['#fff'], round: false, fade: true, alpha: 1, layer: 'air', ...p, age: 0,
-    });
+    if (this.list.length > 1200) return;
+    const q = Object.assign(this.pool.pop() ?? {}, PARTICLE_DEFAULTS, p);
+    q.age = 0;
+    this.list.push(q);
   }
 
   update(dt) {
@@ -33,7 +40,10 @@ export class ParticleSystem {
     for (let i = 0; i < l.length; i++) {
       const p = l[i];
       p.age += dt;
-      if (p.age >= p.life) continue;
+      if (p.age >= p.life) {
+        this.pool.push(p);
+        continue;
+      }
       if (p.drag) {
         const f = Math.exp(-p.drag * dt);
         p.vx *= f;

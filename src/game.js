@@ -22,7 +22,8 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export class Game {
   constructor(canvas, sprites, ui) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    // Opaque: the arena always covers the canvas, so the browser can skip blending it with the page.
+    this.ctx = canvas.getContext('2d', { alpha: false });
     this.ui = ui;
     this.sprites = sprites;
     this.arena = new Arena();
@@ -76,7 +77,7 @@ export class Game {
     this.hud.reset();
     this.input.clear();
     Object.assign(this, {
-      hitstopT: 0, shakeT: 0, shakeDur: 1, shakeMag: 0, slowT: 0, flashT: 0, endT: 0,
+      hitstopT: 0, lastHitstop: -1, shakeT: 0, shakeDur: 1, shakeMag: 0, slowT: 0, flashT: 0, endT: 0,
       winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, switching: false,
       switchMenu: false, windsOn: false, winds: null, punchT: 0, punchDur: 1, punchAmt: 0, punchAt: null,
     });
@@ -298,8 +299,11 @@ export class Game {
     }
   }
 
+  // Brief impact freezes, capped and spaced out so rapid hits never feel like stutter.
   hitstop(t) {
-    this.hitstopT = Math.max(this.hitstopT, t);
+    if (this.time - this.lastHitstop < 0.35) return;
+    this.lastHitstop = this.time;
+    this.hitstopT = Math.max(this.hitstopT, Math.min(t, 0.07));
   }
 
   flash(t) {
@@ -368,7 +372,6 @@ export class Game {
       this.slowT = 0.7;
       return;
     }
-    this.slowT = 0.3;
     this.later(1.7, () => {
       if (this.state !== 'fighting' || team.active !== mon) return;
       if (team === this.playerTeam) this.switchTo(next, true);
@@ -585,7 +588,8 @@ export class Game {
     }
     stage.style.width = `${Math.floor(w)}px`;
     stage.style.height = `${Math.floor(h)}px`;
-    this.k = Math.max(1, Math.round((h * (devicePixelRatio || 1)) / WORLD_H));
+    // Capped: beyond 3× the extra pixels cost fill rate without visibly sharper pixel art.
+    this.k = Math.max(1, Math.min(3, Math.round((h * (devicePixelRatio || 1)) / WORLD_H)));
     this.canvas.width = WORLD_W * this.k;
     this.canvas.height = WORLD_H * this.k;
   }
