@@ -191,7 +191,9 @@ export class UI {
     if (megaKey !== this.megaState) {
       this.megaState = megaKey;
       this.megaBtn.className = `mega-btn ${mega}`;
-      this.megaBtn.querySelector('.meta').textContent = p.isMega ? `${p.baseSpecies.name} has Mega Evolved`
+      // Pokémon without a Mega form (Pikachu) hide the button, so there is nothing to describe.
+      this.megaBtn.querySelector('.meta').textContent = mega === 'hidden' ? ''
+        : p.isMega ? `${p.baseSpecies.name} has Mega Evolved`
         : used ? 'Already used this battle (one per team)' : `Once per battle · becomes ${SPECIES[p.species.mega].name}`;
     }
 

@@ -597,13 +597,14 @@ export class Game {
   run() {
     let last = performance.now();
     const frame = now => {
+      // Scheduled first so an unexpected error in one frame can't stop the game loop for good.
+      requestAnimationFrame(frame);
       // rAF timestamps can be slightly earlier than the performance.now() read before the first frame;
       // a negative step would run every timer backwards, so clamp it.
       const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       this.update(dt);
       this.render();
-      requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
   }
