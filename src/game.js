@@ -504,7 +504,7 @@ export class Game {
   // Camera: normally the whole arena; during Mega Evolution it zooms onto the evolving Pokémon.
   camera() {
     const c = this.cinematic;
-    if (!c && this.punchT > 0) {
+    if (!c && this.punchT > 0 && this.punchAt) {
       const e = Math.sin(Math.PI * (1 - this.punchT / this.punchDur)), zoom = 1 + this.punchAmt * e;
       const halfW = WORLD_W / (2 * zoom), halfH = WORLD_H / (2 * zoom);
       return {
@@ -593,7 +593,9 @@ export class Game {
   run() {
     let last = performance.now();
     const frame = now => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      // rAF timestamps can be slightly earlier than the performance.now() read before the first frame;
+      // a negative step would run every timer backwards, so clamp it.
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       this.update(dt);
       this.render();
