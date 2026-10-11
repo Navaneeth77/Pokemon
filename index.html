@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mt. Silver Battle (fan prototype)</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage">
+        <canvas id="game"></canvas>
+        <div id="select-overlay" class="overlay">
+          <div class="select-card">
+            <div class="matchup"><span class="red">RED</span> <span class="vs">VS</span> <span class="gold">GOLD</span></div>
+            <div class="sub">Choose your lead Pokémon</div>
+            <div id="picks" class="picks"></div>
+            <div class="foe"><span>Gold's team:</span><span id="foe-team" class="foe-team"></span></div>
+            <button id="start-btn" class="big-btn">Start Battle</button>
+            <div class="hint"><kbd>WASD</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack · <kbd>Q</kbd> switch · <kbd>M</kbd> Mega</div>
+          </div>
+        </div>
+        <div id="switch-menu" class="switch-menu hidden">
+          <div class="sm-head"><span>SWITCH TO</span><span id="sm-cd"></span></div>
+          <div id="sm-list" class="sm-list"></div>
+          <div class="sm-hint"><kbd>1</kbd>–<kbd>3</kbd> choose · <kbd>Q</kbd> / <kbd>Esc</kbd> close</div>
+        </div>
+        <div id="result-overlay" class="overlay hidden">
+          <div class="overlay-card">
+            <div id="result-text"></div>
+            <button id="again-btn" class="big-btn">Restart Battle</button>
+          </div>
+        </div>
+      </div>
+      <aside id="panel">
+        <header>
+          <div class="loc">MT. SILVER · 3 VS 3</div>
+          <div class="title">Red <span>vs</span> Gold</div>
+        </header>
+        <div class="team-head"><span>YOUR TEAM</span><span id="switch-cd"></span></div>
+        <div id="team" class="team"></div>
+        <div id="moves"></div>
+        <button id="mega-btn" class="mega-btn hidden">
+          <span class="key">M</span>
+          <span class="info"><span class="name">Mega Evolve</span><span class="meta">Once per battle · becomes Mega Charizard X</span></span>
+        </button>
+        <div id="log" aria-live="polite"></div>
+        <footer>
+          <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack · <kbd>Q</kbd> switch · <kbd>M</kbd> Mega</div>
+          <div class="row">
+            <button id="restart-btn">Restart Battle</button>
+            <button id="mute-btn">Sound: On</button>
+          </div>
+          <div class="legal">Unofficial fan prototype, not affiliated with Nintendo, Game Freak or The Pokémon Company. Sprites: PMD SpriteCollab (CC BY-NC 4.0).</div>
+        </footer>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
