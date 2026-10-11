@@ -655,8 +655,8 @@ body.touch, body.touch button, body.touch canvas { user-select: none; -webkit-us
 .tut-btns .px-btn { min-height: 36px; padding: 5px 8px; font-size: 11px; }
 
 /* ── Touch controls ───────────────────────────────────────────────────────── */
-.touch { position: fixed; inset: 0; z-index: 40; pointer-events: none; font-family: 'Pixelify Sans', monospace; }
-.touch button, .t-joy { pointer-events: auto; touch-action: none; }
+#touch { position: fixed; inset: 0; z-index: 40; pointer-events: none; font-family: 'Pixelify Sans', monospace; }
+#touch button, #touch .t-joy { pointer-events: auto; touch-action: none; }
 .t-joy { position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: max(22px, env(safe-area-inset-bottom)); width: 128px; height: 128px; background: rgba(20, 24, 40, 0.35); border: 3px solid rgba(255, 255, 255, 0.4); border-radius: 50%; }
 .t-knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; background: rgba(248, 248, 240, 0.8); border: 3px solid #283058; border-radius: 50%; pointer-events: none; }
 .t-pad { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); width: 212px; height: 196px; pointer-events: none; }
