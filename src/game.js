@@ -22,6 +22,7 @@ import {
   ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash,
 } from './effects.js';
 import { initAudio, sfx } from './audio.js';
+import { music } from './music.js';
 
 export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
@@ -79,6 +80,8 @@ export class Game {
     this.reset();
     this.state = 'select';
     window.addEventListener('resize', () => this.resize());
+    window.visualViewport?.addEventListener('resize', () => this.resize());
+    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 200));
     this.resize();
   }
 
@@ -124,9 +127,34 @@ export class Game {
 
   // Team selection screen; the lead chosen there is used by start().
   toSelect() {
+    this.endPractice();
+    this.paused = false;
     this.reset();
     this.state = 'select';
     this.ui.showSelect(this.lead);
+    music.play('menu');
+  }
+
+  // Opening, trainer setup and format screens (flow.js): no battle input, battle overlays hidden.
+  toMenu() {
+    this.paused = false;
+    this.reset();
+    this.state = 'menu';
+    this.ui.hideBattleOverlays();
+  }
+
+  // Tutorial practice: the player's team against a passive Snorlax that never attacks and can't
+  // faint; nothing here touches the real battle (teams are rebuilt when a battle starts).
+  startPractice(team) {
+    this.practice = true;
+    this.selection = team;
+    this.opponentSelection = ['snorlax'];
+    this.lead = 0;
+    this.start(true);
+  }
+
+  endPractice() {
+    this.practice = false;
   }
 
   async ensureSprites(ids) {
@@ -141,8 +169,8 @@ export class Game {
   }
 
   // The player's team is whichever three Pokémon were picked on the selection screen.
-  start() {
-    if (this.selection.length !== 3) return;
+  start(practice = false) {
+    if (!practice && this.selection.length !== this.ui.format) return;
     initAudio();
     document.activeElement?.blur?.();
     this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
@@ -152,10 +180,17 @@ export class Game {
     this.ui.buildTeam(this);
     this.reset();
     for (const m of this.playerTeam.members) m.megaChoice = m.megaPick;
+    this.arena.setTheme(practice ? 'mtSilver' : this.arenaId ?? 'mtSilver');
+    if (practice) this.opponent.y = 330; // below the tutorial dialogue
+    this.ui.setLocation(this.arena.theme.name, this.playerTeam.members.length);
     this.state = 'intro';
     this.ui.onStart();
     this.ui.setActive(this.player);
-    this.showcase = new Showcase(this);
+    music.play('battle');
+    if (practice) {
+      this.hud.showBanner('PRACTICE', { color: '#ffd84a', y: 330, life: 1.2, size: 22 });
+      this.beginSendOut();
+    } else this.showcase = new Showcase(this);
   }
 
   // After the team showcase (or when it is skipped): both trainers throw out their leads.
@@ -539,9 +574,10 @@ export class Game {
   drawUltCard(ctx, c) {
     const T = ULT_CUT, e = c.t < 0.2 ? ease(c.t / 0.2) : c.t > T - 0.2 ? ease(Math.max(0, (T - c.t) / 0.2)) : 1;
     const bar = 58 * e, [c1, c2] = this.ultColors(c);
+    const v = this.view;
     ctx.fillStyle = '#05050a';
-    ctx.fillRect(0, 0, WORLD_W, bar);
-    ctx.fillRect(0, WORLD_H - bar, WORLD_W, bar);
+    ctx.fillRect(-v.ox, -v.oy, v.w, bar + v.oy);
+    ctx.fillRect(-v.ox, WORLD_H - bar, v.w, bar + v.h);
     const slide = (1 - ease(Math.min(1, c.t / 0.3))) * WORLD_W, y = WORLD_H - 150;
     ctx.globalAlpha = e;
     ctx.fillStyle = c2;
@@ -749,6 +785,10 @@ export class Game {
   // only when a whole team is down.
   onFaint(mon, by, move) {
     if (mon.fainted) return;
+    if (this.practice) {
+      mon.hp = mon.maxHp;
+      return;
+    }
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
@@ -784,6 +824,14 @@ export class Game {
   }
 
   update(dt) {
+    if (this.paused) {
+      this.ui.update(this, 0);
+      return;
+    }
+    if (this.practice && this.state === 'fighting') {
+      // Practice never ends: both sides are topped up.
+      for (const m of [this.player, this.opponent]) if (m.hp < m.maxHp * 0.35) m.hp = m.maxHp;
+    }
     if (this.hitstopT > 0) {
       this.hitstopT -= dt;
       this.shakeT -= dt;
@@ -1115,32 +1163,30 @@ export class Game {
   // Camera: normally the whole arena; during Mega Evolution it zooms onto the evolving Pokémon.
   camera() {
     if (this.finale) {
-      const f = this.finale.focus(), zoom = f.zoom;
-      const halfW = WORLD_W / (2 * zoom), halfH = WORLD_H / (2 * zoom);
-      return { zoom, cx: clamp(f.x, halfW, WORLD_W - halfW), cy: clamp(f.y, halfH, WORLD_H - halfH), dim: f.dim };
+      const f = this.finale.focus();
+      return { zoom: f.zoom, cx: f.x, cy: f.y, dim: f.dim };
     }
     const c = this.cinematic;
     if (!c && this.punchT > 0 && this.punchAt) {
       const e = Math.sin(Math.PI * (1 - this.punchT / this.punchDur)), zoom = 1 + this.punchAmt * e;
-      const halfW = WORLD_W / (2 * zoom), halfH = WORLD_H / (2 * zoom);
-      return {
-        zoom,
-        cx: clamp(WORLD_W / 2 + (this.punchAt.x - WORLD_W / 2) * e, halfW, WORLD_W - halfW),
-        cy: clamp(WORLD_H / 2 + (this.punchAt.y - WORLD_H / 2) * e, halfH, WORLD_H - halfH),
-        dim: 0,
-      };
+      return { zoom, cx: WORLD_W / 2 + (this.punchAt.x - WORLD_W / 2) * e, cy: WORLD_H / 2 + (this.punchAt.y - WORLD_H / 2) * e, dim: 0 };
     }
     if (!c) return { zoom: 1, cx: WORLD_W / 2, cy: WORLD_H / 2, dim: 0 };
     const ult = c.kind === 'ult', end = ult ? ULT_CUT - 0.25 : 1.45;
     const e = c.t < 0.3 ? ease(c.t / 0.3) : c.t > end ? ease(Math.max(0, 1 - (c.t - end) / 0.25)) : 1;
     const zoom = 1 + (ult ? 0.75 + 0.2 * Math.min(1, c.t / ULT_CUT) : 0.6) * e;
-    const halfW = WORLD_W / (2 * zoom), halfH = WORLD_H / (2 * zoom);
     return {
       zoom,
-      cx: clamp(WORLD_W / 2 + (c.mon.x - WORLD_W / 2) * e, halfW, WORLD_W - halfW),
-      cy: clamp(WORLD_H / 2 + (c.mon.y - c.mon.bodyZ - WORLD_H / 2) * e, halfH, WORLD_H - halfH),
+      cx: WORLD_W / 2 + (c.mon.x - WORLD_W / 2) * e,
+      cy: WORLD_H / 2 + (c.mon.y - c.mon.bodyZ - WORLD_H / 2) * e,
       dim: (ult ? 0.6 : 0.45) * e,
     };
+  }
+
+  // World point → page (CSS) coordinates; used to place tutorial prompts next to a Pokémon.
+  toScreen(x, y) {
+    const r = this.canvas.getBoundingClientRect(), v = this.view, sc = r.width / v.w;
+    return { x: r.left + (v.ox + x) * sc, y: r.top + (v.oy + y) * sc, scale: sc };
   }
 
   render() {
@@ -1156,15 +1202,16 @@ export class Game {
       sx = (Math.random() * 2 - 1) * m;
       sy = (Math.random() * 2 - 1) * m;
     }
-    const cam = this.camera();
+    const cam = this.camera(), v = this.view;
     const s = k * cam.zoom;
     ctx.setTransform(s, 0, 0, s,
-      Math.round((WORLD_W / 2 - cam.cx * cam.zoom + sx) * k),
-      Math.round((WORLD_H / 2 - cam.cy * cam.zoom + sy) * k));
+      Math.round((v.ox + WORLD_W / 2 - cam.cx * cam.zoom + sx) * k),
+      Math.round((v.oy + WORLD_H / 2 - cam.cy * cam.zoom + sy) * k));
+    this.arena.drawBackdrop(ctx);
     this.arena.drawGround(ctx);
     if (cam.dim > 0) {
       ctx.fillStyle = `rgba(14,10,30,${cam.dim})`;
-      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
     }
     for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
     this.particles.draw(ctx, 'ground');
@@ -1179,14 +1226,15 @@ export class Game {
     if (this.finale?.slow) this.finale.drawLines(ctx);
     if (this.weather === 'sun') {
       ctx.fillStyle = 'rgba(255,190,90,0.10)';
-      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
     }
     if (this.flashT > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, this.flashT * 6)})`;
-      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
     }
 
-    ctx.setTransform(k, 0, 0, k, 0, 0);
+    // Screen-space overlays (HUD, cutscene cards) sit over the arena column.
+    ctx.setTransform(k, 0, 0, k, Math.round(v.ox * k), Math.round(v.oy * k));
     this.hud.draw(ctx);
     if (this.cinematic?.kind === 'ult') this.drawUltCard(ctx, this.cinematic);
     if (this.showcase) this.showcase.draw(ctx);
@@ -1194,27 +1242,34 @@ export class Game {
   }
 
   resize() {
-    const stage = this.canvas.parentElement;
-    const wide = innerWidth >= 760;
-    let h, w;
-    if (wide) {
-      h = innerHeight - 24;
-      w = (h * 9) / 16;
-      const maxW = innerWidth - 24 - PANEL_W;
-      if (w > maxW) {
-        w = maxW;
-        h = (w * 16) / 9;
-      }
+    const stage = this.canvas.parentElement, touch = document.body.classList.contains('touch');
+    const vw = window.innerWidth, vh = window.visualViewport?.height ?? window.innerHeight;
+    stage.style.width = `${vw}px`;
+    stage.style.height = `${vh}px`;
+    // Side panel (desktop) floats over the scenery on the right; keep the arena clear of it.
+    const panel = !touch && vw >= 760 ? PANEL_W + 12 : 0;
+    let w, h, ox, oy;
+    if (vw / vh >= WORLD_W / WORLD_H) {
+      h = WORLD_H;
+      w = (WORLD_H * vw) / vh;
+      const pw = (panel * WORLD_H) / vh;
+      ox = Math.max(0, (w - pw - WORLD_W) / 2);
+      if (ox * 2 + WORLD_W > w) ox = (w - WORLD_W) / 2;
+      oy = 0;
     } else {
-      w = Math.min(innerWidth - 24, 480);
-      h = (w * 16) / 9;
+      w = WORLD_W;
+      h = (WORLD_W * vh) / vw;
+      ox = 0;
+      oy = touch ? 0 : (h - WORLD_H) / 2;
     }
-    stage.style.width = `${Math.floor(w)}px`;
-    stage.style.height = `${Math.floor(h)}px`;
-    // Capped: beyond 3× the extra pixels cost fill rate without visibly sharper pixel art.
-    this.k = Math.max(1, Math.min(3, Math.round((h * (devicePixelRatio || 1)) / WORLD_H)));
-    this.canvas.width = WORLD_W * this.k;
-    this.canvas.height = WORLD_H * this.k;
+    this.view = { w, h, ox, oy };
+    document.body.classList.toggle('with-panel', panel > 0);
+    // Whole-number render scale; capped (lower on phones) since extra pixels cost fill rate.
+    const cssScale = vh / h;
+    this.k = Math.max(1, Math.min(touch ? 2 : 3, Math.round(cssScale * (devicePixelRatio || 1))));
+    this.canvas.width = Math.ceil(w * this.k);
+    this.canvas.height = Math.ceil(h * this.k);
+    this.particles.max = touch ? 450 : 1200;
   }
 
   run() {

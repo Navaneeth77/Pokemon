@@ -147,13 +147,21 @@ export class Hud {
         ctx.stroke();
       }
     });
-    outlinedText(ctx, mon.trainer.name.toUpperCase(), right ? W - 70 : 70, 44.5, {
+    // Trainer name after the team balls (3 or 6 of them); the player's chosen portrait sits in front.
+    let nx = 46 + team.members.length * 8 + 2;
+    const bust = !right && this.game.playerBust;
+    if (bust) {
+      ctx.drawImage(bust, nx - 1, 36.5, 9, 9);
+      nx += 10;
+    }
+    nx = right ? W - nx : nx;
+    outlinedText(ctx, mon.trainer.name.toUpperCase(), nx, 44.5, {
       size: 6, align, color: right ? '#f5c542' : '#ff6a4d', lw: 2,
     });
     ctx.font = '700 6px "Pixelify Sans"';
     const tw = ctx.measureText(mon.trainer.name.toUpperCase()).width;
     const abName = abilityOf(mon).name.toUpperCase();
-    outlinedText(ctx, right ? `${abName} ·` : `· ${abName}`, right ? W - 74 - tw : 74 + tw, 44.5, { size: 6, align, color: '#e8e0c8', lw: 2 });
+    outlinedText(ctx, right ? `${abName} ·` : `· ${abName}`, right ? nx - tw - 4 : nx + tw + 4, 44.5, { size: 6, align, color: '#e8e0c8', lw: 2 });
     if (ready) outlinedText(ctx, 'ULT READY', right ? bx : bx + BAR_W, by + bh + 8.5, { size: 5.5, align: right ? 'left' : 'right', color: '#ffd84a', lw: 1.5 });
 
     const glow = this.glow[right ? 'opponent' : 'player'];

@@ -28,7 +28,7 @@ export class ParticleSystem {
 
   // Dead particles are recycled to avoid garbage-collection hitches during heavy effects.
   spawn(p) {
-    if (this.list.length > 1200) return;
+    if (this.list.length > (this.max ?? 1200)) return;
     const q = Object.assign(this.pool.pop() ?? {}, PARTICLE_DEFAULTS, p);
     q.age = 0;
     this.list.push(q);
@@ -808,7 +808,7 @@ export class ScreenDim extends Effect {
   draw(ctx) {
     const t = this.age / this.life;
     ctx.fillStyle = `rgba(${this.rgb},${this.alpha * Math.min(1, this.age / 0.15) * (t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1)})`;
-    ctx.fillRect(-20, -20, 400, 680);
+    ctx.fillRect(-1600, -1600, 3560, 3840);
   }
 }
 

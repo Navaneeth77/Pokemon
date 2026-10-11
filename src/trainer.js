@@ -6,7 +6,7 @@ const OUTLINE = '#1c1b24';
 const PALETTES = {
   red: {
     k: OUTLINE, r: '#e0362f', R: '#a32020', w: '#f4f4f4', h: '#2a2630', H: '#4a4352',
-    t: '#26262e', s: '#f2c7a0', S: '#cf9670', b: '#4a6cc4', B: '#2f4a92',
+    t: '#26262e', s: '#f2c7a0', S: '#cf9670', b: '#4a6cc4', B: '#2f4a92', c: '#e0362f', C: '#a32020', W: '#f4f4f4', p: '#e0362f',
   },
   gold: {
     k: OUTLINE, h: '#2b2b36', y: '#f2c232', n: '#5a3d2b', N: '#3e2a1e', s: '#f2c7a0', S: '#cf9670',
@@ -19,11 +19,11 @@ const BASE = {
     '................',
     '................',
     '.....kkkkkk.....',
-    '....krrrrrrk....',
-    '...krrrrrrrrk...',
-    '...krrrrrrrRk...',
-    '...krrRwwRrRk...',
-    '...kRRRRRRRRk...',
+    '....kcccccck....',
+    '...kcccccccck...',
+    '...kcccccccCk...',
+    '...kccCWWCcCk...',
+    '...kCCCCCCCCk...',
     '...khhHhhHhhk...',
     '...khHhhhhHhk...',
     '....khhhhhhk....',
@@ -80,7 +80,7 @@ const RED_ARM_UP = [
   [10, 12, 'k'], [11, 12, 'k'], [12, 13, 't'], [12, 14, 'k'],
 ];
 const RED_BALL = [
-  [2, 13, 'k'], [2, 14, 'k'], [3, 12, 'k'], [3, 13, 'r'], [3, 14, 'r'], [3, 15, 'k'],
+  [2, 13, 'k'], [2, 14, 'k'], [3, 12, 'k'], [3, 13, 'p'], [3, 14, 'p'], [3, 15, 'k'],
   [4, 12, 'k'], [4, 13, 'w'], [4, 14, 'w'], [4, 15, 'k'], [5, 13, 'k'], [5, 14, 'k'],
 ];
 
@@ -140,10 +140,14 @@ export class Trainer {
     this.name = name;
     this.x = x;
     this.y = y;
-    this.frames = Object.fromEntries(
-      Object.entries(POSES[id]).map(([pose, o]) => [pose, buildFrame(BASE[id], o, PALETTES[id])]),
-    );
+    this.setPalette(PALETTES[id]);
     this.reset();
+  }
+
+  // Recolours the sprite (the player's chosen trainer look); missing colours keep the defaults.
+  setPalette(palette) {
+    const pal = { ...PALETTES[this.id], ...palette };
+    this.frames = Object.fromEntries(Object.entries(POSES[this.id]).map(([pose, o]) => [pose, buildFrame(BASE[this.id], o, pal)]));
   }
 
   reset() {

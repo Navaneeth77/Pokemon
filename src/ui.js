@@ -30,6 +30,7 @@ export class UI {
     this.filter = 'all';
     this.foes = [...OPPONENT_TEAM];
     this.difficulty = 'medium';
+    this.format = 3;
     this.query = '';
     this.logEl = $('#log');
     this.selectOverlay = $('#select-overlay');
@@ -71,8 +72,9 @@ export class UI {
   }
 
   async startBattle() {
-    if (this.selection.length !== 3 || this.loading) return;
+    if (this.selection.length !== this.format || this.loading) return;
     const btn = $('#start-btn');
+    this.game.flow?.enterFullscreen();
     this.loading = true;
     btn.disabled = true;
     btn.textContent = 'Loading…';
@@ -110,7 +112,7 @@ export class UI {
       });
       btn.addEventListener('mouseenter', () => this.showInfo(id));
       box.appendChild(btn);
-      const text = [s.name, s.class, ABILITIES[s.ability].name, ...s.types, ...s.moves.map(m => MOVES[m].name), MOVES[s.ultimate].name].join(' ').toLowerCase();
+      const text = s.name.toLowerCase(); // search matches Pokémon names only
       this.cards.push({ id, btn, no: btn.querySelector('.no'), species: s, text });
     }
     $('#roster-search').addEventListener('input', e => {
@@ -135,6 +137,30 @@ export class UI {
         b.blur();
       });
     }
+    const fmt = document.createElement('button');
+    fmt.className = 'mini-btn format-link';
+    fmt.textContent = '◀ Change format';
+    fmt.addEventListener('click', () => this.game.flow?.showFormat());
+    // Switch between 3v3 and 6v6 right here as well.
+    const fmtSwitch = document.createElement('div');
+    fmtSwitch.className = 'fmt-switch';
+    fmtSwitch.innerHTML = '<button data-n="3">3 VS 3</button><button data-n="6">6 VS 6</button>';
+    fmtSwitch.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      const n = +b.dataset.n, flow = this.game.flow;
+      if (flow) {
+        flow.format = n;
+        flow.save.format = n;
+        flow.persist();
+      }
+      this.setFormat(n);
+      this.renderSelection();
+    }));
+    $('.team-summary').before(fmtSwitch);
+    const ar = document.createElement('button');
+    ar.className = 'mini-btn format-link';
+    ar.textContent = '◀ Change arena';
+    ar.addEventListener('click', () => this.game.flow?.showArena());
+    $('#start-btn').after(fmt, ar);
     this.rollFoes();
     this.showInfo(this.selection[0]);
     this.renderSelection();
@@ -142,9 +168,16 @@ export class UI {
 
   // The bot fields three random, distinct Pokémon; rolled again for every new battle.
   rollFoes() {
-    const pool = [...ROSTER];
-    this.foes = [];
-    while (this.foes.length < 3) this.foes.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    const special = this.selection.filter(id => SPECIES[id].class !== 'regular').length;
+    const pick = (pool, n) => {
+      const out = [];
+      while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      return out;
+    };
+    const legends = ROSTER.filter(id => SPECIES[id].class !== 'regular'), regulars = ROSTER.filter(id => SPECIES[id].class === 'regular');
+    const strong = Math.min(special, this.format);
+    this.foes = [...pick(legends, strong), ...pick(regulars, this.format - strong)].sort(() => Math.random() - 0.5);
+    this.foeBasis = `${this.format}|${special}`;
     $('#foe-team').innerHTML = this.foes.map(id => {
       const s = SPECIES[id];
       return `<span class="foe-mon"><img src="${portrait(s)}" alt="">${s.name}</span>`;
@@ -155,7 +188,7 @@ export class UI {
     let shown = 0;
     for (const c of this.cards) {
       const s = c.species;
-      const ok = (this.filter === 'all' || (this.filter === 'mega' ? s.mega?.length : s.class === this.filter))
+      const ok = !!(this.filter === 'all' || (this.filter === 'mega' ? s.mega?.length : s.class === this.filter))
         && (!this.query || c.text.includes(this.query));
       c.btn.hidden = !ok;
       shown += ok;
@@ -164,13 +197,18 @@ export class UI {
   }
 
   showInfo(id) {
+    $('#mon-info').innerHTML = this.infoHtml(id);
+  }
+
+  // Details card for one Pokémon (team select and the battle-setup Pokédex share it).
+  infoHtml(id) {
     const s = SPECIES[id], ab = ABILITIES[s.ability];
     const stat = (label, v, max) => `<div class="st"><span>${label}</span><i><b style="width:${Math.min(100, (v / max) * 100)}%"></b></i><em>${v}</em></div>`;
     const megas = (s.mega ?? []).map(m => {
       const f = SPECIES[m], fa = ABILITIES[f.ability];
       return `<div class="mega-line"><b>${f.name}</b> ${typeChips(f.types)} — <u>${fa.name}</u>: ${esc(fa.desc)}</div>`;
     }).join('');
-    $('#mon-info').innerHTML = `
+    return `
       <div class="mi-head"><img src="${portrait(s)}" alt=""><div><b>${s.name}</b> <span class="cls c-${s.class}">${CLASS_LABEL[s.class]}</span>
         <div class="tp">${typeChips(s.types)}</div></div></div>
       <div class="stats">${stat('HP', s.hp, 1900)}${stat('SPD', s.speed, 130)}${stat('ATK', Math.round(s.atk * 100), 150)}${stat('DEF', Math.round(s.def * 100), 140)}</div>
@@ -184,12 +222,39 @@ export class UI {
       this.selection.splice(i, 1);
       if (i < this.lead) this.lead--;
       else if (i === this.lead) this.lead = 0;
-    } else if (this.selection.length < 3) this.selection.push(id);
+    } else if (this.selection.length < this.format) this.selection.push(id);
     this.renderSelection();
   }
 
+  setFormat(n) {
+    this.format = n;
+    this.selection = this.selection.slice(0, n);
+    if (this.lead >= this.selection.length) this.lead = 0;
+    this.rollFoes();
+  }
+
+  hideBattleOverlays() {
+    this.selectOverlay.classList.add('hidden');
+    this.resultOverlay.classList.add('hidden');
+    this.showSwitchMenu(false);
+  }
+
+  setLocation(arena, n) {
+    $('#panel .loc').textContent = `${arena.toUpperCase()} · ${n} VS ${n}`;
+  }
+
+  // The player's trainer name and portrait in the side panel and on the team-select header.
+  setTrainer(name, bust) {
+    const icon = `<canvas class="pt-icon" width="24" height="24"></canvas>`;
+    $('#panel .title').innerHTML = `${icon}${name} <span>vs</span> Gold`;
+    $('#panel .title canvas').getContext('2d').drawImage(bust, 0, 0);
+    $('.matchup').innerHTML = `<span class="red">${name}</span> <span class="vs">VS</span> <span class="gold">GOLD</span>`;
+  }
+
   renderSelection() {
-    const full = this.selection.length >= 3;
+    const special = this.selection.filter(id => SPECIES[id].class !== 'regular').length;
+    if (this.foeBasis !== `${this.format}|${special}`) this.rollFoes();
+    const full = this.selection.length >= this.format;
     for (const c of this.cards) {
       const k = this.selection.indexOf(c.id);
       c.btn.classList.toggle('sel', k >= 0);
@@ -197,7 +262,7 @@ export class UI {
       c.no.textContent = k < 0 ? '' : k === this.lead ? 'LEAD' : String(k + 1);
     }
     const box = $('#team-summary');
-    box.innerHTML = [0, 1, 2].map(i => {
+    box.innerHTML = `<div class="team-count">YOUR TEAM ${this.selection.length}/${this.format}</div>` + Array.from({ length: this.format }, (_, i) => i).map(i => {
       const id = this.selection[i];
       if (!id) return '<div class="slot empty">Empty slot</div>';
       const s = SPECIES[id];
@@ -217,9 +282,10 @@ export class UI {
       this.megaPick[e.dataset.id] = e.dataset.m;
       this.renderSelection();
     }));
+    document.querySelectorAll('.fmt-switch button').forEach(b => b.classList.toggle('on', +b.dataset.n === this.format));
     const start = $('#start-btn');
     start.disabled = !full;
-    start.textContent = full ? 'Start Battle' : `Pick ${3 - this.selection.length} more`;
+    start.textContent = full ? `Start ${this.format}v${this.format} Battle` : `Pick ${this.format - this.selection.length} more`;
     this.applyFilter();
   }
 
@@ -339,7 +405,9 @@ export class UI {
   }
 
   update(game) {
-    if (game.state === 'select') return;
+    if (document.body.dataset.state !== game.state) document.body.dataset.state = game.state;
+    this.touch?.update();
+    if (game.state === 'select' || game.state === 'menu') return;
     const p = game.player;
     const locked = game.state !== 'fighting' || p.frozen > 0 || !p.alive || game.switching;
     for (const m of this.moveEls) {

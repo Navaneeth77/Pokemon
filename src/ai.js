@@ -35,6 +35,7 @@ export class OpponentAI {
     const me = game.opponent, foe = game.player;
     const cfg = (this.cfg = LEVELS[game.difficulty] ?? LEVELS.medium);
     me.input.x = me.input.y = 0;
+    if (game.practice) return; // the tutorial's practice target never moves or attacks
     if (game.state !== 'fighting' || me.hidden || !me.alive || !foe.alive || foe.hidden) return;
 
     this.gap -= dt;

@@ -26,6 +26,8 @@ export function setMuted(m) {
 }
 
 export const isMuted = () => muted;
+// The shared AudioContext once a user gesture has created it (music.js schedules on it too).
+export const audioContext = () => ac;
 
 function envelope(gain, t0, attack, hold, release, peak) {
   gain.gain.setValueAtTime(0.0001, t0);
@@ -120,6 +122,9 @@ sfx.megaBurst = () => {
   noise({ dur: 0.7, filter: 'lowpass', f0: 5000, f1: 300, gain: 0.5, release: 0.5 });
   [523, 659, 784].forEach(f => tone({ type: 'square', f0: f, f1: f * 2, dur: 0.35, gain: 0.07 }));
 };
+
+// Handheld power-on chime played at PRESS START.
+sfx.startup = () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ type: 'square', f0: f, dur: i === 4 ? 0.45 : 0.1, gain: 0.08, delay: i * 0.08 }));
 
 sfx.clang = () => {
   tone({ type: 'square', f0: 1400, f1: 900, dur: 0.12, gain: 0.07 });

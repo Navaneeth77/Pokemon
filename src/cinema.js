@@ -35,28 +35,31 @@ export class Showcase {
     ctx.save();
     ctx.translate(off, 0);
     ctx.fillStyle = dark;
+    const v = this.game.view, L = -v.ox - 20, R = v.w - v.ox + 20;
     ctx.beginPath();
-    ctx.moveTo(-20, y - 46);
-    ctx.lineTo(WORLD_W + 20, y - 62);
-    ctx.lineTo(WORLD_W + 20, y + 46);
-    ctx.lineTo(-20, y + 62);
+    ctx.moveTo(L, y - 46);
+    ctx.lineTo(R, y - 62);
+    ctx.lineTo(R, y + 46);
+    ctx.lineTo(L, y + 62);
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = color;
-    ctx.fillRect(-20, y + 40, WORLD_W + 40, 3);
+    ctx.fillRect(L, y + 40, R - L, 3);
     outlinedText(ctx, team.trainer.name.toUpperCase(), fromRight ? WORLD_W - 14 : 14, y - 34, {
       family: 'Luckiest Guy', weight: 400, size: 15, color, align: fromRight ? 'right' : 'left', lw: 3,
     });
+    const n = team.members.length, step = n > 3 ? 56 : 110, half = n > 3 ? 12 : 25;
     team.members.forEach((m, i) => {
-      const x = 70 + i * 110, py = y - 10;
-      roundRect(ctx, x - 25, py - 25, 50, 50, 6, '#10131a');
-      roundRect(ctx, x - 23, py - 23, 46, 46, 5, TYPE_COLORS[m.species.types[0]][1]);
+      const x = WORLD_W / 2 + (i - (n - 1) / 2) * step, py = y - 10;
+      roundRect(ctx, x - half, py - half, half * 2, half * 2, 5, '#10131a');
+      roundRect(ctx, x - half + 2, py - half + 2, half * 2 - 4, half * 2 - 4, 4, TYPE_COLORS[m.species.types[0]][1]);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(m.portrait, x - 21, py - 21, 42, 42);
+      ctx.drawImage(m.portrait, x - half + 4, py - half + 4, half * 2 - 8, half * 2 - 8);
       ctx.imageSmoothingEnabled = false;
-      outlinedText(ctx, m.species.name.toUpperCase(), x, py + 36, { size: m.species.name.length > 9 ? 7 : 8, align: 'center', lw: 2.5 });
+      const name = m.species.name.toUpperCase();
+      outlinedText(ctx, name, x, py + half + 11, { size: n > 3 ? (name.length > 8 ? 4.5 : 5.5) : name.length > 9 ? 7 : 8, align: 'center', lw: 2 });
       if (m.species.class !== 'regular') {
-        outlinedText(ctx, CLASS_LABEL[m.species.class].toUpperCase(), x, py - 28, { size: 5.5, align: 'center', color: '#ffd84a', lw: 2 });
+        outlinedText(ctx, CLASS_LABEL[m.species.class].toUpperCase(), x, py - half - 3, { size: n > 3 ? 4.5 : 5.5, align: 'center', color: '#ffd84a', lw: 2 });
       }
     });
     ctx.restore();
@@ -66,8 +69,9 @@ export class Showcase {
     const g = this.game, t = this.t, fade = t > this.dur - 0.3 ? Math.max(0, (this.dur - t) / 0.3) : Math.min(1, t / 0.15);
     ctx.save();
     ctx.globalAlpha = fade;
+    const v = this.game.view;
     ctx.fillStyle = 'rgba(6,8,16,0.82)';
-    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    ctx.fillRect(-v.ox, -v.oy, v.w, v.h);
     this.band(ctx, g.opponentTeam, 210, true, '#f5c542', '#3a2a0a');
     this.band(ctx, g.playerTeam, 450, false, '#ff6a4d', '#3a120c');
     const vk = Math.min(1, Math.max(0, (t - 0.55) / 0.25));
@@ -261,10 +265,11 @@ export class Finale {
       ctx.save();
       ctx.translate((1 - k) * -WORLD_W, 0);
       ctx.fillStyle = win ? 'rgba(111,22,15,0.92)' : 'rgba(58,42,10,0.92)';
-      ctx.fillRect(0, 470, WORLD_W, 74);
+      const v = this.game.view;
+      ctx.fillRect(-v.ox, 470, v.w, 74);
       ctx.fillStyle = win ? '#ff6a4d' : '#f5c542';
-      ctx.fillRect(0, 470, WORLD_W, 3);
-      ctx.fillRect(0, 541, WORLD_W, 3);
+      ctx.fillRect(-v.ox, 470, v.w, 3);
+      ctx.fillRect(-v.ox, 541, v.w, 3);
       outlinedText(ctx, `${w.species.name.toUpperCase()} WINS!`, WORLD_W / 2, 506, { family: 'Luckiest Guy', weight: 400, size: w.species.name.length > 12 ? 20 : 26, color: '#ffffff', stroke: '#24100c', lw: 5, align: 'center' });
       outlinedText(ctx, `${w.trainer.name.toUpperCase()} IS VICTORIOUS`, WORLD_W / 2, 530, { family: 'Luckiest Guy', weight: 400, size: 11, color: '#ffd84a', stroke: '#24100c', lw: 3, align: 'center' });
       ctx.restore();

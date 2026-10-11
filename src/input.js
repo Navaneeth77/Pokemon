@@ -26,6 +26,13 @@ export class Input {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target?.tagName === 'INPUT') return; // typing in the roster search
     const { state } = this.game;
+    // Opening, trainer setup, format screens and the pause menu handle their own keys (flow.js).
+    if (state === 'menu' || this.game.paused) return;
+    if (this.game.switchMenu && /^(Digit|Numpad)[1-6]$/.test(e.code)) {
+      e.preventDefault();
+      if (!e.repeat) this.game.pickSwitch(Number(e.code.slice(-1)) - 1);
+      return;
+    }
     const fighting = state === 'fighting';
     // Intro showcase and finishing sequence can be skipped.
     if ((this.game.showcase || this.game.finale) && ['Enter', 'Space', 'Escape'].includes(e.code)) {
@@ -71,9 +78,12 @@ export class Input {
 
   clear() {
     this.held.clear();
+    this.touch = null;
   }
 
   vector() {
+    // The on-screen joystick (touch.js) gives an analogue direction.
+    if (this.touch) return this.touch;
     let x = 0, y = 0;
     for (const code of this.held) {
       const v = MOVE_KEYS[code];

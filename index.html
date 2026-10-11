@@ -2,8 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Mt. Silver Battle (fan prototype)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0b0a1f" />
+    <title>Pokémon: Chaos Arena</title>
   </head>
   <body>
     <div id="app">
@@ -14,7 +15,7 @@
             <div class="matchup"><span class="red">RED</span> <span class="vs">VS</span> <span class="gold">GOLD</span></div>
             <div class="sub">Pick any 3 Pokémon · click a team slot to set your lead</div>
             <div class="roster-tools">
-              <input id="roster-search" type="search" placeholder="Search name, type, ability or move…" autocomplete="off" spellcheck="false" />
+              <input id="roster-search" type="search" placeholder="Search Pokémon name…" autocomplete="off" spellcheck="false" />
               <div id="roster-filters" class="filters">
                 <button data-f="all" class="on">All</button><button data-f="regular">Regular</button><button data-f="legendary">Legendary</button><button data-f="mythical">Mythical</button><button data-f="mega">Mega</button>
                 <span id="roster-count"></span>
@@ -29,10 +30,11 @@
             <div class="hint"><kbd>WASD</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack (hold ⚡ moves to charge) · <kbd>R</kbd>/<kbd>5</kbd> ultimate · <kbd>Q</kbd> switch · <kbd>Space</kbd> dodge · <kbd>M</kbd> Mega</div>
           </div>
         </div>
+        <div id="tutorial" class="px-dialog hidden"></div>
         <div id="switch-menu" class="switch-menu hidden">
           <div class="sm-head"><span>SWITCH TO</span><span id="sm-cd"></span></div>
           <div id="sm-list" class="sm-list"></div>
-          <div class="sm-hint"><kbd>1</kbd>–<kbd>3</kbd> choose · <kbd>Q</kbd> / <kbd>Esc</kbd> close</div>
+          <div class="sm-hint"><kbd>1</kbd>–<kbd>6</kbd> choose · <kbd>Q</kbd> / <kbd>Esc</kbd> close</div>
         </div>
         <div id="result-overlay" class="overlay hidden">
           <div class="overlay-card">
@@ -43,7 +45,7 @@
       </div>
       <aside id="panel">
         <header>
-          <div class="loc">MT. SILVER · 3 VS 3</div>
+          <div class="loc">CHAOS ARENA · 3 VS 3</div>
           <div class="title">Red <span>vs</span> Gold</div>
         </header>
         <div class="team-head"><span>YOUR TEAM</span><span id="switch-cd"></span></div>
@@ -63,6 +65,7 @@
         <footer>
           <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>1</kbd>–<kbd>4</kbd> attack (hold ⚡) · <kbd>R</kbd>/<kbd>5</kbd> ultimate · <kbd>Q</kbd> switch · <kbd>Space</kbd> dodge · <kbd>M</kbd> Mega</div>
           <div class="row">
+            <button id="pause-btn">Pause (P)</button>
             <button id="restart-btn">Restart Battle</button>
             <button id="mute-btn">Sound: On</button>
           </div>
@@ -70,6 +73,28 @@
         </footer>
       </aside>
     </div>
+    <!-- Opening, title menu and setup screens (see src/flow.js) -->
+    <div id="intro" class="intro hidden">
+      <canvas id="intro-canvas"></canvas>
+      <div class="corner-ui"><button class="px-btn small" data-fs>FULLSCREEN</button><button class="px-btn small" data-music>♪ MUSIC: ON</button></div>
+      <div id="title-menu" class="px-window title-menu hidden"></div>
+      <div id="trainer-screen" class="screen hidden"><div class="px-window trainer-win"></div></div>
+      <div id="arena-screen" class="screen hidden"><div class="px-window arena-win"></div></div>
+    </div>
+    <!-- Battle setup page: format choice and the full list of available Pokémon -->
+    <div id="format-screen" class="page hidden"></div>
+    <div id="pause-menu" class="screen dim hidden">
+      <div class="px-window pause-win">
+        <h2>PAUSED</h2>
+        <button class="px-btn primary" data-p="resume">RESUME</button>
+        <button class="px-btn" data-music>♪ MUSIC: ON</button>
+        <label class="vol">VOLUME <input type="range" min="0" max="100" data-volume /></label>
+        <button class="px-btn" data-p="sfx" data-sfx>SFX: ON</button>
+        <button class="px-btn" data-fs>FULLSCREEN</button>
+        <button class="px-btn" data-p="menu">MAIN MENU</button>
+      </div>
+    </div>
+    <div id="touch" class="touch hidden"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
