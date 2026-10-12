@@ -3,6 +3,7 @@ import { MOVES } from './moves.js';
 import { SPECIES } from './data/species.js';
 import { TYPE_COLORS } from './data/types.js';
 import { lookById, frontPalette } from './trainers.js';
+import { nameAllowed, safeName } from './names.js';
 
 // Online custom rooms: one player creates a room and shares its code, the other joins with it.
 // Peer-to-peer over WebRTC; the free PeerJS cloud service only introduces the two browsers.
@@ -23,7 +24,12 @@ const turnY = y => 700 - y;
 const r1 = v => Math.round(v * 10) / 10;
 
 export const cleanCode = s => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
-const randomCode = () => Array.from({ length: CODE_LEN }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
+function randomCode() {
+  for (;;) {
+    const code = Array.from({ length: CODE_LEN }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
+    if (nameAllowed(code)) return code; // never hand out a rude room code
+  }
+}
 
 function netError(type, message) {
   return Object.assign(new Error(message), { type });
@@ -248,7 +254,8 @@ export class Online {
           this.flow.onlineError('Your friend is on a different version of the game — both of you refresh the page.');
           return;
         }
-        this.friend = { name: String(m.name ?? 'FRIEND').slice(0, 10).toUpperCase(), look: m.look };
+        // Their name comes from their own browser, so it is checked here as well.
+        this.friend = { name: safeName(m.name), look: m.look };
         this.maybeEnter();
         return;
       case 'room':

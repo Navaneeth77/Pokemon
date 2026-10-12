@@ -11,6 +11,7 @@ import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
 import { ARENAS, paintArena, arenaById } from './arena.js';
 import { Online, cleanCode, CODE_LEN } from './online.js';
+import { nameAllowed } from './names.js';
 
 // Screen flow before (and around) the battle:
 // opening → PRESS START → [title menu for returning players] → trainer setup → tutorial → format → team select → battle.
@@ -24,6 +25,11 @@ export class Flow {
     this.game = game;
     this.ui = ui;
     try { this.save = JSON.parse(localStorage.getItem(SAVE_KEY)) ?? {}; } catch { this.save = {}; }
+    // A saved name that isn't allowed (any more) has to be chosen again.
+    if (this.save.name && !nameAllowed(this.save.name)) {
+      delete this.save.name;
+      this.persist();
+    }
     this.screen = null;
     this.opening = new Opening($('#intro-canvas'), game.sprites, () => this.pressStart());
     this.tutorial = new Tutorial(game, skipped => this.endTutorial(skipped));
@@ -113,7 +119,7 @@ export class Flow {
     }
     const items = [
       ['START BATTLE', () => this.showFormat()],
-      ['ONLINE BATTLE', () => this.showOnline()],
+      ['ONLINE BATTLE', () => this.showOnline('home', '', 'title')],
       ['EDIT TRAINER', () => this.showTrainer()],
       ['TUTORIAL', () => this.startTutorial()],
     ];
@@ -185,8 +191,8 @@ export class Flow {
 
   confirmTrainer() {
     const win = $('#trainer-screen .px-window'), name = win.querySelector('#trainer-name').value.trim();
-    if (!name) {
-      win.querySelector('.ts-msg').textContent = 'Please enter a name (up to 10 characters).';
+    if (!name || !nameAllowed(name)) {
+      win.querySelector('.ts-msg').textContent = name ? "That name isn't allowed — please choose a different one." : 'Please enter a name (up to 10 characters).';
       sfx.denied();
       win.querySelector('#trainer-name').focus();
       return;
@@ -256,6 +262,7 @@ export class Flow {
         <h2>1 · CHOOSE BATTLE FORMAT</h2>
         <div class="fm-opts">${opt(3, 'Pick 3 Pokémon. A classic three-on-three showdown.')}${opt(6, 'Pick 6 Pokémon. A full-team marathon battle.')}</div>
         <button class="dex-go" data-a="go" disabled>PICK A FORMAT ABOVE</button>
+        <div class="pg-online"><span>OR BATTLE A FRIEND</span><button class="dex-online" data-a="online">ONLINE BATTLE ▶</button><small>Create a room and share the code, or join your friend's room.</small></div>
       </section>
       <section class="dex-panel pg-dex">
         <h2>POKÉDEX · AVAILABLE POKÉMON <span class="dex-count"></span></h2>
@@ -275,6 +282,11 @@ export class Flow {
       this.renderFormat();
     }));
     page.querySelector('[data-a="go"]').addEventListener('click', () => this.confirmFormat());
+    page.querySelector('[data-a="online"]').addEventListener('click', () => {
+      this.closeDexEntry();
+      sfx.sendOut();
+      this.showOnline('home', '', 'format');
+    });
     page.querySelector('[data-a="back"]').addEventListener('click', () => this.showTitleMenu());
     page.querySelector('[data-pg="fs"]').addEventListener('click', () => this.toggleFullscreen());
     const mus = page.querySelector('[data-pg="music"]');
@@ -487,7 +499,9 @@ export class Flow {
   }
 
   // ── Online battles (custom rooms) ──
-  showOnline(view = 'home', msg = '') {
+  // `from` is where ◀ BACK returns to: the title menu or the battle setup page.
+  showOnline(view = 'home', msg = '', from) {
+    if (from) this.onlineFrom = from;
     music.play('menu');
     if (this.game.state !== 'menu') this.game.toMenu();
     $('#intro').classList.remove('hidden');
@@ -516,7 +530,7 @@ export class Flow {
           </section>
         </div>
         <div class="ol-msg">${escapeHtml(msg)}</div>
-        <div class="fm-btns"><button class="px-btn" data-a="back">◀ MENU</button></div>`;
+        <div class="fm-btns"><button class="px-btn" data-a="back">◀ ${this.onlineFrom === 'format' ? 'BATTLE SETUP' : 'MENU'}</button></div>`;
       const sync = () => {
         win.querySelectorAll('.ol-fmt button').forEach(b => b.classList.toggle('on', +b.dataset.n === this.onlineFormat));
         win.querySelectorAll('.ol-arenas button').forEach(b => b.classList.toggle('on', b.dataset.id === this.onlineArena));
@@ -534,7 +548,7 @@ export class Flow {
       input.addEventListener('input', () => { input.value = cleanCode(input.value); });
       win.querySelector('[data-a="create"]').addEventListener('click', () => this.createRoom());
       win.querySelector('[data-a="join"]').addEventListener('click', () => this.joinRoom(input.value));
-      win.querySelector('[data-a="back"]').addEventListener('click', () => this.showTitleMenu());
+      win.querySelector('[data-a="back"]').addEventListener('click', () => this.onlineBack());
     } else if (view === 'hosting') {
       const room = o.room, invite = `${location.origin}${location.pathname}?room=${o.code}`;
       win.innerHTML = `<h2>ROOM CREATED</h2>
@@ -556,6 +570,11 @@ export class Flow {
       win.querySelector('[data-a="cancel"]').addEventListener('click', () => this.cancelOnline());
     }
     this.show('#online-screen');
+  }
+
+  onlineBack() {
+    if (this.onlineFrom === 'format') this.showFormat();
+    else this.showTitleMenu();
   }
 
   async createRoom() {
@@ -735,7 +754,7 @@ export class Flow {
       } else if (e.code === 'Escape') this.showFormat();
     } else if (s === 'online') {
       if (e.code === 'Escape') {
-        if (this.onlineView === 'home') this.showTitleMenu();
+        if (this.onlineView === 'home') this.onlineBack();
         else this.cancelOnline();
       } else if (e.code === 'Enter' && e.target.classList?.contains('ol-code')) this.joinRoom(e.target.value);
     } else if (s === 'format') {
