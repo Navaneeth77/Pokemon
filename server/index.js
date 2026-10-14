@@ -10,6 +10,7 @@
 import './shim.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { loadSpriteSets } from './sprites.js';
 
@@ -496,11 +497,27 @@ setInterval(() => {
   }
 }, 1000);
 
+// Load figures for /health: CPU used per second and how late the event loop runs (a busy or
+// CPU-throttled server answers late, which players feel as lag).
+const loopDelay = monitorEventLoopDelay({ resolution: 10 });
+loopDelay.enable();
+let cpuMark = process.cpuUsage(), cpuAt = performance.now(), load = { cpuMsPerSec: 0, lagMs: { p50: 0, p99: 0, max: 0 } };
+setInterval(() => {
+  const now = performance.now(), used = process.cpuUsage(cpuMark);
+  load = {
+    cpuMsPerSec: Math.round((used.user + used.system) / 1000 / ((now - cpuAt) / 1000)),
+    lagMs: { p50: Math.round(loopDelay.percentile(50) / 1e6), p99: Math.round(loopDelay.percentile(99) / 1e6), max: Math.round(loopDelay.max / 1e6) },
+  };
+  cpuMark = process.cpuUsage();
+  cpuAt = now;
+  loopDelay.reset();
+}, 10_000);
+
 // ── HTTP (health check) + WebSocket ──
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length }));
+    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, load }));
     return;
   }
   res.writeHead(404).end();
