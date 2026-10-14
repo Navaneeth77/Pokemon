@@ -182,9 +182,9 @@ export class Game {
       this.foeLead = 0;
       this.foeMegaPicks = null;
       if (!this.story) {
-        // Story battles name and dress the opponent as the Gym Leader / Elite Four / Champion (story.js).
-        this.gold.name = 'Gold';
-        this.gold.setPalette({});
+        // A Gym Leader picked in Bot Battles (leaders.js), otherwise the usual rival.
+        this.gold.name = this.foeTrainer?.name ?? 'Gold';
+        this.gold.setPalette(this.foeTrainer?.palette ?? {});
       }
     }
     this.playerTeam = this.makeTeam(this.selection, 'player', this.red);

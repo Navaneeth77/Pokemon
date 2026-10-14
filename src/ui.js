@@ -1,10 +1,11 @@
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
-import { SPECIES, ROSTER, OPPONENT_TEAM, DEFAULT_TEAM, CLASS_LABEL } from './data/species.js';
+import { SPECIES, ROSTER, OPPONENT_TEAM, CLASS_LABEL } from './data/species.js';
 
 const CAT = { physical: 'Physical', special: 'Special', status: 'Status' };
 import { ABILITIES } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
+import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 
 const $ = sel => document.querySelector(sel);
 const hpColor = r => (r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
@@ -24,12 +25,13 @@ export class UI {
     this.mates = [];
     this.menuCards = [];
     this.cards = [];
-    this.selection = [...DEFAULT_TEAM];
+    this.selection = []; // nothing is picked for you: the team starts empty
     this.megaPick = {};
     this.lead = 0;
     this.filter = 'all';
     this.foes = [...OPPONENT_TEAM];
     this.difficulty = 'medium';
+    this.leader = null; // a Gym Leader / Elite Four / Champion to battle instead of a random team
     this.format = 3;
     this.query = '';
     this.logEl = $('#log');
@@ -104,9 +106,11 @@ export class UI {
       this.game.selection = [...this.selection];
       this.game.opponentSelection = [...this.foes];
       this.game.difficulty = this.difficulty;
-      this.game.aiConfig = this.story?.aiConfig ?? null; // story: each trainer a little sharper than the last
+      const L = this.leader;
+      this.game.aiConfig = this.story?.aiConfig ?? (L ? leaderAi(L, this.difficulty) : null); // later leaders play sharper
       this.game.story = this.story;
-      this.game.foeCanMega = this.story ? this.story.mega : true;
+      this.game.foeCanMega = this.story ? this.story.mega : L ? leaderMega(L, this.difficulty) : true;
+      this.game.foeTrainer = L ? leaderTrainer(L) : null;
       if (this.story) (this.story.remember ?? (t => this.game.flow.story.rememberTeam(t)))(this.selection);
       this.game.lead = this.lead;
       this.game.megaPicks = { ...this.megaPick };
@@ -127,10 +131,10 @@ export class UI {
       const s = SPECIES[id];
       const btn = document.createElement('button');
       btn.className = `card c-${s.class}`;
-      btn.innerHTML = `<span class="no"></span>${s.mega?.length ? '<span class="mg">MEGA</span>' : ''}`
-        + `<img loading="lazy" src="${portrait(s)}" alt=""><span class="nm">${s.name}</span>`
-        + `<span class="tp">${s.types.map(t => `<i style="background:${TYPE_COLORS[t][0]}"></i>`).join('')}</span>`
-        + `<span class="ab">${ABILITIES[s.ability].name}</span>`;
+      btn.style.setProperty('--t', TYPE_COLORS[s.types[0]][0]);
+      btn.title = `${s.name} · ${s.types.join(' / ')}${s.mega?.length ? ' · can Mega Evolve' : ''}`;
+      btn.innerHTML = `<span class="no"></span>${s.mega?.length ? '<span class="mg">M</span>' : ''}`
+        + `<span class="pic"><img loading="lazy" src="${portrait(s)}" alt=""></span><span class="nm">${s.name}</span>`;
       btn.addEventListener('click', () => {
         this.toggle(id);
         this.showInfo(id);
@@ -160,12 +164,13 @@ export class UI {
         this.difficulty = b.dataset.d;
         for (const o of document.querySelectorAll('#difficulty button')) o.classList.toggle('on', o === b);
         b.blur();
+        this.renderSelection(); // a Gym Leader's team depends on the difficulty
       });
     }
-    const fmt = document.createElement('button');
-    fmt.className = 'mini-btn format-link';
-    fmt.textContent = '◀ Change format';
-    fmt.addEventListener('click', () => this.game.flow?.showFormat());
+    $('.sel-back').addEventListener('click', e => {
+      e.currentTarget.blur();
+      this.game.flow?.toTitle();
+    });
     // Switch between 3v3 and 6v6 right here as well.
     const fmtSwitch = document.createElement('div');
     fmtSwitch.className = 'fmt-switch';
@@ -180,12 +185,13 @@ export class UI {
       this.setFormat(n);
       this.renderSelection();
     }));
-    $('.team-summary').before(fmtSwitch);
+    $('.dock-top').append(fmtSwitch);
     const ar = document.createElement('button');
     ar.className = 'mini-btn format-link';
-    ar.textContent = '◀ Change arena';
+    ar.textContent = 'Arena ▸';
+    ar.title = 'Change the arena';
     ar.addEventListener('click', () => this.game.flow?.showArena());
-    $('#start-btn').after(fmt, ar);
+    $('.sel-links').append(ar);
     this.rollFoes();
     this.showInfo(this.selection[0]);
     this.renderSelection();
@@ -197,10 +203,17 @@ export class UI {
       // Story: the Gym Leader's (or Elite Four's / Champion's) own team.
       this.foes = [...this.story.foes];
       $('.foe > span').textContent = `${this.story.stage.name}'s team:`;
-      $('#foe-team').innerHTML = this.foes.map(id => `<span class="foe-mon"><img src="${portrait(SPECIES[id])}" alt="">${SPECIES[id].name}</span>`).join('');
+      $('#foe-team').innerHTML = this.foes.map(id => `<img src="${portrait(SPECIES[id])}" alt="${SPECIES[id].name}" title="${SPECIES[id].name}">`).join('');
       return;
     }
-    $('.foe > span').textContent = "Gold's random team:";
+    if (this.leader) {
+      this.foes = leaderTeam(this.leader, this.format, this.difficulty);
+      this.foeBasis = this.foeKey();
+      $('.foe > span').textContent = `${this.leader.name}'s team`;
+      $('#foe-team').innerHTML = this.foes.map(id => `<img src="${portrait(SPECIES[id])}" alt="${SPECIES[id].name}" title="${SPECIES[id].name}">`).join('');
+      return;
+    }
+    $('.foe > span').textContent = 'Opponent';
     const special = this.selection.filter(id => SPECIES[id].class !== 'regular').length;
     const pick = (pool, n) => {
       const out = [];
@@ -210,11 +223,23 @@ export class UI {
     const legends = ROSTER.filter(id => SPECIES[id].class !== 'regular'), regulars = ROSTER.filter(id => SPECIES[id].class === 'regular');
     const strong = Math.min(special, this.format);
     this.foes = [...pick(legends, strong), ...pick(regulars, this.format - strong)].sort(() => Math.random() - 0.5);
-    this.foeBasis = `${this.format}|${special}`;
-    $('#foe-team').innerHTML = this.foes.map(id => {
-      const s = SPECIES[id];
-      return `<span class="foe-mon"><img src="${portrait(s)}" alt="">${s.name}</span>`;
-    }).join('');
+    this.foeBasis = this.foeKey();
+    $('#foe-team').innerHTML = this.foes.map(id => `<img src="${portrait(SPECIES[id])}" alt="${SPECIES[id].name}" title="${SPECIES[id].name}">`).join('');
+  }
+
+  // What the bot's team depends on: re-rolled (or rebuilt for a leader) when this changes.
+  foeKey() {
+    if (this.leader) return `L|${this.leader.id}|${this.format}|${this.difficulty}`;
+    return `${this.format}|${this.selection.filter(id => SPECIES[id].class !== 'regular').length}`;
+  }
+
+  // Bot Battles: battle this Gym Leader / Elite Four member / Champion (null: a random team).
+  setLeader(st) {
+    this.leader = st;
+    document.body.classList.toggle('vsleader', !!st);
+    this.setVersus(st ? st.name : 'Gold');
+    $('.select-card .sub').textContent = st ? `${st.where} · ${st.type} type` : 'VS BOT';
+    this.foeBasis = null;
   }
 
   applyFilter() {
@@ -226,11 +251,27 @@ export class UI {
       c.btn.hidden = !ok;
       shown += ok;
     }
-    $('#roster-count').textContent = `${shown} / ${this.cards.length}`;
+    $('#roster-count').textContent = shown < this.cards.length ? `${shown} found` : '';
   }
 
   showInfo(id) {
-    $('#mon-info').innerHTML = this.infoHtml(id);
+    $('#mon-info').innerHTML = id ? this.infoCompact(id) : '<p class="mi-empty">Tap a Pokémon to see its stats and moves, and tap again to remove it.</p>';
+  }
+
+  // Team screen: everything needed to pick a Pokémon in a few lines.
+  infoCompact(id) {
+    const s = SPECIES[id], ab = ABILITIES[s.ability];
+    const mv = mid => {
+      const m = MOVES[mid];
+      return `<li><b style="color:${TYPE_COLORS[m.type][0]}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}<small>${m.ultimate ? 'ULT' : m.power}</small></li>`;
+    };
+    const megas = (s.mega ?? []).map(m => SPECIES[m].name).join(' / ');
+    return `
+      <div class="mi-head"><img src="${portrait(s)}" alt=""><div class="mi-name"><b>${s.name}</b>${s.class !== 'regular' ? ` <span class="cls c-${s.class}">${CLASS_LABEL[s.class]}</span>` : ''}
+        <div class="tp">${typeChips(s.types)}</div></div>
+        <div class="mi-stats"><span>HP<b>${s.hp}</b></span><span>SPD<b>${s.speed}</b></span><span>ATK<b>${Math.round(s.atk * 100)}</b></span><span>DEF<b>${Math.round(s.def * 100)}</b></span></div></div>
+      <div class="abil"><u>${ab.name}</u> — ${esc(ab.desc)}</div>
+      <ul class="mi-moves">${s.moves.map(mv).join('')}${mv(s.ultimate)}</ul>${megas ? `<div class="mega-line">Mega Evolves into <u>${megas}</u></div>` : ''}`;
   }
 
   // Details card for one Pokémon (team select and the battle-setup Pokédex share it).
@@ -282,7 +323,7 @@ export class UI {
   setTrainer(name, bust) {
     this.trainerName = name;
     this.trainerBust = bust;
-    this.setVersus(this.online?.friend ?? (this.queue ? '???' : 'Gold'));
+    this.setVersus(this.online?.friend ?? (this.queue ? '???' : this.leader?.name ?? 'Gold'));
   }
 
   setVersus(foe) {
@@ -299,9 +340,7 @@ export class UI {
     this.online = info;
     document.body.classList.toggle('online', !!info);
     this.setVersus(info?.friend ?? 'Gold');
-    $('.select-card .sub').textContent = info
-      ? `Online · ${info.format} vs ${info.format} · ${info.arena} — pick your team, then press READY`
-      : 'Pick your team · click a team slot to set your lead';
+    $('.select-card .sub').textContent = info ? `Friend room · ${info.format} vs ${info.format} · ${info.arena}` : 'VS BOT';
     this.renderOnline();
     this.renderSelection();
   }
@@ -312,13 +351,13 @@ export class UI {
     document.body.classList.toggle('mm', !!info);
     if (!info && !this.online && !this.story) {
       this.setVersus('Gold');
-      $('.select-card .sub').textContent = 'Pick your team · click a team slot to set your lead';
+      $('.select-card .sub').textContent = 'VS BOT';
       this.renderOnline();
       return;
     }
     if (!info) return;
     this.setVersus('???');
-    $('.select-card .sub').textContent = 'Online battles · pick a format and your team, then FIND MATCH — you will face a random player';
+    $('.select-card .sub').textContent = 'Online battle · random opponent';
     this.renderOnline();
     this.renderSelection();
   }
@@ -355,10 +394,7 @@ export class UI {
     }
     if (this.queue && !o) {
       const r = this.queue.record;
-      bar.innerHTML = `<span class="ob-room">ONLINE <b>MATCHMAKING</b></span>`
-        + (r ? `<span class="ob-ping">Record ${r.w}W · ${r.l}L</span>` : '')
-        + '<button class="mini-btn" data-a="menu">◀ Main menu</button>';
-      bar.querySelector('[data-a="menu"]').addEventListener('click', () => this.game.flow?.toTitle());
+      bar.innerHTML = r && r.w + r.l + r.d > 0 ? `<span class="ob-ping">Your record ${r.w}W · ${r.l}L</span>` : '';
       return;
     }
     if (!o) {
@@ -373,8 +409,7 @@ export class UI {
   }
 
   renderSelection() {
-    const special = this.selection.filter(id => SPECIES[id].class !== 'regular').length;
-    if (this.foeBasis !== `${this.format}|${special}`) this.rollFoes();
+    if (this.foeBasis !== this.foeKey()) this.rollFoes();
     const full = this.selection.length >= this.format;
     for (const c of this.cards) {
       const k = this.selection.indexOf(c.id);
@@ -382,17 +417,19 @@ export class UI {
       c.btn.classList.toggle('full', k < 0 && full);
       c.no.textContent = k < 0 ? '' : k === this.lead ? 'LEAD' : String(k + 1);
     }
-    const box = $('#team-summary');
-    box.innerHTML = `<div class="team-count">YOUR TEAM ${this.selection.length}/${this.format}</div>` + Array.from({ length: this.format }, (_, i) => i).map(i => {
+    const box = $('#team-summary'), left = this.format - this.selection.length;
+    box.dataset.n = this.format;
+    $('#team-count').innerHTML = left > 0 ? `YOUR TEAM <i>· pick ${left} more</i>` : 'YOUR TEAM <i>· tap one to lead</i>';
+    box.innerHTML = Array.from({ length: this.format }, (_, i) => i).map(i => {
       const id = this.selection[i];
-      if (!id) return '<div class="slot empty">Empty slot</div>';
+      if (!id) return '<div class="slot empty"><span class="plus">+</span></div>';
       const s = SPECIES[id];
       // Pokémon with two Mega forms pick X or Y here, so nothing needs choosing mid-battle.
       const xy = s.mega?.length > 1
         ? `<span class="xy">${s.mega.map((m, k) => `<em data-id="${id}" data-m="${m}" class="${(this.megaPick[id] ?? s.mega[0]) === m ? 'on' : ''}">${'XY'[k]}</em>`).join('')}</span>`
         : '';
-      return `<button class="slot${i === this.lead ? ' lead' : ''}" data-i="${i}"><img src="${portrait(s)}" alt="">`
-        + `<span>${s.name}</span><b>${i === this.lead ? 'LEAD' : 'Set as lead'}</b>${xy}</button>`;
+      return `<button class="slot${i === this.lead ? ' lead' : ''}" data-i="${i}" title="${i === this.lead ? 'Leads the battle' : 'Tap to lead with this one'}">`
+        + `${i === this.lead ? '<b class="lead-tag">LEAD</b>' : ''}<img src="${portrait(s)}" alt=""><span>${s.name}</span>${xy}</button>`;
     }).join('');
     box.querySelectorAll('button.slot').forEach(b => b.addEventListener('click', () => {
       this.lead = +b.dataset.i;
@@ -406,12 +443,12 @@ export class UI {
     document.querySelectorAll('.fmt-switch button').forEach(b => b.classList.toggle('on', +b.dataset.n === this.format));
     const start = $('#start-btn');
     start.disabled = !full;
-    start.textContent = full ? `Start ${this.format}v${this.format} Battle` : `Pick ${this.format - this.selection.length} more`;
+    start.textContent = full ? `Start ${this.format}v${this.format} battle ▶` : `Pick ${this.format - this.selection.length} more`;
     if (this.story && full) start.textContent = `Battle ${this.story.stage.name} ▶`;
     if (this.queue) {
       const busy = !!this.game.flow?.mm.busy;
       start.disabled = !full || busy;
-      if (full) start.textContent = busy ? 'Searching…' : `FIND ${this.format}v${this.format} MATCH ▶`;
+      if (full) start.textContent = busy ? 'Searching…' : `Find ${this.format}v${this.format} match ▶`;
     }
     if (this.online && full) {
       start.disabled = !!this.online.locked;

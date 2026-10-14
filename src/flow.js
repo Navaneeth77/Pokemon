@@ -13,6 +13,7 @@ import { ARENAS, paintArena, arenaById } from './arena.js';
 import { Online, cleanCode, CODE_LEN } from './online.js';
 import { nameAllowed } from './names.js';
 import { Matchmaker } from './matchmaking.js';
+import { LEADERS, leaderById, leaderBust } from './leaders.js';
 
 // Screen flow before (and around) the battle:
 // opening → PRESS START → [title menu for returning players] → trainer setup → tutorial → format → team select → battle.
@@ -246,9 +247,13 @@ export class Flow {
     this.game.toMenu();
     this.opening.stop();
     $('#intro').classList.add('hidden');
-    // No format is pre-selected: the player must pick one before continuing.
-    this.format = null;
+    this.format = this.save.format === 6 ? 6 : 3;
+    // Opponent: a random team, or one of the Kanto Gym Leaders / Elite Four / the Champion.
+    this.opponent = leaderById(this.save.opponent) ? this.save.opponent : 'random';
     const page = $('#format-screen');
+    const leaderCard = st => `<button class="op-card" data-op="${st.id}"><img src="${leaderBust(st)}" alt="">`
+      + `<span><b>${st.name}</b><small>${st.kind === 'gym' ? st.where.replace(' City', '').replace(' Island', '') : st.where}</small>`
+      + `<i class="op-type" style="background:${TYPE_COLORS[st.type][1]}">${st.type}</i></span></button>`;
     const opt = (n, desc) => `<button class="fm-opt" data-n="${n}"><b>${n} VS ${n}</b><span class="fm-balls">${'<i></i>'.repeat(n)}</span><small>${desc}</small></button>`;
     const chips = ['all', 'regular', 'legendary', 'mythical', 'mega'].map(f => `<button data-f="${f}" class="${f === 'all' ? 'on' : ''}">${f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1)}</button>`).join('');
     page.innerHTML = `
@@ -263,7 +268,15 @@ export class Flow {
         <button class="dex-btn" data-pg="fs">FULLSCREEN</button><button class="dex-btn" data-pg="music">♪</button>
       </div>
       <section class="dex-panel pg-format">
-        <h2>1 · CHOOSE BATTLE FORMAT</h2>
+        <h2>1 · CHOOSE YOUR OPPONENT</h2>
+        <div class="op-grid">
+          <button class="op-card random" data-op="random"><span class="op-q">?</span><span><b>Random Team</b><small>A new random team every battle</small></span></button>
+        </div>
+        <div class="op-group">GYM LEADERS</div>
+        <div class="op-grid">${LEADERS.filter(st => st.kind === 'gym').map(leaderCard).join('')}</div>
+        <div class="op-group">ELITE FOUR &amp; CHAMPION</div>
+        <div class="op-grid">${LEADERS.filter(st => st.kind !== 'gym').map(leaderCard).join('')}</div>
+        <h2 class="pg-h2">2 · CHOOSE BATTLE FORMAT</h2>
         <div class="fm-opts">${opt(3, 'Pick 3 Pokémon. A classic three-on-three showdown.')}${opt(6, 'Pick 6 Pokémon. A full-team marathon battle.')}</div>
         <button class="dex-go" data-a="go" disabled>PICK A FORMAT ABOVE</button>
         <div class="pg-online"><span>MORE WAYS TO PLAY</span><div class="pg-modes"><button class="dex-online" data-a="queue">ONLINE BATTLES ▶</button><button class="dex-online friend" data-a="online">FRIEND ROOM ▶</button></div><small>Get matched with a random opponent online, or battle a friend with a room code.</small></div>
@@ -282,6 +295,11 @@ export class Flow {
     page.querySelector('.pg-who canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
     page.querySelectorAll('.fm-opt').forEach(b => b.addEventListener('click', () => {
       this.format = +b.dataset.n;
+      sfx.sendOut();
+      this.renderFormat();
+    }));
+    page.querySelectorAll('.op-card').forEach(b => b.addEventListener('click', () => {
+      this.opponent = b.dataset.op;
       sfx.sendOut();
       this.renderFormat();
     }));
@@ -410,10 +428,12 @@ export class Flow {
   renderFormat() {
     const page = $('#format-screen');
     page.querySelectorAll('.fm-opt').forEach(b => b.classList.toggle('on', +b.dataset.n === this.format));
+    page.querySelectorAll('.op-card').forEach(b => b.classList.toggle('on', b.dataset.op === this.opponent));
     const go = page.querySelector('[data-a="go"]');
     if (!go) return;
+    const leader = leaderById(this.opponent);
     go.disabled = !this.format;
-    go.textContent = this.format ? `CONTINUE WITH ${this.format} VS ${this.format} ▶` : 'PICK A FORMAT ABOVE';
+    go.textContent = !this.format ? 'PICK A FORMAT ABOVE' : leader ? `CHALLENGE ${leader.name.toUpperCase()} · ${this.format} VS ${this.format} ▶` : `CONTINUE WITH ${this.format} VS ${this.format} ▶`;
   }
 
   confirmFormat() {
@@ -424,8 +444,12 @@ export class Flow {
     this.closeDexEntry();
     sfx.megaBurst();
     this.save.format = this.format;
+    this.save.opponent = this.opponent;
     this.persist();
-    this.showArena();
+    const leader = leaderById(this.opponent);
+    // A Gym Leader battles in their own arena; a random team lets you pick one.
+    if (leader) this.toTeamSelect(leader.arena, leader);
+    else this.showArena();
   }
 
   // ── Arena ──
@@ -484,13 +508,19 @@ export class Flow {
     const pick = this.arenaOpts[this.arenaIndex];
     this.save.arena = pick.id;
     this.persist();
-    this.game.arenaId = pick.id === 'random' ? ARENAS[Math.floor(Math.random() * ARENAS.length)].id : pick.id;
+    this.toTeamSelect(pick.id === 'random' ? ARENAS[Math.floor(Math.random() * ARENAS.length)].id : pick.id, null);
+  }
+
+  // Bot Battles team select, against a random team (leader = null) or a Gym Leader.
+  toTeamSelect(arenaId, leader) {
+    this.game.arenaId = arenaId;
     this.format ??= this.save.format === 6 ? 6 : 3;
     this.show(null);
     this.screen = 'select';
     this.opening.stop();
     $('#intro').classList.add('hidden');
     this.ui.setQueue(null);
+    this.ui.setLeader(leader);
     this.ui.setFormat(this.format);
     this.game.toSelect();
   }
@@ -508,6 +538,7 @@ export class Flow {
     this.opening.stop();
     $('#intro').classList.add('hidden');
     this.format = this.save.format === 6 ? 6 : 3;
+    this.ui.setLeader(null);
     this.ui.setFormat(this.format);
     this.ui.setQueue({ record: this.mm.record });
     this.game.toSelect();
@@ -690,6 +721,7 @@ export class Flow {
     $('#intro').classList.add('hidden');
     this.game.arenaId = room.arena;
     this.ui.setQueue(null);
+    this.ui.setLeader(null);
     this.ui.setFormat(room.format);
     this.ui.setOnline(this.onlineInfo());
     this.game.toSelect();

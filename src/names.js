@@ -15,7 +15,7 @@ const ANYWHERE = [
 // Refused only as a whole word (they turn up inside ordinary words: CLASS, GRAPE, RACCOON, CANAL…).
 const WHOLE = [
   'ass', 'arse', 'tit', 'tits', 'cum', 'sex', 'rape', 'anal', 'anus', 'hoe', 'hoes', 'thot', 'fag', 'fags', 'homo', 'dyke', 'spic',
-  'coon', 'pedo', 'prick', 'semen', 'nude', 'nudes', 'orgy', 'wtf', 'stfu', 'gtfo', 'kys',
+  'coon', 'nig', 'nigs', 'pedo', 'prick', 'semen', 'nude', 'nudes', 'orgy', 'wtf', 'stfu', 'gtfo', 'kys',
 ];
 
 const squeeze = s => s.replace(/(.)\1+/g, '$1'); // FUUUCK → FUCK
