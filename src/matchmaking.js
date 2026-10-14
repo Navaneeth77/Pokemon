@@ -12,7 +12,7 @@ import { sfx } from './audio.js';
 // player presses and which way they hold the stick, then animates the moves, hits, faints and switches
 // the server reports, with positions, HP and meters following its state updates. The result shown at
 // the end is the server's. The second player sees the arena turned around so their side is at the bottom.
-const PROTOCOL = 1;
+const PROTOCOL = 2;
 const PID_KEY = 'msb.pid';
 const CONNECT_TIMEOUT_MS = 8000;
 const SILENCE_MS = 10000;
@@ -255,6 +255,12 @@ export class Matchmaker {
         return;
       case 'start':
         if (this.match?.id === m.id && (this.state === 'loading' || this.state === 'matched')) this.beginBattle();
+        return;
+      case 'b':
+        // One message per server wake-up: what happened since the last one, then the current state.
+        if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
+        if (Array.isArray(m.e)) for (const e of m.e) if (e) this.events.push(e);
+        if (m.s && this.state === 'battle') this.onSnapshot(m.s);
         return;
       case 'ev':
         if (this.match && (this.state === 'battle' || this.state === 'result') && m.e) this.events.push(m.e);

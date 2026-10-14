@@ -20,14 +20,18 @@ const { ARENAS } = await import('../src/arena.js');
 const { LOOKS } = await import('../src/trainers.js');
 const { safeName } = await import('../src/names.js');
 
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 const PORT = Number(process.env.PORT) || 8787;
 const ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
 // Testing only: every Pokémon starts with this fraction of its HP so a full match takes seconds.
 const TEST_HP = Math.min(1, Math.max(0.01, Number(process.env.MATCH_TEST_HP) || 1));
 
+// Battles are simulated at 60 steps a second, but the server only wakes 30 times a second (two steps
+// per wake) and sends each player one message per wake with everything that happened plus the current
+// state. Few wake-ups and few messages keep CPU use low enough for small shared hosting plans.
 const STEP = 1 / 60;
-const SNAP_EVERY = 0.05;
+const WAKE_MS = 1000 / 30;
+const MAX_CATCHUP = 6; // after a stall, at most this many steps are made up at once
 const QUEUE_TIMEOUT_MS = 3 * 60_000; // nobody compatible found: tell the player, they can retry
 const LOAD_TIMEOUT_MS = 45_000; // both players must load the battle within this
 const AFK_MS = 60_000; // no input at all for this long in battle forfeits
@@ -123,7 +127,7 @@ class Match {
     this.bufB = null;
     this.megaQueuedB = 0;
     this.lastAct = { player: null, opponent: null };
-    this.snapT = 0;
+    this.out = []; // events since the last message
     this.fightT = 0;
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
@@ -157,6 +161,7 @@ class Match {
     const { A, B } = this.side;
     const ui = new Proxy({ format: this.format }, { get: (t, k) => (k in t ? t[k] : noop) });
     const g = new Game(document.createElement('canvas'), sprites, ui);
+    g.particles.max = -1; // particles are purely visual: none on the server
     g.input = { vector: () => this.vec.A, clear: noop };
     g.selection = [...A.team];
     g.lead = A.lead;
@@ -169,7 +174,7 @@ class Match {
     g.gold.name = B.player.name;
     g.online = {
       authority: true,
-      send: msg => this.broadcast({ t: 'ev', e: msg }),
+      send: msg => this.out.push(msg),
       tick: dt => this.tick(dt),
       begin: noop,
       processEvents: noop,
@@ -182,6 +187,7 @@ class Match {
     this.phase = 'battle';
     this.active.A = this.active.B = Date.now();
     this.broadcast({ t: 'start', id: this.id });
+    ensureLoop();
     log(`match ${this.id} started (${A.player.name} vs ${B.player.name}, ${this.format}v${this.format}, ${this.arena})`);
   }
 
@@ -211,18 +217,26 @@ class Match {
     }
   }
 
-  // Engine hook, every frame: tell both screens when an attack was cut short, and send state 20×/s.
-  tick(dt) {
+  // Engine hook, every step: note when an attack was cut short so both screens stop it too.
+  tick() {
     const g = this.game;
     for (const mon of [g.player, g.opponent]) {
       const last = this.lastAct[mon.side];
-      if (last && last !== mon.action && last.cancelled && !mon.action) this.broadcast({ t: 'ev', e: { t: 'cancel', side: mon.side } });
+      if (last && last !== mon.action && last.cancelled && !mon.action) this.out.push({ t: 'cancel', side: mon.side });
       this.lastAct[mon.side] = mon.action;
     }
-    if ((this.snapT -= dt) > 0) return;
-    this.snapT = SNAP_EVERY;
-    if (g.state !== 'fighting' && g.state !== 'intro') return;
-    this.broadcast({ t: 's', A: snapshot(g.playerTeam, g.switchCD), B: snapshot(g.opponentTeam, g.foeSwitchCD) });
+  }
+
+  // Once per wake: one message per player with the events since the last one and the current state.
+  flush() {
+    const g = this.game;
+    if (!g) return;
+    const live = g.state === 'fighting' || g.state === 'intro';
+    if (!this.out.length && !live) return;
+    const msg = { t: 'b', e: this.out };
+    if (live) msg.s = { A: snapshot(g.playerTeam, g.switchCD), B: snapshot(g.opponentTeam, g.foeSwitchCD) };
+    this.out = [];
+    this.broadcast(msg);
   }
 
   // Engine hook, before the second player's Pokémon updates: their held direction (sent from their
@@ -289,6 +303,7 @@ class Match {
   finish(winner, reason) {
     if (this.phase === 'done') return;
     const wasLoading = this.phase === 'loading';
+    this.flush(); // the knockout itself goes out before the result
     this.phase = 'done';
     matches.delete(this.id);
     for (const s of ['A', 'B']) {
@@ -430,15 +445,28 @@ function onClose(conn) {
   if (p.state === 'idle') players.delete(p.pid);
 }
 
-// ── Clock: fixed 60 Hz steps for every running battle; housekeeping once a second ──
-let last = performance.now(), acc = 0, houseT = 0;
-setInterval(() => {
+// ── Clock: runs only while a battle is going on (60 steps a second, 30 wake-ups); housekeeping 1×/s ──
+let loop = null, last = 0, acc = 0;
+function ensureLoop() {
+  if (loop) return;
+  last = performance.now();
+  acc = 0;
+  loop = setInterval(runBattles, WAKE_MS);
+}
+
+function runBattles() {
   const now = performance.now();
-  acc = Math.min(acc + (now - last) / 1000, 0.25);
+  acc = Math.min(acc + (now - last) / 1000, MAX_CATCHUP * STEP);
   last = now;
+  const live = [...matches.values()].filter(m => m.phase === 'battle');
+  if (!live.length) {
+    clearInterval(loop);
+    loop = null;
+    return;
+  }
   while (acc >= STEP) {
     acc -= STEP;
-    for (const m of matches.values()) {
+    for (const m of live) {
       try {
         m.step();
       } catch (err) {
@@ -447,8 +475,11 @@ setInterval(() => {
       }
     }
   }
-  if ((houseT += 1) >= 60) {
-    houseT = 0;
+  for (const m of live) if (m.phase === 'battle') m.flush();
+}
+
+setInterval(() => {
+  {
     const t = Date.now();
     for (const q of Object.values(queues)) {
       for (const e of [...q]) {
@@ -463,7 +494,7 @@ setInterval(() => {
       if (m.phase === 'loading' && t - m.created > LOAD_TIMEOUT_MS) m.abort('load-timeout', s => m.loaded[s]);
     }
   }
-}, 1000 / 60);
+}, 1000);
 
 // ── HTTP (health check) + WebSocket ──
 const server = http.createServer((req, res) => {
