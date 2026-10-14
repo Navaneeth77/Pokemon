@@ -172,6 +172,7 @@ export class Trainer {
   }
 
   drawShadow(ctx) {
+    if (this.hidden) return;
     ctx.globalAlpha = 0.3;
     ctx.fillStyle = '#1d2433';
     ctx.beginPath();
@@ -181,6 +182,7 @@ export class Trainer {
   }
 
   draw(ctx) {
+    if (this.hidden) return; // wild story battles have no trainer on the other side
     ctx.drawImage(this.frames[this.pose], Math.round(this.x - 8), Math.round(this.y - 23));
   }
 }

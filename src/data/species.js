@@ -5,6 +5,9 @@
 // and an `ability` (data/abilities.js). `mega` lists the forms it can Mega Evolve into (X/Y first).
 // Only Mega forms with their own SpriteCollab sheet are included.
 
+import { KANTO_NEW, KANTO_EXISTING, KANTO_MEGAS, TYPE_ULT } from './kanto.js';
+import { DIMS } from './dims.js';
+
 const BASE = { atk: 1, def: 1, weight: 1, class: 'regular' };
 
 function mon(id, name, types, cls, [hp, speed, atk, def, weight], moves, ultimate, ability, extra = {}) {
@@ -127,6 +130,22 @@ const LIST = [
   mon('pecharunt', 'Pecharunt', ['poison', 'ghost'], M, [1500, 82, 1.05, 1.15, 0.8], ['shadowBall', 'sludgeBomb', 'poisonJab', 'hex'], 'malignantChain', 'poisonPuppeteer'),
 ];
 
+// Kanto additions: game stats follow the official base stats (bulk → HP and defence, the better attacking
+// stat → attack, speed → speed, weight → knockback resistance), on the same scale as the hand-tuned roster.
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const r2 = v => Math.round(v * 100) / 100;
+for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, ability, x = {}] of KANTO_NEW) {
+  const types = typeStr.split('/'), bst = hp + at + df + sa + sd + sp;
+  const stats = [
+    Math.round(clamp(560 + 5 * hp + 0.9 * bst, 800, 1900) / 10) * 10, Math.round(clamp(46 + 0.55 * sp, 52, 124)),
+    r2(0.85 + Math.max(at, sa) / 400), r2(0.8 + (df + sd) / 800), r2(clamp(0.45 + 0.35 * Math.log(1 + kg / 10), 0.5, 2.4)),
+  ];
+  const ult = x.ult ?? (types[0] === 'normal' && types[1] === 'flying' ? 'skyAttack' : TYPE_ULT[types[0]]);
+  const extra = { kanto: dex, ...(x.sprite && { sprite: x.sprite }), ...(x.hover && hover(...x.hover)) };
+  LIST.push(mon(id, name, types, R, stats, moves.split(' '), ult, ability, extra));
+}
+for (const [dex, id] of Object.entries(KANTO_EXISTING)) LIST.find(s => s.id === id).kanto = +dex;
+
 // Mega forms inherit everything from their base form and have their size re-measured from their own sheet.
 const MEGAS = [
   ['charizard', 'charizardMegaX', 'Mega Charizard X', { sprite: 'charizard-mega-x', types: ['fire', 'dragon'], speed: 100, atk: 1.3, def: 1.2, radius: 13, weight: 1.15,
@@ -146,18 +165,28 @@ const MEGAS = [
   ['diancie', 'diancieMega', 'Mega Diancie', { sprite: 'diancie-mega', speed: 104, atk: 1.25, def: 1.15, ability: 'magicBounce', aura: ['#ffffff', '#ffc0e0', '#ff70b0'] }],
   ['darkrai', 'darkraiMega', 'Mega Darkrai', { sprite: 'darkrai-mega', atk: 1.32, def: 1.02, ability: 'badDreams', aura: ['#d8c8ff', '#6a3a8a', '#1a0f24'] }],
   ['zeraora', 'zeraoraMega', 'Mega Zeraora', { sprite: 'zeraora-mega', speed: 128, atk: 1.3, ability: 'voltAbsorb', aura: ['#fff8c0', '#ffe066', '#3a8ae8'] }],
+  ...KANTO_MEGAS,
 ];
 
 export const SPECIES = {};
 for (const s of LIST) SPECIES[s.id] = s;
 for (const [baseId, id, name, o] of MEGAS) {
   const base = SPECIES[baseId];
+  if (!(base.mega ??= []).includes(id)) base.mega.push(id);
   const own = o.sprite && o.sprite !== base.sprite;
   const dims = own ? { radius: undefined, shadow: undefined, mouth: undefined, bodyZ: undefined, headZ: undefined } : {};
   SPECIES[id] = { ...base, ...dims, id, name, megaOf: baseId, mega: null, faintAnim: own ? null : base.faintAnim, ...o, sprite: o.sprite ?? base.sprite };
 }
 
+// Sizes for species without hand-tuned dimensions (measured from their sprites, see dims.js).
+for (const s of Object.values(SPECIES)) {
+  const d = s.bodyZ == null && DIMS[s.sprite];
+  if (d) Object.assign(s, { radius: d[0], shadow: [d[0], d[5]], bodyZ: d[1], headZ: d[2], mouth: { z: d[3], fwd: d[4] } });
+}
+
 export const ROSTER = LIST.map(s => s.id);
+// All 151, in Pokédex order.
+export const KANTO = LIST.filter(s => s.kanto).sort((a, b) => a.kanto - b.kanto).map(s => s.id);
 export const DEFAULT_TEAM = ['charizard', 'pikachu', 'rayquaza'];
 export const OPPONENT_TEAM = ['gyarados', 'sceptile', 'articuno'];
 export const CLASS_LABEL = { regular: 'Regular', legendary: 'Legendary', mythical: 'Mythical' };

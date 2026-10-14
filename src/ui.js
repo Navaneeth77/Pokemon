@@ -49,9 +49,10 @@ export class UI {
     for (const sel of ['#again-btn', '#restart-btn']) {
       $(sel).addEventListener('click', e => {
         e.currentTarget.blur();
-        // Online, "again" is a rematch in the same room.
+        // Online, "again" is a rematch in the same room; after a matchmaking battle it queues again.
         const online = game.flow?.online;
-        if (online?.connected) online.toLobby();
+        if (game.online?.server) game.online.again();
+        else if (online?.connected) online.toLobby();
         else if (this.online) game.flow?.leaveOnline();
         else game.toSelect();
       });
@@ -88,6 +89,13 @@ export class UI {
       this.game.flow.online.ready(this.selection, this.lead, this.megaPick);
       return;
     }
+    if (this.queue) {
+      // Matchmaking: queue with this team; the match server finds the opponent.
+      const mega = {};
+      for (const id of this.selection) if (SPECIES[id].mega?.length) mega[id] = this.megaPick[id] ?? SPECIES[id].mega[0];
+      this.game.flow.mm.find({ format: this.format, team: [...this.selection], lead: this.lead, mega });
+      return;
+    }
     this.loading = true;
     btn.disabled = true;
     btn.textContent = 'Loading…';
@@ -96,6 +104,10 @@ export class UI {
       this.game.selection = [...this.selection];
       this.game.opponentSelection = [...this.foes];
       this.game.difficulty = this.difficulty;
+      this.game.aiConfig = this.story?.aiConfig ?? null; // story: each trainer a little sharper than the last
+      this.game.story = this.story;
+      this.game.foeCanMega = this.story ? this.story.mega : true;
+      if (this.story) (this.story.remember ?? (t => this.game.flow.story.rememberTeam(t)))(this.selection);
       this.game.lead = this.lead;
       this.game.megaPicks = { ...this.megaPick };
       this.game.start();
@@ -181,6 +193,14 @@ export class UI {
 
   // The bot fields three random, distinct Pokémon; rolled again for every new battle.
   rollFoes() {
+    if (this.story) {
+      // Story: the Gym Leader's (or Elite Four's / Champion's) own team.
+      this.foes = [...this.story.foes];
+      $('.foe > span').textContent = `${this.story.stage.name}'s team:`;
+      $('#foe-team').innerHTML = this.foes.map(id => `<span class="foe-mon"><img src="${portrait(SPECIES[id])}" alt="">${SPECIES[id].name}</span>`).join('');
+      return;
+    }
+    $('.foe > span').textContent = "Gold's random team:";
     const special = this.selection.filter(id => SPECIES[id].class !== 'regular').length;
     const pick = (pool, n) => {
       const out = [];
@@ -202,7 +222,7 @@ export class UI {
     for (const c of this.cards) {
       const s = c.species;
       const ok = !!(this.filter === 'all' || (this.filter === 'mega' ? s.mega?.length : s.class === this.filter))
-        && (!this.query || c.text.includes(this.query));
+        && (!this.query || c.text.includes(this.query)) && (!this.story || this.story.pool.has(c.id));
       c.btn.hidden = !ok;
       shown += ok;
     }
@@ -231,6 +251,7 @@ export class UI {
 
   toggle(id) {
     if (this.online?.locked) return; // team is locked in once READY is pressed
+    if (this.story && !this.story.pool.has(id)) return; // story: only Pokémon found so far
     const i = this.selection.indexOf(id);
     if (i >= 0) {
       this.selection.splice(i, 1);
@@ -261,7 +282,7 @@ export class UI {
   setTrainer(name, bust) {
     this.trainerName = name;
     this.trainerBust = bust;
-    this.setVersus(this.online?.friend ?? 'Gold');
+    this.setVersus(this.online?.friend ?? (this.queue ? '???' : 'Gold'));
   }
 
   setVersus(foe) {
@@ -285,8 +306,61 @@ export class UI {
     this.renderSelection();
   }
 
+  // Online matchmaking on the team-select screen (FIND MATCH): null otherwise. info: { record }
+  setQueue(info) {
+    this.queue = info;
+    document.body.classList.toggle('mm', !!info);
+    if (!info && !this.online && !this.story) {
+      this.setVersus('Gold');
+      $('.select-card .sub').textContent = 'Pick your team · click a team slot to set your lead';
+      this.renderOnline();
+      return;
+    }
+    if (!info) return;
+    this.setVersus('???');
+    $('.select-card .sub').textContent = 'Online battles · pick a format and your team, then FIND MATCH — you will face a random player';
+    this.renderOnline();
+    this.renderSelection();
+  }
+
+  queueChanged() {
+    if (this.queue && this.game?.state === 'select') {
+      this.queue.record = this.game.flow?.mm.record ?? this.queue.record;
+      this.renderOnline();
+      this.renderSelection();
+    }
+  }
+
+  // Story battle on the team-select screen: null otherwise.
+  // info: { stage, pool (Set of selectable ids), foes, format, difficulty, aiConfig, mega, arena, playerMega }
+  setStory(info) {
+    this.story = info;
+    document.body.classList.toggle('story', !!info);
+    this.setVersus(info ? info.stage.name : 'Gold');
+    $('.select-card .sub').textContent = info
+      ? `${info.back ? 'Story' : 'Kanto Story'} · ${info.stage.where} · ${info.format} vs ${info.format} · ${info.difficulty} — choose from your ${info.pool.size} Pokémon`
+      : 'Pick your team · click a team slot to set your lead';
+    if (info) this.rollFoes();
+    this.renderOnline();
+    if (info) this.renderSelection();
+  }
+
   renderOnline() {
     const bar = $('#online-bar'), o = this.online;
+    if (this.story && !o) {
+      const back = this.story.back;
+      bar.innerHTML = `<span class="ob-room">${back ? 'STORY' : 'KANTO'} <b>${esc(this.story.stage.name.toUpperCase())}</b></span><button class="mini-btn" data-a="map">◀ ${back ? 'Story menu' : 'Campaign map'}</button>`;
+      bar.querySelector('[data-a="map"]').addEventListener('click', () => (back ? back() : this.game.flow?.story.showMap(this.story.stage.id)));
+      return;
+    }
+    if (this.queue && !o) {
+      const r = this.queue.record;
+      bar.innerHTML = `<span class="ob-room">ONLINE <b>MATCHMAKING</b></span>`
+        + (r ? `<span class="ob-ping">Record ${r.w}W · ${r.l}L</span>` : '')
+        + '<button class="mini-btn" data-a="menu">◀ Main menu</button>';
+      bar.querySelector('[data-a="menu"]').addEventListener('click', () => this.game.flow?.toTitle());
+      return;
+    }
     if (!o) {
       bar.innerHTML = '';
       return;
@@ -333,6 +407,12 @@ export class UI {
     const start = $('#start-btn');
     start.disabled = !full;
     start.textContent = full ? `Start ${this.format}v${this.format} Battle` : `Pick ${this.format - this.selection.length} more`;
+    if (this.story && full) start.textContent = `Battle ${this.story.stage.name} ▶`;
+    if (this.queue) {
+      const busy = !!this.game.flow?.mm.busy;
+      start.disabled = !full || busy;
+      if (full) start.textContent = busy ? 'Searching…' : `FIND ${this.format}v${this.format} MATCH ▶`;
+    }
     if (this.online && full) {
       start.disabled = !!this.online.locked;
       start.textContent = this.online.loading ? 'Loading…' : this.online.locked ? `Waiting for ${this.online.friend}…` : 'READY ▶';
@@ -419,6 +499,22 @@ export class UI {
   }
 
   showResult(win, winner) {
+    if (this.game.online?.server) {
+      // Matchmaking: the match server's verdict, whatever this screen saw.
+      this.resultText.innerHTML = this.game.online.resultHtml(winner);
+      $('#again-btn').textContent = 'Find New Match';
+      $('#again-btn').classList.remove('hidden');
+      $('#leave-btn').textContent = 'Main Menu';
+      $('#leave-btn').hidden = false;
+      this.resultOverlay.classList.remove('hidden');
+      return;
+    }
+    $('#leave-btn').textContent = this.online ? 'Leave room' : 'Main Menu';
+    if (this.game.story) {
+      if (this.game.story.onResult) this.game.story.onResult(win, winner);
+      else this.game.flow.story.onResult(win, winner);
+      return;
+    }
     const who = winner ? `<img class="win-mon" src="${winner.portrait.src}" alt="">${winner.species.name} wins the battle for ${esc(winner.trainer.name)}!` : '';
     const foe = esc(this.game.gold.name);
     this.resultText.innerHTML = win
@@ -472,7 +568,7 @@ export class UI {
   update(game) {
     if (document.body.dataset.state !== game.state) document.body.dataset.state = game.state;
     this.touch?.update();
-    if (game.state === 'select' || game.state === 'menu') return;
+    if (game.state === 'select' || game.state === 'menu' || game.state === 'cutscene') return;
     const p = game.player;
     const locked = game.state !== 'fighting' || p.frozen > 0 || !p.alive || game.switching;
     for (const m of this.moveEls) {
@@ -511,7 +607,7 @@ export class UI {
     }
 
     const used = game.playerTeam.megaUsed, megas = p.species.mega ?? [];
-    const mega = !megas.length && !p.isMega ? 'hidden' : used || p.isMega ? 'used' : !locked && !game.cinematic ? 'ready' : 'locked';
+    const mega = (!megas.length && !p.isMega) || (game.story && !game.story.playerMega) ? 'hidden' : used || p.isMega ? 'used' : !locked && !game.cinematic ? 'ready' : 'locked';
     const megaKey = `${mega}|${p.species.id}|${p.megaChoice}`;
     if (megaKey !== this.megaState) {
       this.megaState = megaKey;

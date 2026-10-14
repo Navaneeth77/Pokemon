@@ -130,7 +130,7 @@ export class TouchControls {
     this.ult.querySelector('small').textContent = ult >= 100 ? 'READY!' : `${ult}%`;
     this.ult.classList.toggle('ready', ult >= 100);
     this.ult.style.setProperty('--fill', `${ult}%`);
-    this.mega.classList.toggle('hidden', !p.species.mega?.length || p.isMega || g.playerTeam.megaUsed);
+    this.mega.classList.toggle('hidden', !p.species.mega?.length || p.isMega || g.playerTeam.megaUsed || (g.story && !g.story.playerMega));
     const cd = Math.ceil(g.switchCD);
     g.playerTeam.members.forEach((m, i) => {
       const b = this.mates[i];

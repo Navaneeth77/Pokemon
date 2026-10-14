@@ -3,7 +3,7 @@
 export const TICK = 1 / 60;
 
 // Only the animations the game plays are loaded (plus the sheets they are copies of).
-const USED = new Set(['Idle', 'Walk', 'Attack', 'Strike', 'Shoot', 'SpAttack', 'Swing', 'Charge', 'Hurt', 'Faint', 'Hop', 'RearUp', 'Rotate', 'Double', 'Roar', 'Launch', 'Pose']);
+export const USED = new Set(['Idle', 'Walk', 'Attack', 'Strike', 'Shoot', 'SpAttack', 'Swing', 'Charge', 'Hurt', 'Faint', 'Hop', 'RearUp', 'Rotate', 'Double', 'Roar', 'Launch', 'Pose']);
 
 export function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -55,6 +55,29 @@ async function loadSpriteSet(id) {
     if (d.copyOf && anims[d.copyOf]) anims[d.name] = { ...anims[d.copyOf], name: d.name };
   }
   return { anims, portrait: await loadImage(`${base}/portrait.png`) };
+}
+
+// Story cutscenes also use some of each sheet's reaction animations (nodding, looking up, flinching…).
+const EXTRA = new Set(['Nod', 'LookUp', 'Cringe', 'Sleep', 'Wake', 'Pain', 'DeepBreath', 'Sit', 'Tumble', 'Laying']);
+export async function addExtraAnims(id, set) {
+  if (!set || set.extrasLoaded) return;
+  set.extrasLoaded = true;
+  try {
+    const defs = parseAnimData(await (await fetch(`/sprites/${id}/AnimData.xml`)).text()), byName = Object.fromEntries(defs.map(d => [d.name, d]));
+    await Promise.all(defs.filter(d => EXTRA.has(d.name) && !set.anims[d.name]).map(async d => {
+      const src = byName[d.copyOf ?? d.name];
+      if (!src) return;
+      if (set.anims[src.name]) {
+        set.anims[d.name] = { ...set.anims[src.name], name: d.name };
+        return;
+      }
+      try {
+        const image = await loadImage(`/sprites/${id}/${src.name}-Anim.png`);
+        set.anims[d.name] = { ...src, name: d.name, image, frames: src.durations.length, rows: Math.max(1, Math.round(image.height / src.fh)) };
+      } catch { /* not downloaded for this species */ }
+    }));
+    set.resolved = null;
+  } catch { /* extras are optional */ }
 }
 
 export async function loadSpecies(ids) {

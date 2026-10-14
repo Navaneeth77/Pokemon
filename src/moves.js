@@ -2464,6 +2464,14 @@ const SIGNATURES = {
     [[0, 'dim', { alpha: 0.6 }], [0.1, 'barrage', { n: 9, frac: 0.4 }], [1, 'sky', { kind: 'bolt', n: 3, frac: 0.3 }], [1.5, 'vortex', { frac: 0.3, dur: 0.5 }], [2.1, 'status', { name: 'para' }]], 2.6),
   malignantChain: sig('Malignant Chain', 'poison', 280, ['#ffe0ff', '#c060d0', '#3a0a3a'],
     [[0, 'dim', { alpha: 0.65 }], [0.1, 'throw', { frac: 0.5 }], [1.4, 'vortex', { frac: 0.5, dur: 0.6 }], [2, 'status', { name: 'poison', dur: 7 }]], 2.6),
+
+  // Generic ultimates for Kanto Pokémon without a signature of their own.
+  gigaImpact: sig('Giga Impact', 'normal', 270, ['#ffffff', '#e8dcc0', '#8a7a5a'], [[0, 'dim'], [0.1, 'rush', { passes: 3, frac: 0.6 }], [1.3, 'nova', { frac: 0.4 }]]),
+  dynamicPunch: sig('Dynamic Punch', 'fighting', 270, ['#fff0d0', '#e0763a', '#7a2a10'], [[0, 'dim'], [0.1, 'flurry', { n: 6, frac: 0.55 }], [1.2, 'slash', { n: 1, big: true, frac: 0.45 }]]),
+  gunkShot: sig('Gunk Shot', 'poison', 270, ['#f0d0ff', '#a040c0', '#3a0a40'], [[0, 'dim', { alpha: 0.6 }], [0.1, 'rain', { n: 12, frac: 0.6 }], [1.3, 'vortex', { frac: 0.4, dur: 0.5 }], [1.9, 'status', { name: 'poison', dur: 6 }]], 2.4),
+  fissure: sig('Fissure', 'ground', 270, ['#fff0c8', '#c8a050', '#5a4020'], [[0, 'dim'], [0.1, 'quake', { frac: 0.3 }], [1, 'pillars', { n: 8, frac: 0.5 }], [1.6, 'quake', { frac: 0.2 }]]),
+  skyAttack: sig('Sky Attack', 'flying', 270, ['#ffffff', '#ffe6a0', '#e08a3a'], [[0, 'dim'], [0.1, 'dive', { frac: 0.7, hang: 0.7 }], [1.6, 'nova', { frac: 0.3 }]]),
+  bugBuzz: sig('Bug Buzz', 'bug', 260, ['#f4ffd0', '#a8d040', '#4a6010'], [[0, 'dim'], [0.2, 'barrage', { n: 10, from: 'ring', frac: 0.55 }], [1.3, 'wave', { frac: 0.45 }]]),
 };
 
 

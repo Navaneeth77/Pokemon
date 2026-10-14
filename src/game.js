@@ -118,7 +118,7 @@ export class Game {
     this.input.clear();
     Object.assign(this, {
       hitstopT: 0, lastHitstop: -1, shakeT: 0, shakeDur: 1, shakeMag: 0, slowT: 0, flashT: 0, endT: 0,
-      winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, switching: false,
+      winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, foeSwitchCD: 0, switching: false,
       switchMenu: false, windsOn: false, winds: null, punchT: 0, punchDur: 1, punchAmt: 0, punchAt: null,
       weather: null, weatherT: 0, finale: null, showcase: null, popT: new Map(), lastUsed: { player: null, opponent: null },
       musicT: 0, legendT: 0,
@@ -178,19 +178,25 @@ export class Game {
     document.activeElement?.blur?.();
     if (practice) this.online = null;
     if (!this.online) {
-      // Against the bot: Gold leads with the first Pokémon and Megas into its first form.
+      // Against the bot: it leads with its first Pokémon and Megas into its first form.
       this.foeLead = 0;
       this.foeMegaPicks = null;
-      this.gold.name = 'Gold';
-      this.gold.setPalette({});
+      if (!this.story) {
+        // Story battles name and dress the opponent as the Gym Leader / Elite Four / Champion (story.js).
+        this.gold.name = 'Gold';
+        this.gold.setPalette({});
+      }
     }
     this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
     this.opponentTeam = this.makeTeam(this.opponentSelection, 'opponent', this.gold);
     // Online, the opposing team is the other player's: their game drives it (see online.js).
+    // Online: Pokémon whose outcomes another machine decides are "remote" here (they only animate).
+    // On the match server (online.authority) nothing is remote; with a match server every client Pokémon is.
     for (const m of this.opponentTeam.members) {
       m.faceFoeWhileMoving = !this.online;
-      m.remote = !!this.online;
+      m.remote = !!this.online && !this.online.authority;
     }
+    if (this.online?.server) for (const m of this.playerTeam.members) m.remote = true;
     this.playerTeam.members.forEach((m, i) => { m.megaPick = this.megaPicks?.[this.selection[i]] ?? null; });
     this.ui.buildTeam(this);
     this.reset();
@@ -203,6 +209,8 @@ export class Game {
     this.ui.onStart();
     this.ui.setActive(this.player);
     this.ui.setVersus(this.gold.name);
+    this.gold.hidden = !!this.story?.wild;
+    this.spareT = 0;
     music.play(practice ? 'battle' : this.battleTrack(0, true));
     this.online?.begin();
     if (practice) {
@@ -221,7 +229,7 @@ export class Game {
 
   // Online: tells the other player's game what our Pokémon just did.
   netSend(mon, msg) {
-    if (this.online && !mon.remote) this.online.send(msg);
+    if (this.online && !mon.remote) this.online.send({ ...msg, side: mon.side });
   }
 
   // After the team showcase (or when it is skipped): both trainers throw out their leads.
@@ -346,6 +354,10 @@ export class Game {
   }
 
   pickSwitch(index) {
+    if (this.online?.intent) {
+      this.toggleSwitchMenu(false);
+      return this.online.intent('switch', index);
+    }
     if (!this.switchTo(index)) this.denied();
   }
 
@@ -356,28 +368,47 @@ export class Game {
     mon.enter(HOME.opponent.x, HOME.opponent.y, HOME.opponent.dir);
     this.link();
     this.ai.reset();
+    this.netSend(mon, { t: 'switch', i: index });
     this.hud.showBanner(`GOLD SENDS OUT ${mon.species.name.toUpperCase()}!`, { color: '#f5c542', y: 300, life: 1.6, size: 19 });
     this.sendOut(mon, 0.25, `Gold sent out ${mon.species.name}!`);
   }
 
-  // Online: the other player switched (or replaced a fainted Pokémon).
-  remoteSwitch(index) {
-    const team = this.opponentTeam, cur = team.active, next = team.members[index];
+  // Online: a switch decided elsewhere (the other player, or the match server for either side).
+  remoteSwitch(index, side = 'opponent') {
+    const team = side === 'player' ? this.playerTeam : this.opponentTeam, cur = team.active, next = team.members[index];
     if (!next || next === cur) return;
     // Their game decides who can still battle.
     if (next.fainted || !next.alive) Object.assign(next, { fainted: false, hp: Math.max(1, next.hp) });
-    const spot = cur.alive && !cur.hidden ? { x: cur.x, y: cur.y } : HOME.opponent;
+    const home = HOME[side], owner = side === 'player' ? this.red : this.gold;
+    const spot = cur.alive && !cur.hidden ? { x: cur.x, y: cur.y } : home;
     const bringIn = () => {
       team.index = index;
-      next.enter(spot.x, spot.y, HOME.opponent.dir);
+      next.enter(spot.x, spot.y, home.dir);
       this.link();
-      this.sendOut(next, 0.05, `${this.gold.name} sent out ${next.species.name}!`);
+      if (side === 'player') this.ui.setActive(next);
+      this.sendOut(next, 0.05, `${owner.name} sent out ${next.species.name}!`);
     };
     if (cur.alive && !cur.hidden && !cur.fainted) {
-      this.ui.log(`${this.gold.name} withdrew ${cur.species.name}!`, 'opponent');
+      this.ui.log(`${owner.name} withdrew ${cur.species.name}!`, side);
       this.leaveField(cur);
       this.recall(cur, bringIn);
     } else bringIn();
+  }
+
+  // The opposing side's manual switch (the second player on the match server): same rules and cooldown
+  // as the player's own switches.
+  switchFoe(index) {
+    const team = this.opponentTeam, cur = team.active, next = team.members[index];
+    if (this.state !== 'fighting' || !next || !next.alive || next === cur) return false;
+    if (this.foeSwitchCD > 0 || this.cinematic || cur.recallT > 0 || cur.held || this.ultActive() || cur.hidden) return false;
+    if (cur.alive && abilityOf(this.player).shadowTag && !this.player.hidden && this.player.alive) {
+      this.abilityPop(this.player, "Can't escape!");
+      return false;
+    }
+    this.foeSwitchCD = SWITCH_COOLDOWN;
+    this.netSend(cur, { t: 'switch', i: index });
+    this.remoteSwitch(index);
+    return true;
   }
 
   denied() {
@@ -672,6 +703,7 @@ export class Game {
 
   playerUltimate() {
     if (this.state !== 'fighting') return;
+    if (this.online?.intent) return this.online.intent('ult');
     initAudio();
     const p = this.player, ok = this.useMove(p, p.species.ultimate);
     if (!ok) {
@@ -684,6 +716,7 @@ export class Game {
   // Key/button down on a move: chargeable moves start charging, everything else fires at once.
   playerPress(i) {
     if (this.state !== 'fighting') return;
+    if (this.online?.intent) return this.online.intent('press', i);
     initAudio();
     const id = this.player.species.moves[i];
     if (MOVES[id]?.chargeable && this.beginCharge(this.player, id)) {
@@ -694,6 +727,7 @@ export class Game {
   }
 
   playerRelease(i) {
+    if (this.online?.intent) return this.online.intent('release', i);
     const p = this.player, id = p.species.moves[i];
     if (p.charging?.id === id) this.releaseCharge(p);
   }
@@ -701,6 +735,7 @@ export class Game {
   // Space: dodge along the held direction, or straight away from the opponent when standing still.
   playerDodge() {
     if (this.state !== 'fighting') return;
+    if (this.online?.intent) return this.online.intent('dodge');
     const p = this.player, o = this.opponent, v = this.input.vector();
     const held = v.x || v.y;
     this.dodge(p, held ? v.x : p.x - o.x || 0.01, held ? v.y : p.y - o.y || 1);
@@ -735,6 +770,8 @@ export class Game {
 
   playerMega() {
     if (this.state !== 'fighting') return;
+    if (this.online?.intent) return this.online.intent('mega');
+    if (this.story && !this.story.playerMega) return; // story: the Mega Ring comes with the eighth badge
     initAudio();
     // Pressed mid-attack: wait for the attack to finish instead of ignoring the press.
     if (!this.megaEvolve(this.player) && this.player.species.mega?.length && !this.playerTeam.megaUsed) this.megaQueued = 0.8;
@@ -853,6 +890,12 @@ export class Game {
   // only when a whole team is down.
   onFaint(mon, by, move, net = null) {
     if (mon.remote && !net) return; // online: the other player's game says when their Pokémon faints
+    if (mon.side === 'opponent' && this.story?.spare) {
+      // Story Pokémon (Rayquaza…) are calmed, never knocked out.
+      mon.hp = Math.max(1, mon.hp);
+      this.endScripted();
+      return;
+    }
     if (mon.fainted) {
       // Online: their last Pokémon going down always ends the battle, even if it was already down here.
       if (net?.last && this.state === 'fighting') this.startFinale(by, mon, move);
@@ -883,6 +926,27 @@ export class Game {
     });
   }
 
+  // Story battles against a Pokémon that must be calmed rather than defeated end once it is worn down
+  // (or after a while), straight into the next scene.
+  checkSpare(dt) {
+    const o = this.opponent, sp = this.story.spare;
+    this.spareT += dt;
+    if (!o.hidden && (o.hp <= o.maxHp * sp.hp || (sp.time && this.spareT >= sp.time))) this.endScripted();
+  }
+
+  endScripted() {
+    if (this.state !== 'fighting') return;
+    this.state = 'over';
+    this.cinematic = null;
+    this.toggleSwitchMenu(false);
+    for (const m of [this.player, this.opponent]) {
+      m.charging = null;
+      m.cancelAction();
+      m.input.x = m.input.y = 0;
+    }
+    this.ui.showResult(true, this.player);
+  }
+
   // The battle is decided: stop combat and play the finishing move (if the KO earned one) and victory.
   startFinale(by, mon, move) {
     this.state = 'finale';
@@ -906,6 +970,16 @@ export class Game {
     this.online?.tick(dt);
     if (this.paused) {
       this.ui.update(this, 0);
+      return;
+    }
+    if (this.state === 'cutscene') {
+      // Story cutscene (cutscene.js) staged in the arena with the game's sprites and effects.
+      this.director?.update(dt);
+      this.updateEffects(dt);
+      this.particles.update(dt);
+      this.arena.update(dt);
+      this.shakeT -= dt;
+      this.ui.update(this, dt);
       return;
     }
     if (this.practice && this.state === 'fighting') {
@@ -963,8 +1037,10 @@ export class Game {
     if (this.state === 'fighting') {
       this.time += dt;
       this.switchCD = Math.max(0, this.switchCD - dt);
+      this.foeSwitchCD = Math.max(0, (this.foeSwitchCD ?? 0) - dt);
       this.updateWeather(dt);
       this.online?.processEvents();
+      if (this.story?.spare) this.checkSpare(dt);
       if (!this.practice && (this.musicT -= dt) <= 0) {
         this.musicT = 0.5;
         music.play(this.battleTrack(0.5));
@@ -989,7 +1065,9 @@ export class Game {
     }
 
     if (!this.online) this.ai.update(dt, this);
+    const own = this.online?.beforePlayer?.();
     p.update(dt, this);
+    if (own) this.online.afterPlayer(dt, own);
     const puppet = this.online?.beforePuppet();
     this.opponent.update(dt, this);
     if (puppet) this.online.afterPuppet(dt, puppet);
@@ -1276,7 +1354,40 @@ export class Game {
     return { x: r.left + (v.ox + x) * sc, y: r.top + (v.oy + y) * sc, scale: sc };
   }
 
+  renderCutscene() {
+    const { ctx, k } = this, d = this.director, v = this.view;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    if (!d) return;
+    let sx = 0, sy = 0;
+    if (this.shakeT > 0) {
+      const m = this.shakeMag * (this.shakeT / this.shakeDur);
+      sx = Math.round((Math.random() * 2 - 1) * m);
+      sy = Math.round((Math.random() * 2 - 1) * m);
+    }
+    const cam = d.camera();
+    // Whole-pixel scale only: zoom is drawn at the nearest step where every sprite pixel stays square and even.
+    const s = Math.max(k, Math.round(k * cam.zoom)), z = s / k;
+    ctx.setTransform(s, 0, 0, s, Math.round((v.w / 2 - cam.cx * z + sx) * k), Math.round((v.h / 2 - cam.cy * z + sy) * k));
+    this.arena.drawBackdrop(ctx);
+    this.arena.drawGround(ctx);
+    d.drawGround(ctx);
+    for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
+    this.particles.draw(ctx, 'ground');
+    const actors = d.list().sort((a, b) => a.y - b.y);
+    for (const a of actors) a.drawShadow(ctx);
+    for (const a of actors) a.draw(ctx);
+    for (const e of this.effects) if (e.layer === 'air') e.draw(ctx);
+    this.particles.draw(ctx, 'air');
+    this.arena.drawSnow(ctx);
+    for (const e of this.effects) if (e.layer === 'top') e.draw(ctx);
+    d.drawOver(ctx, v);
+  }
+
   render() {
+    if (this.state === 'cutscene') return this.renderCutscene();
     const { ctx, k } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;

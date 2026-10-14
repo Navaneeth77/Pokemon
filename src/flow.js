@@ -12,6 +12,7 @@ import { TYPE_COLORS } from './data/types.js';
 import { ARENAS, paintArena, arenaById } from './arena.js';
 import { Online, cleanCode, CODE_LEN } from './online.js';
 import { nameAllowed } from './names.js';
+import { Matchmaker } from './matchmaking.js';
 
 // Screen flow before (and around) the battle:
 // opening → PRESS START → [title menu for returning players] → trainer setup → tutorial → format → team select → battle.
@@ -34,6 +35,7 @@ export class Flow {
     this.opening = new Opening($('#intro-canvas'), game.sprites, () => this.pressStart());
     this.tutorial = new Tutorial(game, skipped => this.endTutorial(skipped));
     this.online = new Online(game, this);
+    this.mm = new Matchmaker(game, this);
     // Invite links (?room=CODE) jump straight into that room after the title screen.
     this.pendingRoom = cleanCode(new URLSearchParams(location.search).get('room')) || null;
     if (this.pendingRoom) history.replaceState(null, '', location.pathname);
@@ -80,8 +82,8 @@ export class Flow {
   }
 
   show(id) {
-    for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#online-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
-    this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#online-screen': 'online', '#title-menu': 'title' }[id] ?? this.screen;
+    for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#online-screen', '#story-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
+    this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#online-screen': 'online', '#story-screen': 'story', '#title-menu': 'title' }[id] ?? this.screen;
   }
 
   // ── Opening ──
@@ -117,15 +119,17 @@ export class Flow {
       this.opening.start();
       this.opening.skip();
     }
+    // The two main modes first: battles against the bot, and online matchmaking against other players.
     const items = [
-      ['START BATTLE', () => this.showFormat()],
-      ['ONLINE BATTLE', () => this.showOnline('home', '', 'title')],
+      ['BOT BATTLES', () => this.showFormat(), 'Easy · Medium · Hard'],
+      ['ONLINE BATTLES', () => this.enterQueueSelect(), 'Find a random opponent'],
+      ['FRIEND ROOM', () => this.showOnline('home', '', 'title')],
       ['EDIT TRAINER', () => this.showTrainer()],
       ['TUTORIAL', () => this.startTutorial()],
     ];
     const menu = $('#title-menu');
     menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}</span></div>`
-      + items.map(([label], i) => `<button class="tm-item" data-i="${i}">${label}</button>`).join('');
+      + items.map(([label, , sub], i) => `<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
     this.menuItems = items;
     this.menuIndex = 0;
@@ -262,7 +266,7 @@ export class Flow {
         <h2>1 · CHOOSE BATTLE FORMAT</h2>
         <div class="fm-opts">${opt(3, 'Pick 3 Pokémon. A classic three-on-three showdown.')}${opt(6, 'Pick 6 Pokémon. A full-team marathon battle.')}</div>
         <button class="dex-go" data-a="go" disabled>PICK A FORMAT ABOVE</button>
-        <div class="pg-online"><span>OR BATTLE A FRIEND</span><button class="dex-online" data-a="online">ONLINE BATTLE ▶</button><small>Create a room and share the code, or join your friend's room.</small></div>
+        <div class="pg-online"><span>MORE WAYS TO PLAY</span><div class="pg-modes"><button class="dex-online" data-a="queue">ONLINE BATTLES ▶</button><button class="dex-online friend" data-a="online">FRIEND ROOM ▶</button></div><small>Get matched with a random opponent online, or battle a friend with a room code.</small></div>
       </section>
       <section class="dex-panel pg-dex">
         <h2>POKÉDEX · AVAILABLE POKÉMON <span class="dex-count"></span></h2>
@@ -282,6 +286,11 @@ export class Flow {
       this.renderFormat();
     }));
     page.querySelector('[data-a="go"]').addEventListener('click', () => this.confirmFormat());
+    page.querySelector('[data-a="queue"]').addEventListener('click', () => {
+      this.closeDexEntry();
+      sfx.sendOut();
+      this.enterQueueSelect();
+    });
     page.querySelector('[data-a="online"]').addEventListener('click', () => {
       this.closeDexEntry();
       sfx.sendOut();
@@ -481,20 +490,40 @@ export class Flow {
     this.screen = 'select';
     this.opening.stop();
     $('#intro').classList.add('hidden');
+    this.ui.setQueue(null);
     this.ui.setFormat(this.format);
     this.game.toSelect();
+  }
+
+  // ── Online matchmaking: team select in queue mode (FIND MATCH instead of a bot battle) ──
+  enterQueueSelect() {
+    this.closeDexEntry();
+    this.togglePause(false);
+    if (this.online.net) {
+      this.online.leave();
+      this.ui.setOnline(null);
+    }
+    this.show(null);
+    this.screen = 'select';
+    this.opening.stop();
+    $('#intro').classList.add('hidden');
+    this.format = this.save.format === 6 ? 6 : 3;
+    this.ui.setFormat(this.format);
+    this.ui.setQueue({ record: this.mm.record });
+    this.game.toSelect();
+    sfx.megaBurst();
   }
 
   // ── Pause (P / Esc on desktop, the II button on touch) ──
   // Online the battle can't stop for one player: the menu opens over it and the battle carries on.
   togglePause(open = !this.pauseOpen) {
-    const g = this.game, online = this.online.inBattle;
+    const g = this.game, online = this.online.inBattle || this.mm.inBattle;
     if (open && !['fighting', 'intro'].includes(g.state)) return;
     this.pauseOpen = open;
     g.paused = open && !online;
     $('#pause-menu').classList.toggle('hidden', !open);
     $('#pause-menu h2').textContent = online ? 'MENU · BATTLE GOES ON' : 'PAUSED';
-    $('#pause-menu [data-p="menu"]').textContent = online ? 'LEAVE BATTLE' : 'MAIN MENU';
+    $('#pause-menu [data-p="menu"]').textContent = this.mm.inBattle ? 'FORFEIT & LEAVE' : online ? 'LEAVE BATTLE' : 'MAIN MENU';
     if (open) g.input.clear();
   }
 
@@ -525,7 +554,7 @@ export class Flow {
           </section>
           <section class="ol-box"><h3>JOIN A ROOM</h3>
             <div class="ol-label">ROOM CODE</div>
-            <input class="ol-code" maxlength="${CODE_LEN}" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+            <input class="ol-code" maxlength="${CODE_LEN}" placeholder="CODE" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" aria-label="Room code" />
             <button class="px-btn primary" data-a="join">JOIN ROOM ▶</button>
           </section>
         </div>
@@ -552,17 +581,38 @@ export class Flow {
     } else if (view === 'hosting') {
       const room = o.room, invite = `${location.origin}${location.pathname}?room=${o.code}`;
       win.innerHTML = `<h2>ROOM CREATED</h2>
-        <div class="ol-label">ROOM CODE</div><div class="ol-bigcode">${o.code}</div>
+        <div class="ol-label">ROOM CODE</div><div class="ol-bigcode" aria-label="Room code ${o.code.split('').join(' ')}">${o.code}</div>
         <div class="ol-share"><button class="px-btn small" data-a="copy">COPY CODE</button><button class="px-btn small" data-a="link">COPY INVITE LINK</button></div>
         <p class="ol-wait">Send the code to your friend: they pick ONLINE BATTLE → JOIN A ROOM.<br>Waiting for them to join<span class="ol-dots"></span></p>
         <p class="ol-sub">${room.format} VS ${room.format} · ${escapeHtml(arenaById(room.arena)?.name ?? '')}</p>
         <div class="fm-btns"><button class="px-btn" data-a="cancel">CLOSE ROOM</button></div>`;
-      const copy = (btn, text, done) => {
-        const ok = () => { btn.textContent = done; };
-        navigator.clipboard?.writeText(text).then(ok, () => { btn.textContent = text; });
+      // Clipboard API first, then the old select-and-copy fallback; the button always says what happened.
+      const copy = async (btn, text, done) => {
+        const label = btn.dataset.label ??= btn.textContent;
+        let ok = false;
+        try {
+          await navigator.clipboard.writeText(text);
+          ok = true;
+        } catch {
+          const ta = Object.assign(document.createElement('textarea'), { value: text, readOnly: true });
+          ta.style.cssText = 'position:fixed;opacity:0;top:0';
+          document.body.appendChild(ta);
+          ta.select();
+          try { ok = document.execCommand('copy'); } catch { ok = false; }
+          ta.remove();
+        }
+        btn.textContent = ok ? `${done} ✓` : 'COPY FAILED — SELECT THE CODE';
+        btn.classList.toggle('ol-copied', ok);
+        btn.classList.toggle('ol-copyfail', !ok);
+        if (!ok) getSelection()?.selectAllChildren(win.querySelector('.ol-bigcode'));
+        clearTimeout(btn.resetT);
+        btn.resetT = setTimeout(() => {
+          btn.textContent = label;
+          btn.classList.remove('ol-copied', 'ol-copyfail');
+        }, 2500);
       };
-      win.querySelector('[data-a="copy"]').addEventListener('click', e => copy(e.currentTarget, o.code, 'COPIED!'));
-      win.querySelector('[data-a="link"]').addEventListener('click', e => copy(e.currentTarget, invite, 'LINK COPIED!'));
+      win.querySelector('[data-a="copy"]').addEventListener('click', e => copy(e.currentTarget, o.code, 'CODE COPIED'));
+      win.querySelector('[data-a="link"]').addEventListener('click', e => copy(e.currentTarget, invite, 'LINK COPIED'));
       win.querySelector('[data-a="cancel"]').addEventListener('click', () => this.cancelOnline());
     } else {
       win.innerHTML = `<h2>ONLINE BATTLE</h2><p class="ol-wait">${escapeHtml(msg)}<span class="ol-dots"></span></p>
@@ -639,6 +689,7 @@ export class Flow {
     this.opening.stop();
     $('#intro').classList.add('hidden');
     this.game.arenaId = room.arena;
+    this.ui.setQueue(null);
     this.ui.setFormat(room.format);
     this.ui.setOnline(this.onlineInfo());
     this.game.toSelect();
@@ -687,6 +738,10 @@ export class Flow {
   }
 
   toTitle() {
+    this.ui.setStory(null);
+    this.game.story = null;
+    this.mm.stop();
+    this.ui.setQueue(null);
     if (this.online.net) {
       // Leaving to the title always leaves the room.
       this.online.leave();
@@ -810,7 +865,10 @@ export class Flow {
     $('#pause-menu').addEventListener('click', e => {
       const a = e.target.closest('[data-p]')?.dataset.p;
       if (a === 'resume') this.togglePause(false);
-      else if (a === 'menu') this.online.inBattle ? this.leaveOnline() : this.toTitle();
+      else if (a === 'menu') {
+        if (this.online.inBattle) this.leaveOnline();
+        else this.toTitle(); // online matchmaking: leaving forfeits the match
+      }
       else if (a === 'sfx') {
         setMuted(!isMuted());
         this.syncAudioUi();

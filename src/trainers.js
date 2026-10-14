@@ -27,7 +27,8 @@ const cache = new Map();
 
 // 24×24 front-facing portrait with a 1px outline, drawn from simple pixel blocks.
 export function drawBust(look) {
-  if (cache.has(look.id)) return cache.get(look.id);
+  const key = look.id ?? JSON.stringify(look);
+  if (cache.has(key)) return cache.get(key);
   const c = document.createElement('canvas');
   c.width = c.height = 24;
   const g = c.getContext('2d');
@@ -132,7 +133,7 @@ export function drawBust(look) {
     }
   }
   for (const [x, y] of edge) px(x, y, 1, 1, OUTLINE);
-  cache.set(look.id, c);
+  cache.set(key, c);
   return c;
 }
 
