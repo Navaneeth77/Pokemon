@@ -17,7 +17,7 @@ import { loadSpriteSets } from './sprites.js';
 const { Game } = await import('../src/game.js');
 const { SPECIES, ROSTER } = await import('../src/data/species.js');
 const { MOVES } = await import('../src/moves.js');
-const { ARENAS } = await import('../src/arena.js');
+const { ARENAS, paintArena } = await import('../src/arena.js');
 const { LOOKS } = await import('../src/trainers.js');
 const { safeName } = await import('../src/names.js');
 
@@ -41,6 +41,9 @@ const HEARTBEAT_MS = 15_000;
 const RATE = { perSec: 90, burst: 180 };
 
 const sprites = loadSpriteSets();
+// Arena ground textures are made once per arena and cached; making them now keeps that work out of
+// the first match on each arena (on a small CPU plan it would stall the server for a moment).
+for (const a of ARENAS) paintArena(a);
 const ROSTER_SET = new Set(ROSTER);
 const LOOK_IDS = new Set(LOOKS.map(l => l.id));
 const noop = () => {};
