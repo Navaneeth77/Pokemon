@@ -1306,3 +1306,28 @@ body.touch .dock .hint { display: none; }
 body.vsleader .sel-links, body.vsleader #reroll-btn { display: none; }
 @media (max-width: 420px) { .op-grid { grid-template-columns: 1fr 1fr; } .op-card { padding: 5px; gap: 6px; } .op-card img { width: 36px; height: 36px; } }
 .mi-empty { margin: 6px 0; font-size: 11px; color: #7f8aa0; }
+
+/* Team bar actions, remove buttons, full-team and no-results feedback */
+.dock-top { flex-wrap: wrap; }
+.team-actions { display: flex; gap: 6px; margin-left: auto; }
+.team-actions .mini-btn { padding: 3px 10px; font-size: 11px; background: transparent; border-color: #2a3344; }
+.team-actions .mini-btn:hover:not(:disabled) { background: #2a3342; }
+.team-actions .mini-btn:disabled { opacity: 0.35; cursor: default; }
+.dock .team-count i.warn { color: #ff8a6a; }
+.dock .slot .rm { position: absolute; top: 3px; right: 4px; display: grid; place-items: center; width: 18px; height: 18px; font-size: 14px; font-style: normal; line-height: 1; color: #8d97a8; border-radius: 50%; cursor: pointer; }
+.dock .slot .rm:hover { color: #fff; background: #c0302a; }
+.dock .team-summary[data-n="6"] .slot .rm { top: 1px; right: 1px; width: 16px; height: 16px; font-size: 12px; }
+.team-summary.nope { animation: nope 0.35s; }
+@keyframes nope { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+.select-card .roster.none::before { content: 'No Pokémon found — try another name or filter.'; grid-column: 1 / -1; padding: 24px 8px; font-size: 12px; color: #7f8aa0; }
+.leave-btn { display: inline-block; }
+@media (hover: none) { .dock .slot .rm { width: 24px; height: 24px; top: 1px; right: 1px; } }
+.select-card .card[hidden] { display: none; }
+.dock-top { flex-wrap: nowrap; }
+.dock .team-count { white-space: nowrap; }
+@media (max-width: 480px) {
+  .dock .lead-hint { display: none; }
+  .team-actions { gap: 4px; }
+  .team-actions .mini-btn { padding: 3px 8px; }
+  .dock .fmt-switch button { padding: 3px 8px; }
+}

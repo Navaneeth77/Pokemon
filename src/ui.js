@@ -144,8 +144,20 @@ export class UI {
       const text = s.name.toLowerCase(); // search matches Pokémon names only
       this.cards.push({ id, btn, no: btn.querySelector('.no'), species: s, text });
     }
-    $('#roster-search').addEventListener('input', e => {
+    const search = $('#roster-search');
+    search.addEventListener('input', e => {
       this.query = e.target.value.trim().toLowerCase();
+      this.applyFilter();
+    });
+    search.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const hit = this.cards.find(c => !c.btn.hidden && !this.selection.includes(c.id));
+      if (!hit || !this.query) return;
+      this.toggle(hit.id);
+      this.showInfo(hit.id);
+      search.value = '';
+      this.query = '';
       this.applyFilter();
     });
     for (const b of document.querySelectorAll('#roster-filters button')) {
@@ -174,7 +186,7 @@ export class UI {
     // Switch between 3v3 and 6v6 right here as well.
     const fmtSwitch = document.createElement('div');
     fmtSwitch.className = 'fmt-switch';
-    fmtSwitch.innerHTML = '<button data-n="3">3 VS 3</button><button data-n="6">6 VS 6</button>';
+    fmtSwitch.innerHTML = '<button data-n="3" title="3 VS 3">3v3</button><button data-n="6" title="6 VS 6">6v6</button>';
     fmtSwitch.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       const n = +b.dataset.n, flow = this.game.flow;
       if (flow) {
@@ -185,7 +197,19 @@ export class UI {
       this.setFormat(n);
       this.renderSelection();
     }));
-    $('.dock-top').append(fmtSwitch);
+    const actions = document.createElement('div');
+    actions.className = 'team-actions';
+    actions.innerHTML = '<button class="mini-btn" data-t="random" title="Fill the empty slots with random Pokémon (from the ones shown)">Random</button>'
+      + '<button class="mini-btn" data-t="clear" title="Remove every Pokémon from your team">Clear</button>';
+    actions.querySelector('[data-t="random"]').addEventListener('click', e => {
+      e.currentTarget.blur();
+      this.fillRandom();
+    });
+    actions.querySelector('[data-t="clear"]').addEventListener('click', e => {
+      e.currentTarget.blur();
+      this.clearTeam();
+    });
+    $('.dock-top').append(actions, fmtSwitch);
     const ar = document.createElement('button');
     ar.className = 'mini-btn format-link';
     ar.textContent = 'Arena ▸';
@@ -252,6 +276,7 @@ export class UI {
       shown += ok;
     }
     $('#roster-count').textContent = shown < this.cards.length ? `${shown} found` : '';
+    $('#roster').classList.toggle('none', !shown);
   }
 
   showInfo(id) {
@@ -290,15 +315,50 @@ export class UI {
       <ul class="mv">${s.moves.map(moveLine).join('')}${moveLine(s.ultimate)}</ul>${megas}`;
   }
 
+  // The team can't change once READY is pressed (friend room) or while searching for a match.
+  get teamLocked() {
+    return !!(this.online?.locked || (this.queue && this.game.flow?.mm.busy));
+  }
+
   toggle(id) {
-    if (this.online?.locked) return; // team is locked in once READY is pressed
+    if (this.teamLocked) return;
     if (this.story && !this.story.pool.has(id)) return; // story: only Pokémon found so far
     const i = this.selection.indexOf(id);
-    if (i >= 0) {
-      this.selection.splice(i, 1);
-      if (i < this.lead) this.lead--;
-      else if (i === this.lead) this.lead = 0;
-    } else if (this.selection.length < this.format) this.selection.push(id);
+    if (i >= 0) return this.removeAt(i);
+    if (this.selection.length >= this.format) {
+      // Full team: say so instead of ignoring the tap.
+      const box = $('#team-summary');
+      box.classList.remove('nope');
+      void box.offsetWidth;
+      box.classList.add('nope');
+      $('#team-count').innerHTML = `YOUR TEAM <i class="warn">full · remove one first</i>`;
+      return;
+    }
+    this.selection.push(id);
+    this.renderSelection();
+  }
+
+  removeAt(i) {
+    if (this.teamLocked || !this.selection[i]) return;
+    this.selection.splice(i, 1);
+    if (i < this.lead) this.lead--;
+    else if (i === this.lead) this.lead = 0;
+    this.renderSelection();
+  }
+
+  clearTeam() {
+    if (this.teamLocked) return;
+    this.selection = [];
+    this.lead = 0;
+    this.renderSelection();
+  }
+
+  // Fills the empty slots with random Pokémon, from the ones the search and filter show (or anyone).
+  fillRandom() {
+    if (this.teamLocked) return;
+    const shown = this.cards.filter(c => !c.btn.hidden && !this.selection.includes(c.id)).map(c => c.id);
+    const pool = shown.length ? shown : ROSTER.filter(id => !this.selection.includes(id) && (!this.story || this.story.pool.has(id)));
+    while (this.selection.length < this.format && pool.length) this.selection.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     this.renderSelection();
   }
 
@@ -419,7 +479,11 @@ export class UI {
     }
     const box = $('#team-summary'), left = this.format - this.selection.length;
     box.dataset.n = this.format;
-    $('#team-count').innerHTML = left > 0 ? `YOUR TEAM <i>· pick ${left} more</i>` : 'YOUR TEAM <i>· tap one to lead</i>';
+    $('#team-count').innerHTML = `YOUR TEAM <i>${this.selection.length}/${this.format}</i>${left > 0 ? '' : '<i class="lead-hint"> · tap one to lead</i>'}`;
+    const locked = this.teamLocked;
+    document.querySelectorAll('.team-actions button').forEach(b => {
+      b.disabled = locked || (b.dataset.t === 'clear' ? !this.selection.length : !left);
+    });
     box.innerHTML = Array.from({ length: this.format }, (_, i) => i).map(i => {
       const id = this.selection[i];
       if (!id) return '<div class="slot empty"><span class="plus">+</span></div>';
@@ -429,11 +493,16 @@ export class UI {
         ? `<span class="xy">${s.mega.map((m, k) => `<em data-id="${id}" data-m="${m}" class="${(this.megaPick[id] ?? s.mega[0]) === m ? 'on' : ''}">${'XY'[k]}</em>`).join('')}</span>`
         : '';
       return `<button class="slot${i === this.lead ? ' lead' : ''}" data-i="${i}" title="${i === this.lead ? 'Leads the battle' : 'Tap to lead with this one'}">`
-        + `${i === this.lead ? '<b class="lead-tag">LEAD</b>' : ''}<img src="${portrait(s)}" alt=""><span>${s.name}</span>${xy}</button>`;
+        + `${i === this.lead ? '<b class="lead-tag">LEAD</b>' : ''}<i class="rm" data-rm="${i}" title="Remove ${s.name}">×</i>`
+        + `<img src="${portrait(s)}" alt=""><span>${s.name}</span>${xy}</button>`;
     }).join('');
     box.querySelectorAll('button.slot').forEach(b => b.addEventListener('click', () => {
       this.lead = +b.dataset.i;
       this.renderSelection();
+    }));
+    box.querySelectorAll('.rm').forEach(x => x.addEventListener('click', ev => {
+      ev.stopPropagation();
+      this.removeAt(+x.dataset.rm);
     }));
     box.querySelectorAll('.xy em').forEach(e => e.addEventListener('click', ev => {
       ev.stopPropagation();
