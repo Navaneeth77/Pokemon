@@ -1190,21 +1190,28 @@ function release(mon) {
   mon.zOverride = null;
 }
 
-// Psychic: the target is seized, lifted and hurled into the ground away from the user.
+// Psychic: a ring marks where the target stands; whoever is still in it when it closes is seized,
+// lifted and slammed down a short way off. Stepping (or dodging) out of the ring escapes it.
+const PSY_WINDUP = 0.5;
+const PSY_CATCH = 30; // ring radius, plus the target's own size
+
 class PsychicThrow extends MoveAction {
   start() {
-    const t = this.target;
+    const t = this.target, r = PSY_CATCH + t.radius;
+    this.spot = { x: t.x, y: t.y };
     this.user.sprite.play('Charge', { loop: true, force: true });
-    this.game.spawn(new Ring(t.x, t.y, { r0: 34, r1: 4, life: 0.35, color: '#ff9fd0', width: 2 }));
+    this.game.spawn(new Ring(t.x, t.y, { r0: r, r1: r, life: PSY_WINDUP, color: '#ff9fd0', width: 3, hold: true }));
+    this.game.spawn(new Ring(t.x, t.y, { r0: r, r1: 4, life: PSY_WINDUP, color: '#ffffff', width: 1.5, hold: true }));
     sfx.zap(0.35);
-    this.at(0.35, () => this.seize());
-    this.at(1.15, () => this.finish(0.3));
+    this.at(PSY_WINDUP, () => this.seize());
+    this.at(PSY_WINDUP + 0.8, () => this.finish(0.3));
   }
 
   seize() {
     const u = this.user, t = this.target, g = this.game;
-    if (!t.alive || t.hidden || t.untouchable || u.distTo(t) > this.move.range) {
-      if (t.dodgeInv > 0) g.spawn(new FloatText(t.x, t.y - t.headZ - 10, 'DODGED!', '#bff3ff'));
+    const left = Math.hypot(t.x - this.spot.x, t.y - this.spot.y) > PSY_CATCH + t.radius;
+    if (!t.alive || t.hidden || t.untouchable || left || u.distTo(t) > this.move.range) {
+      if (t.alive && !t.hidden && (left || t.dodgeInv > 0)) g.spawn(new FloatText(t.x, t.y - t.headZ - 10, 'DODGED!', '#bff3ff'));
       return;
     }
     this.anim('Shoot', 1);
@@ -1215,7 +1222,7 @@ class PsychicThrow extends MoveAction {
     this.at(this.t + 0.34, () => {
       if (!t.alive || t.hidden) return;
       const a = u.aimAt(t);
-      const to = { x: clampX(t.x + Math.cos(a) * 110), y: clampY(t.y + Math.sin(a) * 110) };
+      const to = { x: clampX(t.x + Math.cos(a) * 50), y: clampY(t.y + Math.sin(a) * 50) };
       sfx.whoosh();
       telekinesis(this, t, to, 0.3, 30, () => {
         g.marks.fracture(t.x, t.y, 18, 5.5);
@@ -1224,7 +1231,7 @@ class PsychicThrow extends MoveAction {
         debris(g, t.x, t.y, 10, 110);
         g.shake(5, 0.3);
         sfx.quake();
-        this.hit({ knockback: 60, stagger: 0.5 });
+        this.hit({ knockback: 20, stagger: 0.3 });
       });
     });
   }
@@ -2586,7 +2593,7 @@ export const MOVES = {
     }),
   },
   psychic: {
-    name: 'Psychic', type: 'psychic', power: 110, cooldown: 2.4, range: 260, minRange: 0, ai: 'ranged', tag: 'Seize & hurl the foe', Action: PsychicThrow,
+    name: 'Psychic', type: 'psychic', power: 110, cooldown: 3.2, range: 220, minRange: 0, ai: 'ranged', tag: 'Seize & slam · step out of the ring', Action: PsychicThrow,
   },
   quickAttack: {
     name: 'Quick Attack', type: 'normal', power: 60, cooldown: 1.5, range: 130, minRange: 30, ai: 'dash', tag: 'Dash strike', Action: Dash,

@@ -134,17 +134,18 @@ export class FloatText extends Effect {
 }
 
 export class Ring extends Effect {
-  constructor(x, y, { z = 0, r0 = 4, r1 = 30, life = 0.35, color = '#fff', width = 2, layer = 'ground' } = {}) {
+  // `hold`: stays fully visible until it ends (a warning zone) instead of fading out.
+  constructor(x, y, { z = 0, r0 = 4, r1 = 30, life = 0.35, color = '#fff', width = 2, layer = 'ground', hold = false } = {}) {
     super(layer, life);
-    Object.assign(this, { x, y, z, r0, r1, color, width });
+    Object.assign(this, { x, y, z, r0, r1, color, width, hold });
   }
 
   draw(ctx) {
     const t = this.age / this.life;
     const e = 1 - (1 - t) * (1 - t);
-    ctx.globalAlpha = 1 - t;
+    ctx.globalAlpha = this.hold ? 0.9 : 1 - t;
     ctx.strokeStyle = this.color;
-    ctx.lineWidth = this.width * (1 - t) + 0.5;
+    ctx.lineWidth = this.hold ? this.width : this.width * (1 - t) + 0.5;
     ctx.beginPath();
     ctx.arc(this.x, this.y - this.z, this.r0 + (this.r1 - this.r0) * e, 0, Math.PI * 2);
     ctx.stroke();
