@@ -422,6 +422,10 @@ export class UI {
     this.renderSelection();
   }
 
+  lobbyChanged() {
+    if (this.queue && this.game?.state === 'select') this.renderOnline();
+  }
+
   queueChanged() {
     if (this.queue && this.game?.state === 'select') {
       this.queue.record = this.game.flow?.mm.record ?? this.queue.record;
@@ -453,8 +457,17 @@ export class UI {
       return;
     }
     if (this.queue && !o) {
-      const r = this.queue.record;
-      bar.innerHTML = r && r.w + r.l + r.d > 0 ? `<span class="ob-ping">Your record ${r.w}W · ${r.l}L</span>` : '';
+      // Who's online (per format) and the leaderboard, from the match server.
+      const mm = this.game.flow?.mm, d = mm?.lobby, me = d?.me;
+      const count = f => d.modes[f].browsing + d.modes[f].searching + d.modes[f].battling;
+      bar.innerHTML = (d ? `<span class="ob-live" title="${d.modes[3].searching + d.modes[6].searching} searching · ${d.modes[3].battling + d.modes[6].battling} battling">● ${d.online} online</span>`
+        + `<span class="ob-mode${this.format === 3 ? ' on' : ''}">3v3 · ${count(3)}</span><span class="ob-mode${this.format === 6 ? ' on' : ''}">6v6 · ${count(6)}</span>` : '<span class="ob-ping">Checking who\'s online…</span>')
+        + (me ? `<span class="ob-ping">#${me.rank} · ${me.rating}</span>` : '')
+        + '<button class="mini-btn" data-a="lb">🏆 Leaderboard</button>';
+      bar.querySelector('[data-a="lb"]').addEventListener('click', e => {
+        e.currentTarget.blur();
+        mm?.showLeaderboard();
+      });
       return;
     }
     if (!o) {

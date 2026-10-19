@@ -123,7 +123,7 @@ export class Flow {
     // The two main modes first: battles against the bot, and online matchmaking against other players.
     const items = [
       ['BOT BATTLES', () => this.showFormat(), 'Easy · Medium · Hard'],
-      ['ONLINE BATTLES', () => this.enterQueueSelect(), 'Find a random opponent'],
+      ['ONLINE BATTLES', () => this.enterQueueSelect(), this.onlineSub()],
       ['FRIEND ROOM', () => this.showOnline('home', '', 'title')],
       ['EDIT TRAINER', () => this.showTrainer()],
       ['TUTORIAL', () => this.startTutorial()],
@@ -138,8 +138,21 @@ export class Flow {
       sfx.sendOut();
       items[+b.dataset.i][1]();
     }));
+    this.mm?.pollLobby(true);
     this.show('#title-menu');
     this.highlightMenu();
+  }
+
+  onlineSub() {
+    const n = this.mm?.lobby?.online;
+    return n == null ? 'Find a random opponent' : `Find a random opponent · ● ${n} playing online`;
+  }
+
+  // New numbers from the match server: the main menu's Online Battles line shows who's online.
+  lobbyChanged() {
+    if (this.screen !== 'title') return;
+    const sub = document.querySelector('#title-menu .tm-item[data-i="1"] small');
+    if (sub) sub.textContent = this.onlineSub();
   }
 
   highlightMenu() {
@@ -542,6 +555,7 @@ export class Flow {
     this.ui.setFormat(this.format);
     this.ui.setQueue({ record: this.mm.record });
     this.game.toSelect();
+    this.mm.pollLobby(true); // counts you as online in this format straight away
     sfx.megaBurst();
   }
 

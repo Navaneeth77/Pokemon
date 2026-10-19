@@ -10,6 +10,9 @@
 import './shim.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { loadSpriteSets } from './sprites.js';
@@ -54,7 +57,51 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queued'|'match', entry, match, record }
 const queues = { 3: [], 6: [] }; // waiting entries per format, oldest first
 const matches = new Map();
-const records = new Map(); // pid → { w, l, d } — kept in memory for as long as the server runs
+// Online results and ratings (Elo, starting at 1000), saved to a JSON file so a server restart keeps
+// them. On hosts without a persistent disk (Render's free plan) the file is lost on redeploys.
+const records = new Map(); // pid → { name, w, l, d, rating }
+const START_RATING = 1000, ELO_K = 32;
+const DATA_FILE = process.env.LEADERBOARD_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'leaderboard.json');
+const PID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+try {
+  for (const [pid, r] of Object.entries(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')))) {
+    if (PID_RE.test(pid)) records.set(pid, { name: safeName(r.name), w: r.w | 0, l: r.l | 0, d: r.d | 0, rating: Number.isFinite(r.rating) ? Math.round(r.rating) : START_RATING });
+  }
+} catch { /* no saved leaderboard yet */ }
+let saveTimer = null;
+function saveRecords() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+      fs.writeFileSync(`${DATA_FILE}.tmp`, JSON.stringify(Object.fromEntries(records)));
+      fs.renameSync(`${DATA_FILE}.tmp`, DATA_FILE);
+    } catch (err) {
+      console.error('could not save the leaderboard:', err.message);
+    }
+  }, 2000);
+}
+
+// Ranked by rating (ties: more wins first); only players who have finished an online battle.
+const standings = () => [...records.entries()].filter(([, r]) => r.w + r.l + r.d > 0).sort(([, a], [, b]) => b.rating - a.rating || b.w - a.w);
+const rankOf = pid => standings().findIndex(([p]) => p === pid) + 1 || null;
+
+// Who is around right now: in a match, searching, or looking at the Online Battles screen (the game
+// checks in every few seconds while it's open), per format. Each player is counted once.
+const lobby = new Map(); // pid → { fmt, at }
+const LOBBY_TTL = 12_000;
+function presence() {
+  const now = Date.now(), seen = new Map();
+  for (const m of matches.values()) for (const s of ['A', 'B']) seen.set(m.side[s].player.pid, { fmt: m.format, what: 'battling' });
+  for (const f of [3, 6]) for (const e of queues[f]) if (!seen.has(e.player.pid)) seen.set(e.player.pid, { fmt: f, what: 'searching' });
+  for (const [pid, l] of lobby) {
+    if (now - l.at > LOBBY_TTL) lobby.delete(pid);
+    else if (!seen.has(pid)) seen.set(pid, { fmt: l.fmt, what: 'browsing' });
+  }
+  const modes = { 3: { browsing: 0, searching: 0, battling: 0 }, 6: { browsing: 0, searching: 0, battling: 0 } };
+  for (const v of seen.values()) modes[v.fmt][v.what]++;
+  return { online: seen.size, modes };
+}
 
 function send(ws, msg) {
   if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
@@ -314,11 +361,27 @@ class Match {
       const p = this.side[s].player;
       const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
       if (!wasLoading) p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
+      p.delta = 0;
+    }
+    // Ratings (Elo): beating a higher-rated player earns more. A server error changes nothing.
+    if (!wasLoading && reason !== 'error') {
+      const a = this.side.A.player, b = this.side.B.player;
+      const expectA = 1 / (1 + 10 ** ((b.record.rating - a.record.rating) / 400));
+      const scoreA = winner == null ? 0.5 : winner === 'A' ? 1 : 0, delta = Math.round(ELO_K * (scoreA - expectA));
+      a.record.rating += delta;
+      b.record.rating -= delta;
+      a.delta = delta;
+      b.delta = -delta;
+    }
+    if (!wasLoading) saveRecords();
+    for (const s of ['A', 'B']) {
+      const p = this.side[s].player;
+      const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
       if (p.match === this) {
         p.match = null;
         p.state = 'idle';
       }
-      sendTo(p, { t: 'end', id: this.id, result, reason, record: p.record });
+      sendTo(p, { t: 'end', id: this.id, result, reason, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
     log(`match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
   }
@@ -417,7 +480,7 @@ function onMessage(conn, raw) {
 
 function hello(conn, m) {
   if (m.v !== PROTOCOL) return send(conn.ws, { t: 'error', code: 'version', message: 'The game was updated — refresh the page.' });
-  const pid = typeof m.pid === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(m.pid) ? m.pid : null;
+  const pid = typeof m.pid === 'string' && PID_RE.test(m.pid) ? m.pid : null;
   if (!pid) return send(conn.ws, { t: 'error', code: 'bad-id', message: 'Missing player id.' });
   let p = players.get(pid);
   if (p && p.ws && p.ws !== conn.ws) {
@@ -431,10 +494,11 @@ function hello(conn, m) {
       if (p.match) p.match.leave(p.matchSide, 'disconnect');
     }
   }
-  if (!records.has(pid)) records.set(pid, { w: 0, l: 0, d: 0 });
+  if (!records.has(pid)) records.set(pid, { name: 'TRAINER', w: 0, l: 0, d: 0, rating: START_RATING });
   if (!p) players.set(pid, (p = { pid, state: 'idle', entry: null, match: null, record: records.get(pid) }));
   p.ws = conn.ws;
   p.name = safeName(m.name);
+  p.record.name = p.name; // the leaderboard shows the latest name
   p.look = LOOK_IDS.has(m.look) ? m.look : null;
   conn.player = p;
   send(conn.ws, { t: 'welcome', v: PROTOCOL, record: p.record });
@@ -517,7 +581,43 @@ setInterval(() => {
 }, 10_000);
 
 // ── HTTP (health check) + WebSocket ──
+// The game's Online Battles screen: who's online per format, the top 10, and the asking player's rank.
+// Players are identified by their anonymous id in the request body (never in the URL); ids are never sent out.
+function lobbyInfo(pid, fmt) {
+  if (pid && PID_RE.test(pid) && (fmt === 3 || fmt === 6)) lobby.set(pid, { fmt, at: Date.now() });
+  const table = standings(), mine = pid ? table.findIndex(([p]) => p === pid) : -1;
+  return {
+    ...presence(),
+    top: table.slice(0, 10).map(([p, r], i) => ({ rank: i + 1, name: r.name, rating: r.rating, w: r.w, l: r.l, me: p === pid })),
+    me: mine >= 0 ? { rank: mine + 1, ...(({ rating, w, l, d }) => ({ rating, w, l, d }))(table[mine][1]) } : null,
+    players: table.length,
+  };
+}
+
 const server = http.createServer((req, res) => {
+  if (req.url === '/lobby') {
+    const origin = req.headers.origin;
+    if (origin && (!ORIGINS.length || ORIGINS.includes(origin))) res.setHeader('access-control-allow-origin', origin);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, { 'access-control-allow-methods': 'POST, GET', 'access-control-allow-headers': 'content-type' }).end();
+      return;
+    }
+    let body = '';
+    req.on('data', c => { if ((body += c).length > 1024) req.destroy(); });
+    req.on('end', () => {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch { /* ignore */ }
+      try {
+        const info = lobbyInfo(typeof q.pid === 'string' ? q.pid : null, q.fmt === 6 ? 6 : q.fmt === 3 ? 3 : null);
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(info));
+      } catch (err) {
+        console.error('lobby request failed:', err.message); // a bad request must never take the server down
+        res.writeHead(500).end();
+      }
+    });
+    return;
+  }
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, load }));

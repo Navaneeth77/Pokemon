@@ -1331,3 +1331,20 @@ body.vsleader .sel-links, body.vsleader #reroll-btn { display: none; }
   .team-actions .mini-btn { padding: 3px 8px; }
   .dock .fmt-switch button { padding: 3px 8px; }
 }
+
+/* ── Online: who's online + leaderboard ── */
+.select-card .online-bar .ob-live { color: #3ee06a; font-weight: 700; }
+.select-card .online-bar .ob-mode { padding: 1px 8px; color: #9fb4d8; border: 1px solid #2a3344; border-radius: 999px; }
+.select-card .online-bar .ob-mode.on { color: #2a1a05; background: #f5c542; border-color: #f5c542; }
+.mm-live { min-height: 18px; margin: 4px 0 0; font-size: 13px; color: #5870b8; }
+.mm-rating { font-size: 14px; color: #ffd84a; }
+.lb-card { width: min(520px, 100%); }
+.lb-live { margin: -2px 0 10px; font-size: 13px; font-weight: 700; color: #2a8a3a; }
+.lb-table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+.lb-table th { padding: 6px 8px; font-size: 11px; letter-spacing: 1px; color: #5870b8; border-bottom: 2px solid #c8d2e8; }
+.lb-table td { padding: 7px 8px; border-bottom: 1px solid #e0e6f2; }
+.lb-table td:first-child { width: 52px; font-weight: 700; color: #283058; }
+.lb-table td:nth-child(3) { font-weight: 700; color: #b8860b; }
+.lb-table tr.me td { background: #fff3c4; }
+.lb-table .lb-empty { padding: 18px 8px; color: #5870b8; text-align: center; }
+.lb-you { margin: 10px 0 0; font-size: 13px; color: #283058; }

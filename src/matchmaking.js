@@ -62,14 +62,81 @@ export class Matchmaker {
     this.result = null;
     this.events = [];
     this.snap = { player: null, opponent: null };
+    this.lobby = null; // who's online + leaderboard, from the match server (see pollLobby)
     this.buildOverlay();
     window.addEventListener('keydown', e => {
-      if (e.code === 'Escape' && ['connecting', 'searching'].includes(this.state)) {
+      if (e.code === 'Escape' && this.lbOpen) {
+        e.preventDefault();
+        this.hideLeaderboard();
+      } else if (e.code === 'Escape' && ['connecting', 'searching'].includes(this.state)) {
         e.preventDefault();
         this.cancel();
       }
     });
     setInterval(() => this.heartbeat(), 2000);
+    setInterval(() => this.pollLobby(), 5000);
+  }
+
+  // ── Who's online and the leaderboard ──
+  // While the main menu or the Online Battles screen is open, the game checks in with the match server
+  // every few seconds (on the Online Battles screen it also counts you as online, in your format).
+  async pollLobby(force = false) {
+    const f = this.flow, onQueue = !!f.ui.queue && this.game.state === 'select';
+    if (!this.url || document.hidden || this.lobbyBusy) return;
+    if (!force && !onQueue && f.screen !== 'title' && !this.busy && !this.lbOpen) return;
+    this.lobbyBusy = true;
+    try {
+      const here = onQueue || this.busy;
+      const body = JSON.stringify(here ? { pid: this.pid, fmt: this.spec?.format && this.busy ? this.spec.format : f.ui.format } : { pid: this.pid });
+      const res = await fetch(`${this.url.replace(/^ws/, 'http')}/lobby`, { method: 'POST', body, headers: { 'content-type': 'text/plain' }, cache: 'no-store' });
+      this.lobby = await res.json();
+      f.lobbyChanged?.();
+      f.ui.lobbyChanged?.();
+      if (this.state === 'searching') this.renderLive();
+      if (this.lbOpen) this.renderLeaderboard();
+    } catch {
+      /* server asleep or offline: keep the last numbers */
+    } finally {
+      this.lobbyBusy = false;
+    }
+  }
+
+  // "3 others searching for 3 VS 3" under the search timer.
+  renderLive() {
+    const el = this.el.querySelector('.mm-live'), fmt = this.spec?.format ?? 3, m = this.lobby?.modes?.[fmt];
+    if (!el) return;
+    const others = m ? Math.max(0, m.searching - 1) : null;
+    el.textContent = others == null ? '' : others ? `${others} other player${others > 1 ? 's' : ''} searching for ${fmt} VS ${fmt}` : `You're the first one searching for ${fmt} VS ${fmt}`;
+  }
+
+  showLeaderboard() {
+    this.lbOpen = true;
+    if (!this.lb) {
+      this.lb = Object.assign(document.createElement('div'), { id: 'lb-overlay', className: 'mm-overlay' });
+      this.lb.addEventListener('click', e => e.target === this.lb && this.hideLeaderboard());
+    }
+    if (!this.lb.isConnected) document.body.appendChild(this.lb);
+    this.lb.classList.remove('hidden');
+    this.renderLeaderboard();
+    this.pollLobby(true);
+  }
+
+  hideLeaderboard() {
+    this.lbOpen = false;
+    this.lb?.classList.add('hidden');
+  }
+
+  renderLeaderboard() {
+    const d = this.lobby, me = d?.me;
+    const rows = d?.top?.length
+      ? d.top.map(r => `<tr class="${r.me ? 'me' : ''}"><td>#${r.rank}</td><td>${esc(r.name)}${r.me ? ' <b>(you)</b>' : ''}</td><td>${r.rating}</td><td>${r.w}W · ${r.l}L</td></tr>`).join('')
+      : `<tr><td colspan="4" class="lb-empty">${this.url ? (d ? 'No ranked players yet — win the first online battle!' : 'Loading…') : 'The leaderboard needs the online match server.'}</td></tr>`;
+    const you = me ? `You: <b>#${me.rank}</b> of ${d.players} · rating <b>${me.rating}</b> · ${me.w}W ${me.l}L` : 'Play an online battle to get ranked (everyone starts at 1000).';
+    const live = d ? `<div class="lb-live">● ${d.online} online · 3v3: ${d.modes[3].battling + d.modes[3].searching + d.modes[3].browsing} · 6v6: ${d.modes[6].battling + d.modes[6].searching + d.modes[6].browsing}</div>` : '';
+    this.lb.innerHTML = `<div class="mm-card lb-card"><h2 class="mm-title">🏆 LEADERBOARD</h2>${live}
+      <table class="lb-table"><thead><tr><th>Rank</th><th>Trainer</th><th>Rating</th><th>Record</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="lb-you">${you}</p><div class="mm-btns"><button class="px-btn primary" data-a="close">CLOSE</button></div></div>`;
+    this.lb.querySelector('[data-a="close"]').addEventListener('click', () => this.hideLeaderboard());
   }
 
   get inBattle() { return this.state === 'battle'; }
@@ -526,7 +593,9 @@ export class Matchmaker {
       error: { draw: 'The match server had a problem, so this match has no result.' },
       lost: { loss: 'Lost connection to the match server — the match counts as a forfeit.' },
     }[r.reason]?.[r.result] ?? '';
-    const rec = r.record ? `<br><small class="mm-rec">Online record: ${r.record.w}W · ${r.record.l}L${r.record.d ? ` · ${r.record.d}D` : ''}</small>` : '';
+    const delta = r.delta ? ` (${r.delta > 0 ? '+' : ''}${r.delta})` : '';
+    const rating = r.record?.rating != null ? `<br><small class="mm-rating">Rating <b>${r.record.rating}</b>${delta}${r.rank ? ` · Rank #${r.rank}` : ''}</small>` : '';
+    const rec = r.record ? `${rating}<br><small class="mm-rec">Online record: ${r.record.w}W · ${r.record.l}L${r.record.d ? ` · ${r.record.d}D` : ''}</small>` : '';
     return `${title}${who}${esc(why)}${rec}`;
   }
 
@@ -535,7 +604,7 @@ export class Matchmaker {
     const el = document.createElement('div');
     el.id = 'mm-overlay';
     el.className = 'mm-overlay hidden';
-    el.innerHTML = '<div class="mm-card"><div class="mm-team"></div><h2 class="mm-title"></h2><p class="mm-text"></p><div class="mm-time"></div><div class="mm-btns"></div></div>';
+    el.innerHTML = '<div class="mm-card"><div class="mm-team"></div><h2 class="mm-title"></h2><p class="mm-text"></p><div class="mm-time"></div><p class="mm-live"></p><div class="mm-btns"></div></div>';
     document.body.appendChild(el);
     this.el = el;
   }
@@ -586,7 +655,10 @@ export class Matchmaker {
     clearInterval(this.clock);
     const time = el.querySelector('.mm-time');
     time.textContent = '';
+    el.querySelector('.mm-live').textContent = '';
     if (state === 'searching') {
+      this.renderLive();
+      this.pollLobby(true);
       const tickClock = () => {
         const s = Math.floor((Date.now() - (this.queuedAt ?? Date.now())) / 1000);
         time.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
