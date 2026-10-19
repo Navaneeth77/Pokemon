@@ -71,6 +71,7 @@ const REDIS = envValue('UPSTASH_REDIS_REST_URL') && envValue('UPSTASH_REDIS_REST
   : null;
 const REDIS_KEY = process.env.LEADERBOARD_KEY || 'chaos-arena:records';
 const STORAGE = REDIS ? 'redis' : 'file';
+let storageError = null; // last database problem (shown on /health; never includes the token)
 
 // One Redis command over Upstash's REST API (no extra packages needed).
 async function redis(cmd) {
@@ -92,9 +93,13 @@ try {
     for (let i = 0; i + 1 < flat.length; i += 2) {
       try { keep(flat[i], JSON.parse(flat[i + 1])); } catch { /* skip a damaged entry */ }
     }
+    storageError = null;
   } else for (const [pid, r] of Object.entries(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')))) keep(pid, r);
 } catch (err) {
-  if (REDIS) console.error('could not load the leaderboard from Redis:', err.message);
+  if (REDIS) {
+    storageError = `load failed: ${err.message}`;
+    console.error('could not load the leaderboard from Redis:', err.message);
+  }
 }
 
 // Results are written a moment after a match ends (only the two players who changed).
@@ -112,7 +117,9 @@ async function flushRecords() {
     if (!pids.length) return;
     try {
       await redis(['HSET', REDIS_KEY, ...pids.flatMap(p => [p, JSON.stringify(records.get(p))])]);
+      storageError = null;
     } catch (err) {
+      storageError = `save failed: ${err.message}`;
       for (const p of pids) dirty.add(p); // try again shortly
       console.error('could not save the leaderboard to Redis:', err.message);
       saveTimer = setTimeout(flushRecords, 10_000);
@@ -667,7 +674,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, players: records.size }, load }));
+    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, load }));
     return;
   }
   res.writeHead(404).end();
