@@ -64,8 +64,10 @@ const records = new Map(); // pid → { name, w, l, d, rating }
 const START_RATING = 1000, ELO_K = 32;
 const DATA_FILE = process.env.LEADERBOARD_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'leaderboard.json');
 const PID_RE = /^[A-Za-z0-9_-]{8,64}$/;
-const REDIS = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  ? { url: process.env.UPSTASH_REDIS_REST_URL.replace(/\/$/, ''), token: process.env.UPSTASH_REDIS_REST_TOKEN }
+// Values pasted with quotes or spaces around them (common in hosting dashboards) still work.
+const envValue = k => (process.env[k] ?? '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+const REDIS = envValue('UPSTASH_REDIS_REST_URL') && envValue('UPSTASH_REDIS_REST_TOKEN')
+  ? { url: envValue('UPSTASH_REDIS_REST_URL').replace(/\/$/, ''), token: envValue('UPSTASH_REDIS_REST_TOKEN') }
   : null;
 const REDIS_KEY = process.env.LEADERBOARD_KEY || 'chaos-arena:records';
 const STORAGE = REDIS ? 'redis' : 'file';
