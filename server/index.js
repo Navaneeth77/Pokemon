@@ -57,29 +57,74 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queued'|'match', entry, match, record }
 const queues = { 3: [], 6: [] }; // waiting entries per format, oldest first
 const matches = new Map();
-// Online results and ratings (Elo, starting at 1000), saved to a JSON file so a server restart keeps
-// them. On hosts without a persistent disk (Render's free plan) the file is lost on redeploys.
+// Online results and ratings (Elo, starting at 1000). Kept in Upstash Redis when
+// UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set, so they survive restarts and redeploys;
+// otherwise in a JSON file (lost on hosts without a persistent disk, such as Render's free plan).
 const records = new Map(); // pid → { name, w, l, d, rating }
 const START_RATING = 1000, ELO_K = 32;
 const DATA_FILE = process.env.LEADERBOARD_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'leaderboard.json');
 const PID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const REDIS = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+  ? { url: process.env.UPSTASH_REDIS_REST_URL.replace(/\/$/, ''), token: process.env.UPSTASH_REDIS_REST_TOKEN }
+  : null;
+const REDIS_KEY = process.env.LEADERBOARD_KEY || 'chaos-arena:records';
+const STORAGE = REDIS ? 'redis' : 'file';
+
+// One Redis command over Upstash's REST API (no extra packages needed).
+async function redis(cmd) {
+  const res = await fetch(REDIS.url, {
+    method: 'POST', headers: { authorization: `Bearer ${REDIS.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(cmd), signal: AbortSignal.timeout(8000),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+  return body.result;
+}
+
+const keep = (pid, r) => {
+  if (PID_RE.test(pid) && r) records.set(pid, { name: safeName(r.name), w: r.w | 0, l: r.l | 0, d: r.d | 0, rating: Number.isFinite(r.rating) ? Math.round(r.rating) : START_RATING });
+};
 try {
-  for (const [pid, r] of Object.entries(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')))) {
-    if (PID_RE.test(pid)) records.set(pid, { name: safeName(r.name), w: r.w | 0, l: r.l | 0, d: r.d | 0, rating: Number.isFinite(r.rating) ? Math.round(r.rating) : START_RATING });
-  }
-} catch { /* no saved leaderboard yet */ }
-let saveTimer = null;
-function saveRecords() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-      fs.writeFileSync(`${DATA_FILE}.tmp`, JSON.stringify(Object.fromEntries(records)));
-      fs.renameSync(`${DATA_FILE}.tmp`, DATA_FILE);
-    } catch (err) {
-      console.error('could not save the leaderboard:', err.message);
+  if (REDIS) {
+    const flat = (await redis(['HGETALL', REDIS_KEY])) ?? [];
+    for (let i = 0; i + 1 < flat.length; i += 2) {
+      try { keep(flat[i], JSON.parse(flat[i + 1])); } catch { /* skip a damaged entry */ }
     }
-  }, 2000);
+  } else for (const [pid, r] of Object.entries(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')))) keep(pid, r);
+} catch (err) {
+  if (REDIS) console.error('could not load the leaderboard from Redis:', err.message);
+}
+
+// Results are written a moment after a match ends (only the two players who changed).
+const dirty = new Set();
+let saveTimer = null;
+function saveRecords(...pids) {
+  for (const p of pids) dirty.add(p);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushRecords, 1500);
+}
+async function flushRecords() {
+  if (REDIS) {
+    const pids = [...dirty].filter(p => records.has(p));
+    dirty.clear();
+    if (!pids.length) return;
+    try {
+      await redis(['HSET', REDIS_KEY, ...pids.flatMap(p => [p, JSON.stringify(records.get(p))])]);
+    } catch (err) {
+      for (const p of pids) dirty.add(p); // try again shortly
+      console.error('could not save the leaderboard to Redis:', err.message);
+      saveTimer = setTimeout(flushRecords, 10_000);
+    }
+    return;
+  }
+  dirty.clear();
+  try {
+    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+    fs.writeFileSync(`${DATA_FILE}.tmp`, JSON.stringify(Object.fromEntries(records)));
+    fs.renameSync(`${DATA_FILE}.tmp`, DATA_FILE);
+  } catch (err) {
+    console.error('could not save the leaderboard:', err.message);
+  }
 }
 
 // Ranked by rating (ties: more wins first); only players who have finished an online battle.
@@ -373,7 +418,7 @@ class Match {
       a.delta = delta;
       b.delta = -delta;
     }
-    if (!wasLoading) saveRecords();
+    if (!wasLoading) saveRecords(this.side.A.player.pid, this.side.B.player.pid);
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
       const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
@@ -620,7 +665,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, load }));
+    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, players: records.size }, load }));
     return;
   }
   res.writeHead(404).end();
@@ -653,4 +698,4 @@ setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
+server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
