@@ -32,7 +32,8 @@ export class UI {
     this.filter = 'all';
     this.foes = [...OPPONENT_TEAM];
     this.difficulty = 'medium';
-    this.leader = null; // a Gym Leader / Elite Four / Champion to battle instead of a random team
+    this.leader = null;
+    this.builder = null; // { index, name } while making or editing a saved team (My Teams) // a Gym Leader / Elite Four / Champion to battle instead of a random team
     this.format = 3;
     this.query = '';
     this.logEl = $('#log');
@@ -85,6 +86,7 @@ export class UI {
 
   async startBattle() {
     if (this.selection.length !== this.format || this.loading) return;
+    if (this.builder) return this.saveBuilder();
     const btn = $('#start-btn');
     this.game.flow?.enterFullscreen();
     if (this.online) {
@@ -182,7 +184,8 @@ export class UI {
     }
     $('.sel-back').addEventListener('click', e => {
       e.currentTarget.blur();
-      this.game.flow?.toTitle();
+      if (this.builder) this.game.flow?.showTeams();
+      else this.game.flow?.toTitle();
     });
     // Switch between 3v3 and 6v6 right here as well.
     const fmtSwitch = document.createElement('div');
@@ -261,6 +264,35 @@ export class UI {
   foeKey() {
     if (this.leader) return `L|${this.leader.id}|${this.format}|${this.difficulty}`;
     return `${this.format}|${this.selection.filter(id => SPECIES[id].class !== 'regular').length}`;
+  }
+
+  // My Teams builder: the team screen saves a team instead of starting a battle.
+  setBuilder(info) {
+    this.builder = info;
+    document.body.classList.toggle('builder', !!info);
+    if (!info) {
+      if (!this.queue && !this.online && !this.story && !this.leader) this.setVersus('Gold');
+      return;
+    }
+    $('.matchup').innerHTML = `<span class="gold">${info.index == null ? 'NEW TEAM' : 'EDIT TEAM'}</span>`;
+    $('.select-card .sub').textContent = 'Pick your Pokémon, tap one to set the lead, then save';
+    const bar = $('#online-bar');
+    bar.innerHTML = `<label class="tb-name">Team name <input maxlength="18" value="${esc(info.name)}" spellcheck="false" /></label>`;
+    bar.querySelector('input').addEventListener('input', e => (info.name = e.target.value));
+    this.renderSelection();
+  }
+
+  saveBuilder() {
+    const b = this.builder, list = this.loadTeams(), name = (b.name ?? '').trim().slice(0, 18) || `Team ${list.length + 1}`;
+    const mega = {};
+    for (const id of this.selection) if (this.megaPick[id]) mega[id] = this.megaPick[id];
+    const entry = { name, format: this.format, team: [...this.selection], lead: this.lead, mega };
+    if (b.index != null && list[b.index]) list.splice(b.index, 1);
+    const same = list.findIndex(t => t.name.toLowerCase() === name.toLowerCase());
+    if (same >= 0) list.splice(same, 1); // one team per name
+    list.unshift(entry);
+    this.storeTeams(list);
+    this.game.flow?.showTeams();
   }
 
   // Bot Battles: battle this Gym Leader / Elite Four member / Champion (null: a random team).
@@ -543,6 +575,7 @@ export class UI {
 
   renderOnline() {
     const bar = $('#online-bar'), o = this.online;
+    if (this.builder) return; // the builder's name field lives here
     if (this.story && !o) {
       const back = this.story.back;
       bar.innerHTML = `<span class="ob-room">${back ? 'STORY' : 'KANTO'} <b>${esc(this.story.stage.name.toUpperCase())}</b></span><button class="mini-btn" data-a="map">◀ ${back ? 'Story menu' : 'Campaign map'}</button>`;
@@ -620,6 +653,7 @@ export class UI {
     start.disabled = !full;
     start.textContent = full ? `Start ${this.format}v${this.format} battle ▶` : `Pick ${this.format - this.selection.length} more`;
     if (this.story && full) start.textContent = `Battle ${this.story.stage.name} ▶`;
+    if (this.builder) start.textContent = full ? '✓ Save team' : `Pick ${this.format - this.selection.length} more`;
     if (this.queue) {
       const busy = !!this.game.flow?.mm.busy;
       start.disabled = !full || busy;

@@ -83,8 +83,8 @@ export class Flow {
   }
 
   show(id) {
-    for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#online-screen', '#story-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
-    this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#online-screen': 'online', '#story-screen': 'story', '#title-menu': 'title' }[id] ?? this.screen;
+    for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#online-screen', '#story-screen', '#teams-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
+    this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#online-screen': 'online', '#story-screen': 'story', '#teams-screen': 'teams', '#title-menu': 'title' }[id] ?? this.screen;
   }
 
   // ── Opening ──
@@ -125,6 +125,7 @@ export class Flow {
       ['BOT BATTLES', () => this.showFormat(), 'Easy · Medium · Hard'],
       ['ONLINE BATTLES', () => this.enterQueueSelect(), this.onlineSub()],
       ['FRIEND ROOM', () => this.showOnline('home', '', 'title')],
+      ['MY TEAMS', () => this.showTeams(), 'Build & save your teams'],
       ['EDIT TRAINER', () => this.showTrainer()],
       ['TUTORIAL', () => this.startTutorial()],
     ];
@@ -525,6 +526,77 @@ export class Flow {
   }
 
   // Bot Battles team select, against a random team (leader = null) or a Gym Leader.
+  // ── My Teams: saved teams, built and edited outside any battle ──
+  showTeams() {
+    music.play('menu');
+    this.game.toMenu();
+    this.opening.stop();
+    $('#intro').classList.add('hidden');
+    this.ui.setBuilder(null);
+    const page = $('#teams-screen'), list = this.ui.loadTeams();
+    const img = id => `<img src="/sprites/${SPECIES[id].sprite}/portrait.png" alt="${SPECIES[id].name}" title="${SPECIES[id].name}">`;
+    const card = (t, k) => {
+      const ids = t.team.filter(id => SPECIES[id]);
+      return `<div class="tb-card"><div class="tb-top"><b>${escapeHtml(t.name)}</b><span class="tb-fmt">${t.format} VS ${t.format}</span></div>
+        <div class="tb-mons">${ids.map((id, i) => `<span class="${i === (t.lead | 0) ? 'lead' : ''}">${img(id)}${i === (t.lead | 0) ? '<i>LEAD</i>' : ''}</span>`).join('')}</div>
+        <div class="tb-btns"><button class="tb-btn go" data-use="${k}">BATTLE ▶</button><button class="tb-btn" data-edit="${k}">EDIT</button><button class="tb-btn del" data-del="${k}">DELETE</button></div></div>`;
+    };
+    page.innerHTML = `
+      <header class="pg-head">
+        <span class="dex-lens"></span><span class="dex-leds"><i></i><i></i><i></i></span>
+        <h1>MY TEAMS</h1>
+        <div class="pg-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name ?? 'TRAINER')}</span></div>
+      </header>
+      <div class="pg-bar"><button class="dex-btn" data-a="back">◀ MENU</button><span></span></div>
+      <section class="dex-panel tb-page">
+        <h2>SAVED TEAMS <span class="dex-count">${list.length} / 20</span></h2>
+        <div class="tb-new"><button class="dex-online" data-new="3">+ NEW 3 VS 3 TEAM</button><button class="dex-online friend" data-new="6">+ NEW 6 VS 6 TEAM</button></div>
+        ${list.length ? `<div class="tb-grid">${list.map(card).join('')}</div>` : '<p class="tb-empty">No teams yet. Make one with the buttons above — saved teams can be loaded in any battle (★ Teams on the team screen).</p>'}
+      </section>`;
+    page.querySelector('.pg-who canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
+    page.querySelector('[data-a="back"]').addEventListener('click', () => this.showTitleMenu());
+    page.querySelectorAll('[data-new]').forEach(b => b.addEventListener('click', () => this.editTeam(null, +b.dataset.new)));
+    page.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => this.editTeam(+b.dataset.edit)));
+    page.querySelectorAll('[data-use]').forEach(b => b.addEventListener('click', () => {
+      // Battle with it: straight to Battle Setup with the team already picked.
+      this.ui.useTeam(list[+b.dataset.use]);
+      this.save.format = this.ui.format;
+      this.persist();
+      this.showFormat();
+    }));
+    // Deleting asks once more on the same button (no pop-ups).
+    page.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+      if (!b.classList.contains('sure')) {
+        b.classList.add('sure');
+        b.textContent = 'SURE?';
+        return;
+      }
+      list.splice(+b.dataset.del, 1);
+      this.ui.storeTeams(list);
+      this.showTeams();
+    }));
+    this.show('#teams-screen');
+    page.scrollTop = 0;
+  }
+
+  // The team picker in builder mode: pick Pokémon, name the team, save (no battle).
+  editTeam(k, format) {
+    const list = this.ui.loadTeams(), t = k == null ? null : list[k];
+    this.format = t?.format ?? format ?? 3;
+    this.show(null);
+    this.screen = 'select';
+    this.opening.stop();
+    $('#intro').classList.add('hidden');
+    this.ui.setQueue(null);
+    this.ui.setLeader(null);
+    this.ui.setFormat(this.format);
+    this.ui.selection = t ? t.team.filter(id => SPECIES[id]).slice(0, this.format) : [];
+    this.ui.lead = t ? Math.min(t.lead | 0, Math.max(0, this.ui.selection.length - 1)) : 0;
+    if (t?.mega) Object.assign(this.ui.megaPick, t.mega);
+    this.ui.setBuilder({ index: k, name: t?.name ?? `Team ${list.length + 1}` });
+    this.game.toSelect();
+  }
+
   toTeamSelect(arenaId, leader) {
     this.game.arenaId = arenaId;
     this.format ??= this.save.format === 6 ? 6 : 3;
@@ -532,6 +604,7 @@ export class Flow {
     this.screen = 'select';
     this.opening.stop();
     $('#intro').classList.add('hidden');
+    this.ui.setBuilder(null);
     this.ui.setQueue(null);
     this.ui.setLeader(leader);
     this.ui.setFormat(this.format);
@@ -551,6 +624,7 @@ export class Flow {
     this.opening.stop();
     $('#intro').classList.add('hidden');
     this.format = this.save.format === 6 ? 6 : 3;
+    this.ui.setBuilder(null);
     this.ui.setLeader(null);
     this.ui.setFormat(this.format);
     this.ui.setQueue({ record: this.mm.record });
@@ -734,6 +808,7 @@ export class Flow {
     this.opening.stop();
     $('#intro').classList.add('hidden');
     this.game.arenaId = room.arena;
+    this.ui.setBuilder(null);
     this.ui.setQueue(null);
     this.ui.setLeader(null);
     this.ui.setFormat(room.format);
@@ -788,6 +863,7 @@ export class Flow {
     this.game.story = null;
     this.mm.stop();
     this.ui.setQueue(null);
+    this.ui.setBuilder(null);
     if (this.online.net) {
       // Leaving to the title always leaves the room.
       this.online.leave();
@@ -853,6 +929,8 @@ export class Flow {
         e.preventDefault();
         this.confirmArena();
       } else if (e.code === 'Escape') this.showFormat();
+    } else if (s === 'teams') {
+      if (e.code === 'Escape') this.showTitleMenu();
     } else if (s === 'online') {
       if (e.code === 'Escape') {
         if (this.onlineView === 'home') this.onlineBack();
