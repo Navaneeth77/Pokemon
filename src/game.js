@@ -453,7 +453,7 @@ export class Game {
     }
     const move = chargedMove(base, chargeLevel);
     if (!NOT_COPYABLE.has(id)) this.lastUsed[user.side] = id;
-    user.cooldowns[id] = base.cooldown;
+    this.startCooldown(user, id, base.cooldown);
     user.action = new move.Action(move, user, this);
     this.hud.callout(user.side, chargeLevel >= 1 ? `${base.name}! MAX` : `${base.name}!`);
     this.ui.log(`${user.species.name} used ${base.name}!`, user.side);
@@ -462,6 +462,15 @@ export class Game {
     if (user === this.player) this.ai.onThreat();
     this.netSend(user, { t: 'move', id, l: chargeLevel });
     return true;
+  }
+
+  // At most two of a Pokémon's four moves are ever cooling down: putting a third on cooldown makes the
+  // one closest to ready usable again, so there are always at least two moves to pick from.
+  startCooldown(user, id, t) {
+    user.cooldowns[id] = Math.max(user.cooldowns[id] ?? 0, t);
+    const cooling = user.species.moves.filter(m => m !== id && (user.cooldowns[m] ?? 0) > 0);
+    cooling.sort((a, b) => user.cooldowns[a] - user.cooldowns[b]);
+    while (cooling.length > 1) user.cooldowns[cooling.shift()] = 0;
   }
 
   // True while either side's ultimate is underway (cutscene or the attack itself): no switching out of it.
@@ -476,7 +485,7 @@ export class Game {
       this.spawn(new FloatText(user.x, user.y - user.headZ - 14, 'NOTHING TO COPY YET', '#c9d2de', 7));
       return false;
     }
-    user.cooldowns.copy = Math.max(3, src.cooldown * 1.25);
+    this.startCooldown(user, 'copy', Math.max(3, src.cooldown * 1.25));
     user.copied = id;
     user.action = new src.Action(src, user, this);
     this.spawn(new FloatText(user.x, user.y - user.headZ - 18, `COPIED ${src.name.toUpperCase()}!`, '#ff9fd0', 8));

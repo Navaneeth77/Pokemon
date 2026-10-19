@@ -8,6 +8,7 @@ import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 
 const $ = sel => document.querySelector(sel);
+const TEAMS_KEY = 'msb.teams';
 const hpColor = r => (r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
 const portrait = s => `/sprites/${s.sprite}/portrait.png`;
 const typeChips = types => types.map(t => `<i style="background:${TYPE_COLORS[t][0]}">${t}</i>`).join('');
@@ -199,7 +200,8 @@ export class UI {
     }));
     const actions = document.createElement('div');
     actions.className = 'team-actions';
-    actions.innerHTML = '<button class="mini-btn" data-t="random" title="Fill the empty slots with random Pokémon (from the ones shown)">Random</button>'
+    actions.innerHTML = '<button class="mini-btn" data-t="teams" title="Save this team, or load one you saved">★ Teams</button>'
+      + '<button class="mini-btn" data-t="random" title="Fill the empty slots with random Pokémon (from the ones shown)">Random</button>'
       + '<button class="mini-btn" data-t="clear" title="Remove every Pokémon from your team">Clear</button>';
     actions.querySelector('[data-t="random"]').addEventListener('click', e => {
       e.currentTarget.blur();
@@ -208,6 +210,10 @@ export class UI {
     actions.querySelector('[data-t="clear"]').addEventListener('click', e => {
       e.currentTarget.blur();
       this.clearTeam();
+    });
+    actions.querySelector('[data-t="teams"]').addEventListener('click', e => {
+      e.currentTarget.blur();
+      this.toggleTeams();
     });
     $('.dock-top').append(actions, fmtSwitch);
     const ar = document.createElement('button');
@@ -344,6 +350,93 @@ export class UI {
     if (i < this.lead) this.lead--;
     else if (i === this.lead) this.lead = 0;
     this.renderSelection();
+  }
+
+  // ── Saved teams: kept in this browser (localStorage), up to 20 ──
+  loadTeams() {
+    try {
+      const list = JSON.parse(localStorage.getItem(TEAMS_KEY));
+      return Array.isArray(list) ? list.filter(t => t && typeof t.name === 'string' && Array.isArray(t.team) && t.team.some(id => SPECIES[id])) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  storeTeams(list) {
+    try { localStorage.setItem(TEAMS_KEY, JSON.stringify(list.slice(0, 20))); } catch { /* storage full or blocked */ }
+  }
+
+  toggleTeams(open = !this.teamsOpen) {
+    this.teamsOpen = open;
+    if (!this.teamsPanel) {
+      this.teamsPanel = document.createElement('div');
+      this.teamsPanel.className = 'teams-panel';
+      $('.select-card').appendChild(this.teamsPanel);
+    }
+    this.teamsPanel.classList.toggle('hidden', !open);
+    if (open) this.renderTeams();
+  }
+
+  renderTeams() {
+    const list = this.loadTeams(), full = this.selection.length === this.format, left = this.format - this.selection.length;
+    const mons = t => t.team.filter(id => SPECIES[id]).map(id => `<img src="${portrait(SPECIES[id])}" alt="${SPECIES[id].name}">`).join('');
+    const rows = list.length
+      ? list.map((t, k) => `<div class="tp-row"><button class="tp-load" data-k="${k}" title="Load this team"><b>${esc(t.name)}</b><span class="tp-fmt">${t.format}v${t.format}</span><span class="tp-mons">${mons(t)}</span></button>`
+        + `<button class="tp-del" data-k="${k}" title="Delete this team" aria-label="Delete">✕</button></div>`).join('')
+      : '<p class="tp-empty">No saved teams yet. Pick a team, name it and press Save.</p>';
+    this.teamsPanel.innerHTML = `<div class="tp-head"><b>★ SAVED TEAMS</b><button class="tp-close" aria-label="Close">✕</button></div>
+      <div class="tp-save"><input class="tp-name" maxlength="18" placeholder="Name this team" value="${esc(this.teamDraft ?? `Team ${list.length + 1}`)}" />
+        <button class="mini-btn" data-a="save" ${full ? '' : 'disabled'}>Save current team</button></div>
+      ${full ? '' : `<p class="tp-hint">Pick ${left} more Pokémon to save this team.</p>`}
+      <div class="tp-list">${rows}</div>`;
+    const name = this.teamsPanel.querySelector('.tp-name');
+    name.addEventListener('input', () => (this.teamDraft = name.value));
+    name.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && full) this.saveTeam(name.value);
+    });
+    this.teamsPanel.querySelector('.tp-close').addEventListener('click', () => this.toggleTeams(false));
+    this.teamsPanel.querySelector('[data-a="save"]').addEventListener('click', () => this.saveTeam(name.value));
+    this.teamsPanel.querySelectorAll('.tp-load').forEach(b => b.addEventListener('click', () => this.useTeam(list[+b.dataset.k])));
+    this.teamsPanel.querySelectorAll('.tp-del').forEach(b => b.addEventListener('click', () => {
+      list.splice(+b.dataset.k, 1);
+      this.storeTeams(list);
+      this.renderTeams();
+    }));
+  }
+
+  saveTeam(rawName) {
+    if (this.selection.length !== this.format) return;
+    const list = this.loadTeams(), name = (rawName ?? '').trim().slice(0, 18) || `Team ${list.length + 1}`;
+    const mega = {};
+    for (const id of this.selection) if (this.megaPick[id]) mega[id] = this.megaPick[id];
+    const entry = { name, format: this.format, team: [...this.selection], lead: this.lead, mega };
+    const same = list.findIndex(t => t.name.toLowerCase() === name.toLowerCase());
+    if (same >= 0) list.splice(same, 1); // saving under an existing name replaces it
+    list.unshift(entry);
+    this.storeTeams(list);
+    this.teamDraft = null;
+    this.renderTeams();
+  }
+
+  useTeam(t) {
+    if (!t || this.teamLocked) return;
+    const flow = this.game.flow;
+    // A room or a story battle decides the format; otherwise the saved team brings its own.
+    if (t.format !== this.format && !this.online && !this.story) {
+      if (flow) {
+        flow.format = t.format;
+        flow.save.format = t.format;
+        flow.persist();
+      }
+      this.setFormat(t.format);
+    }
+    const ids = t.team.filter(id => SPECIES[id] && (!this.story || this.story.pool.has(id))).slice(0, this.format);
+    this.selection = [...new Set(ids)];
+    this.lead = Math.max(0, Math.min(t.lead | 0, this.selection.length - 1));
+    Object.assign(this.megaPick, t.mega ?? {});
+    this.toggleTeams(false);
+    this.renderSelection();
+    if (this.selection.length) this.showInfo(this.selection[this.lead]);
   }
 
   clearTeam() {
@@ -495,7 +588,7 @@ export class UI {
     $('#team-count').innerHTML = `YOUR TEAM <i>${this.selection.length}/${this.format}</i>${left > 0 ? '' : '<i class="lead-hint"> · tap one to lead</i>'}`;
     const locked = this.teamLocked;
     document.querySelectorAll('.team-actions button').forEach(b => {
-      b.disabled = locked || (b.dataset.t === 'clear' ? !this.selection.length : !left);
+      b.disabled = locked || (b.dataset.t === 'teams' ? false : b.dataset.t === 'clear' ? !this.selection.length : !left);
     });
     box.innerHTML = Array.from({ length: this.format }, (_, i) => i).map(i => {
       const id = this.selection[i];

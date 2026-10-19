@@ -2666,6 +2666,9 @@ export const MOVES = {
 };
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
 
+// Faster pace: every regular move recovers 30% sooner (ultimates charge a meter instead).
+for (const m of Object.values(MOVES)) if (!m.ultimate && m.cooldown) m.cooldown = Math.max(0.6, Math.round(m.cooldown * 7) / 10);
+
 // Physical moves hit up close and knock harder; special moves work at range; status moves don't attack.
 for (const m of Object.values(MOVES)) {
   m.cat = m.util || m.copy ? 'status' : m.shot || m.beam || m.stream || m.shockwave || m.ultimate || ['thunderbolt', 'psychic'].includes(m.id) ? 'special' : 'physical';

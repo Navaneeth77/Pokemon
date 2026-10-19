@@ -1348,3 +1348,71 @@ body.vsleader .sel-links, body.vsleader #reroll-btn { display: none; }
 .lb-table tr.me td { background: #fff3c4; }
 .lb-table .lb-empty { padding: 18px 8px; color: #5870b8; text-align: center; }
 .lb-you { margin: 10px 0 0; font-size: 13px; color: #283058; }
+
+/* ── Phone controls: floating joystick (left) · attack arc around the ultimate (right) · actions above ── */
+#touch .t-zone { position: absolute; left: 0; bottom: 0; width: 52%; height: 50%; pointer-events: auto; touch-action: none; }
+#touch .t-joy { position: absolute; left: calc(max(16px, env(safe-area-inset-left)) + 70px); top: calc(100% - max(24px, env(safe-area-inset-bottom)) - 70px); bottom: auto; width: 136px; height: 136px; transform: translate(-50%, -50%); pointer-events: none; background: radial-gradient(circle, rgba(20, 24, 40, 0.2) 40%, rgba(20, 24, 40, 0.5)); border: 3px solid rgba(255, 255, 255, 0.45); border-radius: 50%; opacity: 0.5; transition: opacity 0.15s; }
+#touch .t-joy.active { opacity: 1; transition: none; }
+#touch .t-knob { width: 62px; height: 62px; margin: -31px 0 0 -31px; background: radial-gradient(circle at 35% 30%, #ffffff, #d8deea); border: 3px solid #283058; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4); }
+.t-joy-hint { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); font-size: 11px; font-weight: 700; letter-spacing: 3px; color: rgba(255, 255, 255, 0.8); text-shadow: 0 1px 2px #000; white-space: nowrap; }
+.t-joy.active .t-joy-hint { display: none; }
+
+#touch .t-pad { right: max(12px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: 210px; height: 210px; }
+#touch .t-ult { position: absolute; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 88px; height: 88px; padding: 0; color: #282838; font-family: inherit; background: conic-gradient(#ffd84a var(--fill, 0%), rgba(248, 248, 240, 0.94) 0); border: 3px solid #283058; border-radius: 50%; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); }
+#touch .t-ult b { font: 400 24px 'Luckiest Guy', sans-serif; line-height: 1; }
+#touch .t-ult small { font-size: 11px; font-weight: 700; }
+#touch .t-ult.ready { box-shadow: 0 0 0 4px #fff6c0, 0 0 22px #ffd84a; animation: pressed 1s ease-in-out infinite; }
+#touch .t-ult.down, #touch .t-move.down, #touch .t-act.down { transform: scale(0.9); filter: brightness(1.15); }
+#touch .t-move { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 64px; height: 64px; padding: 0 4px; overflow: hidden; color: #fff; font-family: inherit; background: radial-gradient(circle at 35% 28%, var(--c2, #aaa), var(--c, #666) 70%); border: 3px solid rgba(10, 12, 22, 0.85); border-radius: 50%; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); }
+#touch .t-move .t-cd { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(8, 10, 18, 0.72) var(--cd, 0%), transparent 0); pointer-events: none; }
+#touch .t-move b { position: relative; font: 400 20px 'Luckiest Guy', sans-serif; line-height: 1; text-shadow: 0 2px 0 #000; }
+#touch .t-move b:empty { display: none; }
+#touch .t-move small { position: relative; max-width: 58px; font-size: 9.5px; font-weight: 700; line-height: 1.05; text-align: center; white-space: normal; text-shadow: 0 1px 1px #000, 0 0 3px #000; }
+#touch .t-move em { display: none; position: absolute; top: 3px; right: 9px; font-size: 11px; font-style: normal; }
+#touch .t-move.chargeable em { display: block; }
+#touch .t-move.cool small { opacity: 0.65; }
+#touch .t-move.charging { box-shadow: 0 0 0 4px #ffe066, 0 0 18px #ffe066; }
+#touch .t-move.off { filter: grayscale(0.6) brightness(0.75); }
+#touch .t-move::after { content: none; }
+#touch .t-move[data-i="0"] { right: 138px; bottom: 12px; }
+#touch .t-move[data-i="1"] { right: 121px; bottom: 75px; }
+#touch .t-move[data-i="2"] { right: 75px; bottom: 121px; }
+#touch .t-move[data-i="3"] { right: 12px; bottom: 138px; }
+
+#touch .t-actions { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 222px); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
+#touch .t-act { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 116px; height: 52px; padding: 0; overflow: hidden; color: #fff; font-family: inherit; border: 3px solid rgba(10, 12, 22, 0.85); border-radius: 26px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); }
+#touch .t-act b { position: relative; font: 400 19px 'Luckiest Guy', sans-serif; letter-spacing: 1px; line-height: 1; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); }
+#touch .t-act small { position: relative; font-size: 9px; font-weight: 700; opacity: 0.9; }
+#touch .t-dodge { background: linear-gradient(#5aa0ff, #2f63d6); }
+#touch .t-dodge i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--cd, 0%); background: rgba(8, 10, 18, 0.55); pointer-events: none; }
+#touch .t-mega { background: linear-gradient(135deg, #ff6ac8, #8a6aff 55%, #6ac8ff); }
+
+#touch .t-team { bottom: calc(50% + 10px); gap: 8px; }
+#touch .t-mate { width: 50px; height: 54px; }
+#touch .t-mate img { width: 40px; height: 40px; }
+#touch .t-mate span { position: absolute; inset: 0; display: grid; place-items: center; font: 400 18px 'Luckiest Guy', sans-serif; color: #fff; text-shadow: 0 2px 0 #000; }
+
+/* ── Saved teams panel (team select) ── */
+.select-card { position: relative; }
+.teams-panel { position: absolute; z-index: 5; left: 12px; right: 12px; bottom: 12px; max-height: 70%; display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: hidden; text-align: left; background: #0f141e; border: 2px solid #f5c542; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); }
+.tp-head { display: flex; align-items: center; justify-content: space-between; }
+.tp-head b { font-size: 13px; letter-spacing: 2px; color: #f5c542; }
+.tp-close, .tp-del { width: 30px; height: 30px; padding: 0; color: #cfd6e2; font: inherit; font-size: 14px; background: #1b2231; border: 1px solid #2a3344; border-radius: 8px; cursor: pointer; }
+.tp-close:hover, .tp-del:hover { color: #fff; background: #c0302a; }
+.tp-save { display: flex; gap: 8px; }
+.tp-name { flex: 1; min-width: 0; padding: 7px 10px; color: #fff; font: inherit; font-size: 13px; background: #0b0f17; border: 2px solid #2a3344; border-radius: 8px; outline: none; }
+.tp-name:focus { border-color: #f5c542; }
+.tp-save .mini-btn { flex: none; padding: 6px 12px; font-size: 12px; background: #f5c542; color: #2a1a05; border-color: #f5c542; }
+.tp-save .mini-btn:disabled { opacity: 0.4; cursor: default; }
+.tp-hint, .tp-empty { margin: 0; font-size: 12px; color: #7f8aa0; }
+.tp-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.tp-row { display: flex; gap: 6px; align-items: stretch; }
+.tp-load { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 8px; color: #fff; font: inherit; text-align: left; background: #161c28; border: 2px solid #232c3b; border-radius: 10px; cursor: pointer; }
+.tp-load:hover { border-color: #f5c542; background: #1c2333; }
+.tp-load b { flex: 1; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.tp-fmt { flex: none; padding: 1px 7px; font-size: 10px; font-weight: 700; color: #2a1a05; background: #f5c542; border-radius: 999px; }
+.tp-mons { display: flex; gap: 2px; flex: none; }
+.tp-mons img { width: 26px; height: 26px; image-rendering: pixelated; background: #1f2837; border-radius: 6px; }
+.tp-del { align-self: center; }
+#touch .t-actions .t-act { right: auto; bottom: auto; } /* the action buttons stack in their own column */
+#touch .t-move.long small { font-size: 8px; letter-spacing: -0.2px; }

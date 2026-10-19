@@ -124,7 +124,8 @@ export class Pokemon {
       this.charging = c;
       return;
     }
-    this.cooldowns[c.id] = Math.max(this.cooldowns[c.id] ?? 0, c.move.cooldown * 0.4);
+    if (game.startCooldown) game.startCooldown(this, c.id, c.move.cooldown * 0.4);
+    else this.cooldowns[c.id] = Math.max(this.cooldowns[c.id] ?? 0, c.move.cooldown * 0.4);
     game.spawn(new FloatText(this.x, this.y - this.headZ - 14, 'CHARGE BROKEN', '#ff9a8a', 7));
   }
 

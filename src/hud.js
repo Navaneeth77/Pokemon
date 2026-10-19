@@ -181,13 +181,14 @@ export class Hud {
     if (g.state !== 'fighting') return;
     const cd = Math.ceil(g.switchCD);
     const none = g.playerTeam.remaining <= 1;
-    const label = none ? 'NO SWITCH' : cd > 0 ? `SWITCH ${cd}S` : 'SWITCH [Q]';
+    const touch = document.body.classList.contains('touch'); // phones: no key names
+    const label = none ? 'NO SWITCH' : cd > 0 ? `SWITCH ${cd}S` : touch ? 'SWITCH READY' : 'SWITCH [Q]';
     ctx.font = '400 7px "Luckiest Guy"';
     const w = Math.ceil(ctx.measureText(label).width) + 12;
     roundRect(ctx, 5, 51, w, 11, 5.5, cd > 0 || none ? 'rgba(16,20,30,0.88)' : 'rgba(40,120,70,0.92)', 'rgba(255,255,255,0.15)', 0.8);
     outlinedText(ctx, label, 5 + w / 2, 59.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: cd > 0 || none ? '#c9d2de' : '#ffffff' });
     const dcd = g.player.dodgeCD;
-    const dl = dcd > 0 ? `DODGE ${dcd.toFixed(1)}S` : 'DODGE [SPACE]';
+    const dl = dcd > 0 ? `DODGE ${dcd.toFixed(1)}S` : touch ? 'DODGE READY' : 'DODGE [SPACE]';
     const dw = Math.ceil(ctx.measureText(dl).width) + 12, dx = 5 + w + 4;
     roundRect(ctx, dx, 51, dw, 11, 5.5, dcd > 0 ? 'rgba(16,20,30,0.88)' : 'rgba(40,90,150,0.92)', 'rgba(255,255,255,0.15)', 0.8);
     outlinedText(ctx, dl, dx + dw / 2, 59.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: dcd > 0 ? '#c9d2de' : '#ffffff' });
