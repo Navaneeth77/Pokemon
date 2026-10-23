@@ -14,9 +14,14 @@ import { sfx } from './audio.js';
 // the end is the server's. The second player sees the arena turned around so their side is at the bottom.
 const PROTOCOL = 2;
 const PID_KEY = 'msb.pid';
-const CONNECT_TIMEOUT_MS = 8000;
+const CONNECT_TIMEOUT_MS = 12000; // one attempt; a sleeping server is retried until WAKE_WAIT_MS
+const WAKE_WAIT_MS = 75000; // a free-plan server that went to sleep takes up to a minute to wake
 const SILENCE_MS = 10000;
-const INPUT_EVERY = 1 / 30;
+const INPUT_GAP_MS = 25; // a changed direction goes out straight away, at most 40 times a second
+const PRED_MS = 700; // our own predicted attack waits at least this long for the server to confirm it
+// The opponent is shown slightly in the past, between two server updates, so uneven delivery still
+// looks smooth; how far in the past adapts to how uneven the connection is.
+const INTERP_MIN_MS = 35, INTERP_MAX_MS = 180;
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
@@ -73,8 +78,17 @@ export class Matchmaker {
         this.cancel();
       }
     });
-    setInterval(() => this.heartbeat(), 2000);
+    setInterval(() => this.heartbeat(), 1000);
     setInterval(() => this.pollLobby(), 5000);
+    this.wake();
+  }
+
+  get httpUrl() { return this.url.replace(/^ws/, 'http'); }
+
+  // A sleeping match server starts waking on its first request, so the game knocks as soon as it
+  // loads: by the time the player has picked a team the server is usually up.
+  wake() {
+    if (this.url) fetch(`${this.httpUrl}/health`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
   }
 
   // ── Who's online and the leaderboard ──
@@ -88,7 +102,7 @@ export class Matchmaker {
     try {
       const here = onQueue || this.busy;
       const body = JSON.stringify(here ? { pid: this.pid, fmt: this.spec?.format && this.busy ? this.spec.format : f.ui.format } : { pid: this.pid });
-      const res = await fetch(`${this.url.replace(/^ws/, 'http')}/lobby`, { method: 'POST', body, headers: { 'content-type': 'text/plain' }, cache: 'no-store' });
+      const res = await fetch(`${this.httpUrl}/lobby`, { method: 'POST', body, headers: { 'content-type': 'text/plain' }, cache: 'no-store' });
       this.lobby = await res.json();
       f.lobbyChanged?.();
       f.ui.lobbyChanged?.();
@@ -240,15 +254,30 @@ export class Matchmaker {
       return;
     }
     this.result = null;
+    this.waking = false;
     this.setState('connecting');
-    try {
-      await this.connect();
-    } catch (err) {
+    this.wake();
+    // Still connecting after a few seconds: the server is most likely waking up, so say so and keep trying.
+    const until = Date.now() + WAKE_WAIT_MS;
+    clearTimeout(this.wakeNote);
+    this.wakeNote = setTimeout(() => {
       if (this.state !== 'connecting') return;
-      if (err.code === 'duplicate' || err.code === 'version') this.fail(err.message, err.code === 'duplicate');
-      else this.fail("Couldn't reach the match server. Check your connection and try again.", true);
-      return;
+      this.waking = true;
+      this.setState('connecting');
+    }, 3500);
+    for (;;) {
+      try {
+        await this.connect();
+        break;
+      } catch (err) {
+        if (this.state !== 'connecting') return;
+        if (err.code === 'duplicate' || err.code === 'version') return this.fail(err.message, err.code === 'duplicate');
+        if (Date.now() > until) return this.fail("Couldn't reach the match server. Check your connection and try again.", true);
+        await new Promise(r => setTimeout(r, 2000));
+        if (this.state !== 'connecting') return;
+      }
     }
+    clearTimeout(this.wakeNote);
     if (this.state !== 'connecting') return;
     this.send({ t: 'queue', ...this.spec });
   }
@@ -295,10 +324,15 @@ export class Matchmaker {
 
   onMessage(m) {
     switch (m.t) {
-      case 'pong':
-        this.ping = Math.round(performance.now() - m.ts);
+      case 'pong': {
+        // Round-trip time: the median of the last few, so one slow reply doesn't throw it off.
+        const rtt = performance.now() - m.ts;
+        this.rtts = [...(this.rtts ?? []).slice(-6), rtt];
+        this.rtt = [...this.rtts].sort((a, b) => a - b)[this.rtts.length >> 1];
+        this.ping = Math.round(rtt);
         if (this.state === 'battle') $('#panel .loc').textContent = `ONLINE MATCH · ${this.ping} MS`;
         return;
+      }
       case 'queued':
         this.queuedAt = Date.now();
         this.setState('searching');
@@ -327,7 +361,7 @@ export class Matchmaker {
         // One message per server wake-up: what happened since the last one, then the current state.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
         if (Array.isArray(m.e)) for (const e of m.e) if (e) this.events.push(e);
-        if (m.s && this.state === 'battle') this.onSnapshot(m.s);
+        if (m.s && this.state === 'battle') this.onSnapshot(m.s, m.ts);
         return;
       case 'ev':
         if (this.match && (this.state === 'battle' || this.state === 'result') && m.e) this.events.push(m.e);
@@ -387,29 +421,108 @@ export class Matchmaker {
   }
 
   begin() {
-    this.inT = 0;
     this.lastIn = null;
-    this.inAge = 0;
+    this.inAt = 0;
+    this.inSeq = 0;
+    this.sentAt = new Map(); // direction update number → when it was sent
+    this.pred = { moves: [], dodge: 0, charge: null, released: null, buffer: null };
+    this.hist = []; // where our own Pokémon was over the last moment, for lining it up with the server
+    this.histMon = null;
+    this.corr = null;
+    this.foeBuf = []; // the opponent's recent positions with the server's clock, oldest first
+    this.offs = [];
+    this.offset = null;
+    this.delay = null;
+    this.foeSample = null;
   }
 
   // A button press: the server applies it with the normal rules, and the result comes back as events.
+  // Attacks and dodges also start here straight away (see predict), so they never wait for the round trip.
   intent(kind, i) {
     if (this.state !== 'battle' || !this.match) return;
     this.send({ t: 'act', id: this.match.id, k: kind, i });
+    this.predict(kind, i);
   }
 
-  // Every frame: the held direction goes to the server when it changes (and now and then regardless).
+  // Our own attack or dodge starts on this screen at once, using the same rules the server uses. When
+  // the server's copy of it arrives it is skipped; if the server never confirms it (it disagreed about
+  // whether the move was ready), the attack is called off. Ultimates, Mega Evolution, Copy and switching
+  // wait for the server, because they pause the battle or depend on what the opponent did.
+  predict(kind, i) {
+    const g = this.game, p = g.player, pr = this.pred, now = performance.now();
+    if (!pr || g.state !== 'fighting' || g.cinematic || g.switching || p.hidden || p.fainted || this.flow.pauseOpen) return;
+    if (kind === 'dodge') {
+      const o = g.opponent, v = g.input.vector(), held = v.x || v.y;
+      if (g.dodge(p, held ? v.x : p.x - o.x || 0.01, held ? v.y : p.y - o.y || 1)) pr.dodge = now;
+      return;
+    }
+    const id = p.species.moves[i], m = MOVES[id];
+    if (!m || m.copy || m.ultimate) return;
+    if (kind === 'press') {
+      if (m.chargeable) {
+        if (g.beginCharge(p, id)) {
+          pr.charge = { id, at: now };
+          g.ui.pressed(i, true);
+        }
+      } else if (!this.tryMove(i, now) && p.alive && !p.charging && g.moveCD(p, id) <= 0.25) {
+        pr.buffer = { i, t: 0.3 }; // the server holds a press made just before recovering; so do we
+      }
+    } else if (kind === 'release' && p.charging?.id === id) {
+      pr.charge = null;
+      if (g.releaseCharge(p)) {
+        pr.moves.push({ id, at: now });
+        pr.released = { id, at: now };
+      }
+    }
+  }
+
+  tryMove(i, now) {
+    const g = this.game, id = g.player.species.moves[i];
+    if (!g.useMove(g.player, id)) return false;
+    this.pred.moves.push({ id, at: now });
+    this.pred.buffer = null;
+    g.ui.pressed(i, true);
+    return true;
+  }
+
+  // The server confirmed one of our moves: true when we already started it ourselves.
+  confirm(id) {
+    const list = this.pred?.moves, k = list ? list.findIndex(e => e.id === id) : -1;
+    if (k < 0) return false;
+    list.splice(0, k + 1); // anything predicted before it was never used by the server
+    return true;
+  }
+
+  // Every frame: predictions the server never confirmed run out, and the held direction goes to the
+  // server as soon as it changes (and every half second regardless).
   tick(dt) {
     if (this.state !== 'battle' || !this.match) return;
-    if ((this.inT -= dt) > 0) return;
-    this.inT = INPUT_EVERY;
-    this.inAge += INPUT_EVERY;
-    const g = this.game, v = g.state === 'fighting' && !this.flow.pauseOpen ? g.input.vector() : { x: 0, y: 0 };
+    const g = this.game, p = g.player, pr = this.pred, now = performance.now();
+    if (pr) {
+      // Time stands still for predictions while a cutscene pauses the battle.
+      if (g.cinematic) for (const e of pr.moves) e.at += dt * 1000;
+      const limit = Math.max(PRED_MS, (this.rtt ?? 150) * 2.5 + 200);
+      pr.moves = pr.moves.filter(e => {
+        if (now - e.at < limit) return true;
+        if (p.action?.move.id === e.id) p.cancelAction();
+        return false;
+      });
+      if (pr.dodge && now - pr.dodge > limit) pr.dodge = 0;
+      if (pr.buffer && g.state === 'fighting' && !g.cinematic) {
+        pr.buffer.t -= dt;
+        if (!this.tryMove(pr.buffer.i, now) && pr.buffer.t <= 0) pr.buffer = null;
+      }
+    }
+    const v = g.state === 'fighting' && !this.flow.pauseOpen ? g.input.vector() : { x: 0, y: 0 };
     const x = Math.round(v.x * 100) / 100, y = Math.round(v.y * 100) / 100;
-    if (this.lastIn && this.lastIn.x === x && this.lastIn.y === y && this.inAge < 0.5) return;
+    const same = this.lastIn && this.lastIn.x === x && this.lastIn.y === y, since = now - this.inAt;
+    if (since < INPUT_GAP_MS || (same && since < 500)) return;
     this.lastIn = { x, y };
-    this.inAge = 0;
-    this.send({ t: 'in', id: this.match.id, x, y });
+    this.inAt = now;
+    const q = ++this.inSeq;
+    this.sentAt.set(q, now);
+    this.sentAt.delete(q - 120);
+    this.send({ t: 'in', id: this.match.id, x, y, q });
   }
 
   local(side) { return (side === 'player') !== this.flip ? 'player' : 'opponent'; }
@@ -426,36 +539,116 @@ export class Matchmaker {
       const team = loc === 'player' ? g.playerTeam : g.opponentTeam, mon = team.active, foe = loc === 'player' ? g.opponent : g.player;
       if (e.t === 'move') {
         if (mon.hidden || mon.fainted) continue;
+        if (loc === 'player' && this.confirm(e.id)) continue; // already playing: we started it ourselves
         g.useMove(mon, e.id, e.l ?? 0, true, e.cp);
         const k = mon.species.moves.indexOf(e.id);
         if (loc === 'player' && k >= 0) g.ui.pressed(k, true);
       } else if (e.t === 'dodge') {
+        if (loc === 'player' && this.pred?.dodge) {
+          this.pred.dodge = 0;
+          continue;
+        }
         if (!mon.hidden && !mon.fainted) g.dodge(mon, this.fv(e.x) || 0.01, this.fv(e.y), true);
       } else if (e.t === 'mega') {
         if (e.c) mon.megaChoice = e.c;
         g.megaEvolve(mon, true);
-      } else if (e.t === 'switch') g.remoteSwitch(e.i, loc);
-      else if (e.t === 'faint') {
+      } else if (e.t === 'switch') {
+        if (loc === 'player' && this.pred) Object.assign(this.pred, { moves: [], dodge: 0, charge: null, released: null, buffer: null });
+        g.remoteSwitch(e.i, loc);
+      } else if (e.t === 'faint') {
         const m = team.members[e.i] ?? mon;
         m.hp = 0;
         g.onFaint(m, foe, MOVES[e.mv], e);
-      } else if (e.t === 'cancel') mon.cancelAction();
+      } else if (e.t === 'cancel') {
+        // Only the attack the server cut short (not a newer one we have already started).
+        if (!e.id || mon.action?.move.id === e.id) mon.cancelAction();
+      }
     }
   }
 
-  onSnapshot(m) {
+  onSnapshot(m, ts) {
     const g = this.game, mine = this.flip ? m.B : m.A, theirs = this.flip ? m.A : m.B;
     if (!mine || !theirs) return;
     this.snap = { player: mine, opponent: theirs };
+    const now = performance.now();
+    if (typeof ts === 'number' && this.foeBuf) {
+      this.trackClock(ts, now);
+      const b = this.foeBuf;
+      b.push({ ts, i: theirs.i, x: theirs.x, y: theirs.y, d: theirs.d, fz: theirs.fz, ah: theirs.ah, mv: theirs.mv, lx: theirs.lx, ly: theirs.ly });
+      const shown = now - this.offset - this.delay;
+      while (b.length > 2 && (b[1].ts < shown - 100 || b.length > 90)) b.shift();
+    }
     if (g.state !== 'fighting') return;
-    this.applyState(g.playerTeam, mine);
-    this.applyState(g.opponentTeam, theirs);
+    this.applyState(g.playerTeam, mine, true);
+    this.applyState(g.opponentTeam, theirs, false);
     if (typeof mine.sw === 'number') g.switchCD = mine.sw;
+    this.measureDrift(mine, now);
+  }
+
+  // How far the server's copy of our Pokémon is from where ours was at the same moment. Our screen
+  // moves first, so the server's position is compared with where we were when it got our input, not
+  // with where we are now (which would drag us backwards on every update).
+  measureDrift(s, now) {
+    const g = this.game, mon = g.playerTeam.active;
+    if (!this.hist || g.playerTeam.members[s.i] !== mon || mon.hidden || mon.fainted || mon.recallT > 0) return;
+    const sent = s.q && this.sentAt.get(s.q[0]);
+    const at = sent ? sent + s.q[1] : now - (this.rtt ?? 120) - 25;
+    const tx = this.fx(s.x), ty = this.fy(s.y), past = this.pastPos(at) ?? mon;
+    const ex = tx - past.x, ey = ty - past.y;
+    this.corr = Math.hypot(ex, ey) > 120 ? { snap: true, x: tx, y: ty } : { x: ex, y: ey };
+  }
+
+  pastPos(t) {
+    const h = this.hist;
+    if (!h.length || t < h[0].t) return null;
+    for (let k = h.length - 1; k >= 0; k--) {
+      if (h[k].t > t) continue;
+      const a = h[k], b = h[k + 1];
+      if (!b) return a;
+      const f = (t - a.t) / (b.t - a.t || 1);
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+    }
+    return null;
+  }
+
+  // The server's clock against ours: the fastest update sets the baseline, and the spread of the rest
+  // sets how far in the past the opponent is shown.
+  trackClock(ts, now) {
+    const w = this.offs;
+    w.push({ at: now, off: now - ts });
+    while (w.length > 2 && w[0].at < now - 3000) w.shift();
+    let min = Infinity;
+    for (const e of w) if (e.off < min) min = e.off;
+    this.offset = min;
+    const late = w.map(e => e.off - min).sort((a, b) => a - b);
+    const want = Math.min(INTERP_MAX_MS, Math.max(INTERP_MIN_MS, late[Math.floor(late.length * 0.9)] + 20));
+    this.delay = this.delay == null ? want : this.delay + (want - this.delay) * 0.05;
+  }
+
+  // Where the opponent was a moment ago, between the two server updates around that moment (or a
+  // little past the newest one, in the same direction, while the next is late).
+  sampleFoe(now) {
+    const b = this.foeBuf;
+    if (!b?.length || this.offset == null) return null;
+    const t = now - this.offset - this.delay;
+    let k = b.length - 1;
+    while (k >= 0 && b[k].ts > t) k--;
+    if (k < 0) return b[0];
+    const a = b[k], c = b[k + 1];
+    if (!c) {
+      const p = b[k - 1];
+      if (!p || p.i !== a.i || Math.hypot(a.x - p.x, a.y - p.y) > 60) return a;
+      const ahead = Math.min(t - a.ts, 80) / (a.ts - p.ts || 1);
+      return { ...a, x: a.x + (a.x - p.x) * ahead, y: a.y + (a.y - p.y) * ahead };
+    }
+    const f = (t - a.ts) / (c.ts - a.ts || 1);
+    if (a.i !== c.i || Math.hypot(c.x - a.x, c.y - a.y) > 120) return f < 0.5 ? a : c;
+    return { ...(f < 0.5 ? a : c), x: a.x + (c.x - a.x) * f, y: a.y + (c.y - a.y) * f, fz: a.fz + (c.fz - a.fz) * f, ah: a.ah + (c.ah - a.ah) * f };
   }
 
   // HP, meters, statuses and the like straight from the server (positions are smoothed per frame).
-  applyState(team, s) {
-    const g = this.game;
+  applyState(team, s, own) {
+    const g = this.game, pr = own ? this.pred : null, now = performance.now();
     s.hp?.forEach((hp, k) => {
       const m = team.members[k];
       if (m && !m.fainted) m.hp = Math.max(0, Math.min(m.maxHp, hp));
@@ -476,26 +669,39 @@ export class Matchmaker {
     mon.invuln = !!s.iv;
     mon.phasing = !!s.ph;
     mon.held = !!s.hl;
-    for (const id of Object.keys(mon.cooldowns)) mon.cooldowns[id] = s.cd?.[id] ?? 0;
-    Object.assign(mon.cooldowns, s.cd);
+    // While one of our own moves is still on its way to the server, our cooldowns run here (the same
+    // rules as the server's); the server's numbers would briefly say the move is ready again.
+    if (!pr?.moves.length) {
+      for (const id of Object.keys(mon.cooldowns)) mon.cooldowns[id] = s.cd?.[id] ?? 0;
+      Object.assign(mon.cooldowns, s.cd);
+    }
     if (s.sg && mon.stagger <= 0 && !mon.action) mon.sprite.play('Hurt', { loop: false, force: true });
     mon.stagger = s.sg ? 0.12 : 0;
-    const mv = s.ch && MOVES[s.ch[0]];
+    const id = s.ch ? s.ch[0] : null, mv = id && MOVES[id];
+    if (pr) {
+      // Our own charge started or released here first: keep showing that until the server agrees.
+      if (pr.charge && (id === pr.charge.id || now - pr.charge.at > PRED_MS)) pr.charge = null;
+      if (pr.released && (id !== pr.released.id || now - pr.released.at > PRED_MS)) pr.released = null;
+      if (pr.charge || pr.released) return;
+    }
     if (mv) {
       if (mon.charging?.id !== mv.id) {
         mon.charging = { id: mv.id, move: mv, t: s.ch[1], color: TYPE_COLORS[mv.type][0] };
         mon.sprite.play('Charge', { loop: true, force: true });
-      } else mon.charging.t = s.ch[1];
+      } else mon.charging.t = own ? Math.max(mon.charging.t, s.ch[1]) : s.ch[1];
     } else mon.charging = null;
   }
 
-  // Our own Pokémon walks straight away from the stick (so movement feels immediate) and is nudged
-  // toward the server's position whenever the two drift apart.
+  // Our own Pokémon walks straight away from the stick (so movement feels immediate) and is eased
+  // toward the server's position only by how far the two really drifted apart (see measureDrift).
   beforePlayer() { return this.puppetBefore(this.game.playerTeam, this.snap.player, true); }
   afterPlayer(dt, pre) { this.puppetAfter(dt, pre, this.snap.player, true); }
-  // The opponent glides to wherever the server says it is.
-  beforePuppet() { return this.puppetBefore(this.game.opponentTeam, this.snap.opponent, false); }
-  afterPuppet(dt, pre) { this.puppetAfter(dt, pre, this.snap.opponent, false); }
+  // The opponent follows the server's positions, shown a moment in the past and interpolated.
+  beforePuppet() {
+    this.foeSample = this.sampleFoe(performance.now());
+    return this.puppetBefore(this.game.opponentTeam, this.foeSample ?? this.snap.opponent, false);
+  }
+  afterPuppet(dt, pre) { this.puppetAfter(dt, pre, this.foeSample ?? this.snap.opponent, false); }
 
   puppetBefore(team, s, own) {
     const g = this.game, mon = team.active;
@@ -512,18 +718,36 @@ export class Matchmaker {
     if (mon.hidden || mon.fainted) return;
     const tx = this.fx(s.x), ty = this.fy(s.y);
     if (own) {
-      const ex = tx - mon.x, ey = ty - mon.y, err = Math.hypot(ex, ey);
-      if (err > 120) {
-        mon.x = tx;
-        mon.y = ty;
-      } else if (err > 6) {
-        const f = ((err - 6) / err) * (1 - Math.exp(-dt * 6));
-        mon.x += ex * f;
-        mon.y += ey * f;
+      if (this.histMon !== mon) {
+        this.histMon = mon;
+        this.hist = [];
+        this.corr = null;
       }
+      const c = this.corr;
+      if (c?.snap) {
+        mon.x = c.x;
+        mon.y = c.y;
+        this.hist = [];
+        this.corr = null;
+      } else if (c && Math.hypot(c.x, c.y) > 3) {
+        const f = 1 - Math.exp(-dt * 10), dx = c.x * f, dy = c.y * f;
+        mon.x += dx;
+        mon.y += dy;
+        c.x -= dx;
+        c.y -= dy;
+        for (const h of this.hist) {
+          h.x += dx;
+          h.y += dy;
+        }
+      }
+      const now = performance.now();
+      this.hist.push({ t: now, x: mon.x, y: mon.y });
+      while (this.hist.length > 2 && this.hist[0].t < now - 1500) this.hist.shift();
       if (!s.mv && !mon.input.x && !mon.input.y && !mon.action) mon.dir = this.fd(s.d);
     } else {
-      const k = 1 - Math.exp(-dt * 14);
+      // Interpolated positions are already smooth: follow them closely. Without the server's clock
+      // (an older server), glide toward the latest update instead.
+      const k = 1 - Math.exp(-dt * (this.foeSample ? 30 : 14));
       if (Math.hypot(tx - pre.x, ty - pre.y) > 120) {
         mon.x = tx;
         mon.y = ty;
@@ -632,7 +856,7 @@ export class Matchmaker {
     const el = this.el, m = this.match, team = m ? m.me.team : this.spec?.team ?? [];
     const foe = m ? esc(safeName(m.foe.name)) : '';
     const views = {
-      connecting: ['CONNECTING', 'Reaching the match server<span class="ol-dots"></span>', [['cancel', 'CANCEL']]],
+      connecting: ['CONNECTING', this.waking ? 'Waking up the match server — after a quiet spell this can take up to a minute<span class="ol-dots"></span>' : 'Reaching the match server<span class="ol-dots"></span>', [['cancel', 'CANCEL']]],
       searching: ['SEARCHING', `${this.note ? `${esc(this.note)}<br>` : ''}Looking for an opponent for a ${this.spec?.format ?? 3} VS ${this.spec?.format ?? 3} battle<span class="ol-dots"></span>`, [['cancel', 'CANCEL']]],
       matched: ['OPPONENT FOUND!', `You will battle <b>${foe}</b>.<br>Loading the battle<span class="ol-dots"></span>`, []],
       loading: ['OPPONENT FOUND!', `Waiting for <b>${foe}</b> to finish loading<span class="ol-dots"></span>`, []],

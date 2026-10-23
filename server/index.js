@@ -228,12 +228,14 @@ class Match {
     this.phase = 'loading';
     this.created = Date.now();
     this.vec = { A: { x: 0, y: 0 }, B: { x: 0, y: 0 } };
+    this.ack = { A: null, B: null }; // each player's latest direction update: its number and when it arrived
     this.active = { A: Date.now(), B: Date.now() };
     this.bufB = null;
     this.megaQueuedB = 0;
     this.lastAct = { player: null, opponent: null };
     this.out = []; // events since the last message
     this.fightT = 0;
+    this.clock = 0; // battle time in seconds, sent with every state update so screens can pace them evenly
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
       p.state = 'match';
@@ -308,6 +310,7 @@ class Match {
     if (this.phase !== 'battle') return;
     const g = this.game;
     g.update(STEP);
+    this.clock += STEP;
     if (g.state === 'fighting') this.fightT += STEP;
     if (g.state === 'finale' || g.state === 'over') return this.finish(g.winner === 'player' ? 'A' : g.winner === 'opponent' ? 'B' : null, 'ko');
     const now = Date.now();
@@ -327,7 +330,7 @@ class Match {
     const g = this.game;
     for (const mon of [g.player, g.opponent]) {
       const last = this.lastAct[mon.side];
-      if (last && last !== mon.action && last.cancelled && !mon.action) this.out.push({ t: 'cancel', side: mon.side });
+      if (last && last !== mon.action && last.cancelled && !mon.action) this.out.push({ t: 'cancel', side: mon.side, id: last.move?.id });
       this.lastAct[mon.side] = mon.action;
     }
   }
@@ -338,8 +341,11 @@ class Match {
     if (!g) return;
     const live = g.state === 'fighting' || g.state === 'intro';
     if (!this.out.length && !live) return;
-    const msg = { t: 'b', e: this.out };
-    if (live) msg.s = { A: snapshot(g.playerTeam, g.switchCD), B: snapshot(g.opponentTeam, g.foeSwitchCD) };
+    const msg = { t: 'b', e: this.out, ts: Math.round(this.clock * 1000) };
+    // `q` tells each screen which of its direction updates this state includes and for how long, so it
+    // can line our position up with its own (see matchmaking.js).
+    const ack = s => this.ack[s] && [this.ack[s].q, Math.round((this.clock - this.ack[s].at) * 1000)];
+    if (live) msg.s = { A: snapshot(g.playerTeam, g.switchCD, ack('A')), B: snapshot(g.opponentTeam, g.foeSwitchCD, ack('B')) };
     this.out = [];
     this.broadcast(msg);
   }
@@ -367,6 +373,7 @@ class Match {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const len = Math.hypot(x, y), k = len > 1 ? 1 / len : 1;
     this.vec[s] = { x: x * k, y: y * k };
+    if (Number.isInteger(m.q)) this.ack[s] = { q: m.q, at: this.clock };
     if (len > 0.1) this.active[s] = Date.now();
   }
 
@@ -465,7 +472,7 @@ class Match {
   }
 }
 
-function snapshot(team, switchCD) {
+function snapshot(team, switchCD, ack) {
   const p = team.active, ab = {};
   for (const [k, v] of Object.entries(p.ab)) if (v == null || typeof v !== 'object') ab[k] = v;
   return {
@@ -475,6 +482,7 @@ function snapshot(team, switchCD) {
     mv: p.moving ? 1 : 0, lx: r1(p.lastMove.x), ly: r1(p.lastMove.y), sg: p.stagger > 0 ? 1 : 0,
     ch: p.charging ? [p.charging.id, r1(p.charging.t)] : 0, iv: p.invuln ? 1 : 0, ph: p.phasing ? 1 : 0, hl: p.held ? 1 : 0, ab,
     mu: team.megaUsed ? 1 : 0, sw: r1(switchCD ?? 0), cd: Object.fromEntries(Object.entries(p.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => [k, r1(v)])),
+    q: ack || 0,
   };
 }
 
@@ -674,7 +682,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, load }));
+    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, keepAwake: !!SELF_URL, load }));
     return;
   }
   res.writeHead(404).end();
@@ -707,4 +715,12 @@ setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
+// Render's free plan puts a service to sleep after 15 minutes without requests, and the next player
+// then waits up to a minute for it to wake. A request to our own public address every 10 minutes keeps
+// it awake (RENDER_EXTERNAL_URL is set by Render; KEEP_AWAKE_URL works on other hosts; KEEP_AWAKE=0 turns it off).
+const SELF_URL = (envValue('KEEP_AWAKE_URL') || envValue('RENDER_EXTERNAL_URL')).replace(/\/$/, '');
+if (SELF_URL && envValue('KEEP_AWAKE') !== '0') {
+  setInterval(() => fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(15_000) }).catch(noop), 10 * 60_000);
+}
+
+server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${SELF_URL ? ', keep-awake on' : ''}${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
