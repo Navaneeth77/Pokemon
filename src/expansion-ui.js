@@ -5,6 +5,7 @@ import { BOSSES, BossEncounter, RAID_DIFFICULTY } from './bosses.js';
 import { HIT_REACTIONS } from './reactions.js';
 import { SPECIES, ROSTER } from './data/species.js';
 import { QUALITY, setQuality, qualityName } from './quality.js';
+import { preloadRaidArt } from './raid-art.js';
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
 export class ExpansionUI {
@@ -108,7 +109,7 @@ export class ExpansionUI {
         this.mm.send({ t: 'raid-queue', ...setup, format: ui.format, team: ui.selection, lead: ui.lead, mega: ui.megaPick });
         return;
       }
-      await g.ensureSprites([...ui.selection, setup.boss]);
+      await Promise.all([g.ensureSprites([...ui.selection, setup.boss]), preloadRaidArt(setup.boss)]);
       Object.assign(g, { selection: [...ui.selection], lead: ui.lead, megaPicks: { ...ui.megaPick }, opponentSelection: [setup.boss], arenaId: BOSSES[setup.boss].arena, online: null, story: null });
       ui.raidSetup = null;
       this.lastRaid = setup;

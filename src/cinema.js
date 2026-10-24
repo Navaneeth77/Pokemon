@@ -46,6 +46,13 @@ export class Showcase {
     ctx.fill();
     ctx.fillStyle = color;
     ctx.fillRect(L, y + 40, R - L, 3);
+    // Use the customized trainer art already prepared for this battle.
+    const trainer = team.trainer.frames.idle, tx = fromRight ? WORLD_W - 68 : 20;
+    if (trainer) {
+      ctx.globalAlpha = .32;
+      ctx.drawImage(trainer, tx, y - 115, 48, 72);
+      ctx.globalAlpha = 1;
+    }
     outlinedText(ctx, team.trainer.name.toUpperCase(), fromRight ? WORLD_W - 14 : 14, y - 34, {
       family: 'Luckiest Guy', weight: 400, size: 15, color, align: fromRight ? 'right' : 'left', lw: 3,
     });
@@ -68,6 +75,13 @@ export class Showcase {
 
   draw(ctx) {
     const g = this.game, t = this.t, fade = t > this.dur - 0.3 ? Math.max(0, (this.dur - t) / 0.3) : Math.min(1, t / 0.15);
+    if (t < .4) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(10,6,22,.76)'; ctx.fillRect(0, 278, WORLD_W, 70);
+      outlinedText(ctx, 'BATTLEFIELD', WORLD_W / 2, 299, { size: 8, color: '#bcb0d2', align: 'center', lw: 2 });
+      outlinedText(ctx, g.arena.theme.name.toUpperCase(), WORLD_W / 2, 329, { family: 'Luckiest Guy', weight: 400, size: 26, color: '#fff', align: 'center', lw: 4 });
+      ctx.restore(); return;
+    }
     ctx.save();
     ctx.globalAlpha = fade;
     const v = this.game.view;
@@ -188,6 +202,7 @@ export class Finale {
   update(dt) {
     const g = this.game, w = this.winner, l = this.loser;
     this.t += dt;
+    this.once('replay', .25, () => { this.replay = this.finisher ? g.finishReplay?.clip() : null; });
     if (this.raidVictory) {
       this.once('raid-collapse', 0.25, () => {
         l.sprite.play('Faint', { loop: false, force: true });
@@ -270,6 +285,16 @@ export class Finale {
   // Screen-space overlay: "FINISH!" over the blow, then the winner's name and victory banner.
   draw(ctx) {
     const t = this.t, w = this.winner;
+    if (this.replay?.length && t >= 1.25 && t < 2.6) {
+      const index = Math.min(this.replay.length - 1, Math.floor((t - 1.25) / 1.35 * this.replay.length));
+      ctx.save();
+      ctx.drawImage(this.replay[index], 0, 0, WORLD_W, WORLD_H);
+      ctx.fillStyle = '#0d0718'; ctx.fillRect(0, 0, WORLD_W, 136); ctx.fillRect(0, WORLD_H - 52, WORLD_W, 52);
+      outlinedText(ctx, 'FINAL HIT REPLAY', WORLD_W / 2, 55, { family: 'Luckiest Guy', weight: 400, size: 22, color: '#e4c6ff', align: 'center', lw: 4 });
+      outlinedText(ctx, (this.move?.name ?? 'FINISHING BLOW').toUpperCase(), WORLD_W / 2, 83, { size: 9, color: '#ffffff', align: 'center', lw: 2 });
+      outlinedText(ctx, 'PRESS ENTER TO SKIP', WORLD_W / 2, WORLD_H - 20, { size: 7, color: '#d7c4e8', align: 'center', lw: 2 });
+      ctx.restore(); return;
+    }
     if (this.finisher && t < 1.3) {
       const k = Math.min(1, t / 0.2), [c1] = TYPE_COLORS[this.type];
       ctx.save();

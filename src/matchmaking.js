@@ -11,6 +11,7 @@ import { TYPE_COLORS } from './data/types.js';
 import { lookById, frontPalette } from './trainers.js';
 import { safeName } from './names.js';
 import { sfx } from './audio.js';
+import { preloadRaidArt } from './raid-art.js';
 
 // Online matchmaking against random players, through the match server (server/index.js).
 //
@@ -464,7 +465,7 @@ export class Matchmaker {
     this.setState('matched');
     sfx.megaBurst?.();
     try {
-      await this.game.ensureSprites([...m.me.team, ...m.foe.team, ...(m.allyTeam ?? [])]);
+      await Promise.all([this.game.ensureSprites([...m.me.team, ...m.foe.team, ...(m.allyTeam ?? [])]), preloadRaidArt(m.raid)]);
     } catch (err) {
       console.error(err);
       if (this.match === m) this.fail('Could not load the battle. Check your connection and try again.', true);

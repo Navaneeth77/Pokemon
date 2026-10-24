@@ -5,6 +5,7 @@ import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
+import { drawRaidSigil, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
 import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, rainbowBurst, debris, dustCloud, electricBurst, rand } from './effects.js';
@@ -31,22 +32,22 @@ export const BOSSES = {
   rayquaza: {
     name: 'Rayquaza', title: 'SOVEREIGN OF THE SKY', arena: 'mtSilver', type: 'dragon', color: '#75f5b1', rgb: [117, 245, 177], scale: 1.9,
     stages: ['SKY PATROL', 'DRAGON DANCE', 'DELTA STREAM', 'FINAL ASCENT'],
-    attacks: [['meteor', 'dive', 'lanes'], ['dive', 'meteor', 'cross', 'slam', 'ultimate'], ['dive', 'meteor', 'ultimate', 'ring', 'dive', 'lanes'], ['cataclysm', 'dive', 'meteor', 'ultimate', 'cross', 'dive', 'meteor']],
-    cataclysm: 'DRACO SKYFALL', ultimate: 'DRAGON ASCENT',
+    attacks: [['meteor', 'dive', 'dragonBeam'], ['dive', 'meteor', 'dragonBeam', 'slam', 'ultimate'], ['dive', 'meteor', 'ultimate', 'ring', 'dive', 'lanes'], ['cataclysm', 'dive', 'meteor', 'ultimate', 'dragonBeam', 'dive', 'meteor']],
+    cataclysm: 'DRACO SKYFALL', ultimate: 'DRAGON ASCENT', ultImpact: [1.38, 1.53], ultDuration: 3,
     anims: { wind: { quake: 'RearUp', meteor: 'Roar', cataclysm: 'Roar' }, strike: { nova: 'Roar', cataclysm: 'Roar', tidal: 'Attack' } },
   },
   mewtwo: {
     name: 'Mewtwo', title: 'THE GENETIC STORM', arena: 'indigo', type: 'psychic', color: '#e2a3ff', rgb: [226, 163, 255], scale: 2.6,
     stages: ['AWAKENING', 'MIND OVER MATTER', 'PSYCHIC STORM', 'GENESIS'],
     attacks: [['orbs', 'slam', 'rows'], ['orbs', 'ring', 'cross', 'orbs', 'ultimate'], ['quake', 'orbs', 'ultimate', 'cross', 'ring'], ['cataclysm', 'orbs', 'quake', 'ultimate', 'cross', 'orbs', 'ring']],
-    cataclysm: 'PSYCHIC COLLAPSE', ultimate: 'PSYSTRIKE',
+    cataclysm: 'PSYCHIC COLLAPSE', ultimate: 'PSYSTRIKE', ultImpact: [3.2, 3.2], ultDuration: 4.3,
     anims: { wind: { quake: 'Pose', meteor: 'Pose', cataclysm: 'Pose' }, strike: { default: 'SpAttack', quake: 'Attack', nova: 'Pose', cataclysm: 'Pose', tidal: 'Attack' } },
   },
   lugia: {
     name: 'Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'seafoam', type: 'water', color: '#8fdbff', rgb: [143, 219, 255], scale: 1.9,
     stages: ['CALM SEAS', 'RISING TIDE', 'MAELSTROM', 'HYDRO TEMPEST'],
     attacks: [['tidal', 'storm', 'lanes'], ['tidal', 'storm', 'aeroblast', 'rows', 'ultimate'], ['aeroblast', 'tidal', 'ultimate', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'ultimate', 'aeroblast', 'tidal', 'storm']],
-    cataclysm: 'HYDRO DELUGE', ultimate: 'AEROBLAST',
+    cataclysm: 'HYDRO DELUGE', ultimate: 'AEROBLAST', ultImpact: [1.3, 1.3], ultDuration: 2.1,
     // Lugia never spins: it holds its wings open to charge, fires with Shoot and beats its wings to strike.
     anims: { wind: { default: 'Charge' }, strike: { default: 'Shoot', quake: 'Attack', tidal: 'Attack', dive: 'Attack', nova: 'Attack', cataclysm: 'Attack' } },
   },
@@ -68,6 +69,7 @@ const ATTACKS = {
   tidal: { label: 'TIDAL WAVE', hint: 'STAY DRY — WET TARGETS CONDUCT', shape: 'row', r: 75, tele: 1.5, power: 70, at: 'rows', count: 1, type: 'water', fx: 'tidal' },
   storm: { label: 'THUNDERSTORM', hint: 'MOVE', shape: 'circle', r: 56, tele: 1.3, power: 130, at: 'each', type: 'electric', fx: 'storm', step: 0.2 },
   aeroblast: { label: 'AEROBLAST', hint: 'SIDESTEP', shape: 'line', r: 40, tele: 1.4, power: 180, at: 'line', fx: 'beam', vuln: 2 },
+  dragonBeam: { label: 'DRAGON PULSE', hint: 'SIDESTEP THE BEAM', shape: 'line', r: 26, tele: 1.65, power: 155, at: 'line', fx: 'beam', vuln: 1.5 },
   cataclysm: { hint: 'FIND COVER', shape: 'cover', r: 46, tele: 2.6, power: 240, at: 'cover', count: 2, fx: 'cataclysm', vuln: 3.2 },
   // Not a hazard: the boss channels its signature move behind a barrier (see startUlt).
   ultimate: { fx: 'ultimate', hint: 'BREAK THE SHIELD!' },
@@ -155,8 +157,10 @@ export class BossEncounter {
     this.boss.hp = this.boss.maxHp;
     Object.assign(this, {
       time: 0, stage: 1, next: 1.2, sequence: 0, targetN: 0, hazards: [], vulnerable: 0, intro: INTRO, transition: 0,
-      hv: 0, sentHv: -1, n: 0, group: 0, dash: null, ult: null, ultN: 0, ultBroken: 0, ultFired: 0, home: { x: 180, y: 205 }, rand: rng([...id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
+      hv: 0, sentHv: -1, n: 0, group: 0, dash: null, ult: null, ultRelease: null, castUntil: 0, ultN: 0, ultBroken: 0, ultFired: 0, home: { x: 180, y: 205 }, rand: rng([...id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
     });
+    this.minY = Math.max(205, this.boss.species.headZ + (this.boss.species.fly?.height ?? 0) + 145);
+    this.home.y = this.minY;
     for (const g of games) {
       g.raid = this;
       g.foeCanMega = false;
@@ -183,10 +187,15 @@ export class BossEncounter {
     if (!b.alive) {
       this.hazards.length = 0;
       this.ult = null;
+      this.ultRelease = null;
       return;
     }
     this.vulnerable = Math.max(0, this.vulnerable - dt);
+    const anchored = this.intro <= 0 && !this.dash && (this.ult || this.ultRelease || this.time < this.castUntil || this.transition > 0);
+    const anchor = anchored && { x: b.x, y: b.y, dir: b.dir };
+    b.vx = b.vy = 0;
     this.bossUpdate(dt, this.games[0]);
+    if (anchor) Object.assign(b, anchor, { moving: false });
     b.stagger = Math.min(b.stagger, 0.12);
     b.frozen = Math.min(b.frozen, 0.8);
     b.vx = b.vy = 0;
@@ -200,6 +209,20 @@ export class BossEncounter {
     if (b.hp <= b.maxHp * 0.5 && evolveRaidBoss(b, this.id, this.games[0].sprites)) {
       for (const g of this.games) g.opponentTeam.megaUsed = true;
     }
+    if (this.ultRelease) {
+      this.resolve(active);
+      const release = this.ultRelease;
+      release.t += dt;
+      if (!release.hit && release.t >= release.impact) {
+        release.hit = true;
+        this.landUlt(active);
+      }
+      if (release.t >= this.def.ultDuration) {
+        this.ultRelease = null;
+        this.vulnerable = 1.5;
+      }
+      return;
+    }
     const stage = this.stageFor(b.hp / b.maxHp);
     if (stage > this.stage) {
       // A new stage: the boss roars and shrugs off damage briefly; pending attacks are called off.
@@ -212,6 +235,7 @@ export class BossEncounter {
       this.next = 0.5;
       this.dash = null;
       this.ult = null;
+      this.castUntil = this.time;
     }
     if (this.transition > 0) {
       this.transition -= dt;
@@ -224,6 +248,7 @@ export class BossEncounter {
   }
 
   startUlt() {
+    if (this.ult || this.ultRelease) return;
     const t = Math.max(4, ULT.channel * this.diff.tele), barrier = Math.round(this.boss.maxHp * ULT.barrier);
     this.ult = { t, d: t, shield: barrier, max: barrier };
     this.ultN++;
@@ -245,10 +270,15 @@ export class BossEncounter {
 
   fireUlt(active) {
     if (!this.ult) return;
-    const b = this.boss, share = ULT.share[this.difficulty] ?? 0.55;
     this.ult = null;
     this.ultFired++;
+    this.ultRelease = { t: 0, impact: this.def.ultImpact[this.boss.isMega ? 1 : 0], hit: false };
+    this.castUntil = this.time + this.def.ultDuration;
     this.next = 5;
+  }
+
+  landUlt(active) {
+    const b = this.boss, share = ULT.share[this.difficulty] ?? 0.55;
     for (const g of active) {
       const p = g.player;
       if (p.hidden || !p.alive) continue;
@@ -275,6 +305,8 @@ export class BossEncounter {
       b.y = d.y0 + (d.y1 - d.y0) * k;
       if (k >= 1) this.dash = null;
       return;
+    } else if (this.ult || this.ultRelease || this.time < this.castUntil || this.transition > 0) {
+      return;
     } else if (!this.vulnerable) {
       const dx = this.home.x - b.x, dy = this.home.y - b.y, d = Math.hypot(dx, dy), speed = 55 + 14 * this.stage;
       if (d > 2) {
@@ -282,7 +314,7 @@ export class BossEncounter {
         b.y += (dy / d) * Math.min(d, speed * dt);
       } else {
         const [x, y] = HOMES[Math.floor(this.rand() * HOMES.length)];
-        this.home = { x, y };
+        this.home = { x, y: Math.max(this.minY, y) };
       }
     }
     if (target) b.dir = dirFromVector(target.x - b.x, target.y - b.y);
@@ -331,6 +363,13 @@ export class BossEncounter {
       at: this.time + tele + i * (spec.step ?? 0), d: tele + i * (spec.step ?? 0), hit: false, last: i === made.length - 1,
     }));
     this.hazards.push(...made.slice(0, Math.max(0, MAX_HAZARDS - this.hazards.length)));
+    this.castUntil = Math.max(this.castUntil, ...made.map(h => h.at + 0.75));
+    const aim = made[0];
+    if (aim) {
+      let dx = (aim.x2 ?? aim.x) - this.boss.x, dy = (aim.y2 ?? aim.y) - this.boss.y;
+      if (Math.hypot(dx, dy) < 4) { dx = target.x - this.boss.x; dy = target.y - this.boss.y; }
+      this.boss.dir = dirFromVector(dx, dy);
+    }
     this.hv++;
     this.next = tele * 0.6 + Math.max(0.9, (2.4 - 0.3 * (this.stage - 1)) * diff.gap);
   }
@@ -392,6 +431,7 @@ export class BossEncounter {
       id: this.id, mg: b.isMega, df: this.difficulty, st: this.stage, hp: Math.max(0, Math.round(b.hp)), maxHp: b.maxHp,
       vu: r2(this.vulnerable), in: r2(Math.max(0, this.intro)), tr: r2(Math.max(0, this.transition)), tm: r2(this.time), hv: this.hv,
       ul: this.ult && { t: r2(this.ult.t), d: r2(this.ult.d), sh: Math.round(this.ult.shield), shm: this.ult.max }, un: this.ultN, ub: this.ultBroken, uf: this.ultFired,
+      ua: this.ultRelease && { t: r2(this.ultRelease.t), hit: this.ultRelease.hit },
     };
     if (withHazards) {
       out.hz = this.hazards.map(h => ({
@@ -411,7 +451,7 @@ export class BossEncounter {
 
 // ── On screen ──
 
-const RGB = { dragon: [140, 120, 255], psychic: [226, 120, 255], water: [90, 170, 255], electric: [255, 230, 90], fire: [255, 140, 60] };
+const RGB = { dragon: [117, 245, 177], psychic: [226, 120, 255], water: [90, 170, 255], electric: [255, 230, 90], fire: [255, 140, 60] };
 const typeRgb = (t, fallback) => RGB[t] ?? fallback;
 
 const fxOf = h => (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx);
@@ -435,14 +475,16 @@ class BossCharge {
 
   draw(ctx) {
     const b = this.boss, k = Math.min(1, (this.age / this.life) * 1.15), [R, G, B] = this.rgb;
-    const x = b.x, y = b.y - b.headZ * 0.75, r = b.radius * (0.5 + 0.9 * k) * (1 + 0.08 * Math.sin(this.age * 30));
+    const { x, y } = bossMouth(b), r = b.radius * (0.5 + 0.9 * k) * (1 + 0.08 * Math.sin(this.age * 30));
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, `rgba(255,255,255,${0.75 * k})`);
-    grad.addColorStop(0.35, `rgba(${R},${G},${B},${0.55 * k})`);
+    grad.addColorStop(0, `rgba(10,5,20,${0.95 * k})`);
+    grad.addColorStop(0.45, `rgba(63,20,100,${0.8 * k})`);
+    grad.addColorStop(0.72, `rgba(${R},${G},${B},${0.6 * k})`);
     grad.addColorStop(1, `rgba(${R},${G},${B},0)`);
     ctx.fillStyle = grad;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
-    ctx.strokeStyle = `rgba(255,255,255,${0.65 * k})`;
+    drawRaidSigil(ctx, b.boss, x, y, Math.min(70, r * 1.65), this.age * 2, .2 + .45 * k);
+    ctx.strokeStyle = `rgba(196,150,255,${0.65 * k})`;
     ctx.lineWidth = 1.5;
     for (let i = 0; i < 6; i++) {
       const a = this.age * 3 + (i * Math.PI) / 3, r0 = r * 0.35, r1 = r * (0.9 + 0.25 * Math.sin(this.age * 12 + i));
@@ -467,7 +509,10 @@ export class BossPresenter {
       this.view = null;
       return;
     }
-    if (this.ultimateVisual && !this.ultimateVisual.update(dt)) this.ultimateVisual = null;
+    if (this.ultimateVisual && (!boss.alive || !this.ultimateVisual.update(dt))) {
+      this.ultimateVisual.action.cancel();
+      this.ultimateVisual = null;
+    }
     const def = BOSSES[data.id], tm = data.tm + (data.recv ? Math.min(0.25, (now - data.recv) / 1000) : 0);
     this.view = { ...data, tm, ul: data.ul && { ...data.ul, t: Math.max(0, data.ul.t - (tm - data.tm)) } };
     if (data.ul && data.un !== this.ultN) {
@@ -483,16 +528,14 @@ export class BossPresenter {
       sfx.clang();
       g.shake(4, 0.3);
     }
-    if ((data.uf ?? 0) > (this.ultFired ?? 0)) {
+    if (boss.alive && (data.uf ?? 0) > (this.ultFired ?? 0) && (data.ua || data.ua === undefined)) {
       this.strike({ k: 'ultimate' }, def, boss);
       this.ultimateVisual = bossUltimateVisual(g, boss);
+      // Snapshots carry elapsed release time so reconnecting views join the same choreography.
+      for (let t = 0; t < Math.min(5, data.ua?.t ?? 0); t += 1 / 60) this.ultimateVisual.update(1 / 60);
       g.showRaidUltCard(boss, MOVES[boss.species.ultimate]);
-      this.breakGround(boss.x, boss.y, def.rgb, 4);
-      g.spawn(new Ring(boss.x, boss.y, { z: boss.bodyZ, r0: 10, r1: 700, life: 0.7, color: def.color, width: 18, layer: 'air' }));
-      g.flashT = Math.max(g.flashT, 0.16);
-      sfx.explosion();
       sfx.roar();
-      g.shake(10, 0.7);
+      g.shake(3, .25);
     }
     this.ultBroken = data.ub ?? 0;
     this.ultFired = data.uf ?? 0;
@@ -590,8 +633,8 @@ export class BossPresenter {
   // What leaves the boss and flies to where the hazard lands: a bolt of its energy, or for a ground
   // slam a fault line torn through the floor between them.
   throwAt(h, def, boss) {
-    const g = this.game, fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`, hx = boss.x, hy = boss.y - boss.headZ * 0.75;
-    if (fx === 'psy' || fx === 'storm' || fx === 'pillar') g.spawn(new BeamLine(hx, hy, h.x, h.s === 'lane' ? Math.min(BOUNDS.maxY, boss.y + 160) : h.y, 0.18, color, 3));
+    const g = this.game, fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`;
+    if (fx === 'psy' || fx === 'storm' || fx === 'pillar') g.spawn(new LegendaryBeam(boss, h.x, h.s === 'lane' ? Math.min(BOUNDS.maxY, boss.y + 160) : h.y, color, fx === 'pillar' ? 14 : 9, .42));
     else if (fx === 'quake' && Math.hypot(h.x - boss.x, h.y - boss.y) > 60) this.trench({ x: boss.x, y: boss.y, x2: h.x, y2: h.y }, rgb);
   }
 
@@ -602,6 +645,7 @@ export class BossPresenter {
 
   impact(h, def, boss) {
     const g = this.game, rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`;
+    if (h.s === 'circle' || h.s === 'line' || h.s === 'cross') g.spawn(new RaidBurst(boss.boss, h.x2 ?? h.x, h.y2 ?? h.y, Math.min(170, h.r * 2 + 30)));
     switch (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx) {
       case 'quake':
         this.breakGround(h.x, h.y, rgb, h.r > 100 ? 4 : 2, h.r);
@@ -621,10 +665,11 @@ export class BossPresenter {
         g.shake(3, 0.2);
         break;
       case 'beam':
+        if (h.s !== 'line') g.spawn(new LegendaryBeam(boss, h.x, h.y, color, h.r, .5));
         if (h.s === 'row' || h.s === 'cross') g.spawn(new BeamLine(BOUNDS.minX - 30, h.y, BOUNDS.maxX + 30, h.y, 0.4, color, h.r * 1.4));
         if (h.s === 'cross') g.spawn(new BeamLine(h.x, BOUNDS.minY - 30, h.x, BOUNDS.maxY + 30, 0.4, color, h.r * 1.4));
         if (h.s === 'line') {
-          g.spawn(new BeamLine(h.x, h.y, h.x2, h.y2, 0.45, color, h.r * 1.5));
+          g.spawn(new LegendaryBeam(boss, h.x2, h.y2, color, h.r * 1.5, .6));
           this.trench(h, rgb);
         }
         sfx.beamFire();
@@ -715,13 +760,13 @@ export class BossPresenter {
   // A constant glow of particles around the boss: its own colour, gold while staggered, red in the last stage.
   aura(dt, data, def, boss) {
     if (boss.hidden || !boss.alive) return;
-    const g = this.game, colors = data.vu > 0 ? ['#ffffff', '#fff3a0', '#ffd23a'] : data.st >= 4 ? ['#ffffff', '#ffb070', '#ff4a3a'] : ['#ffffff', def.color];
+    const g = this.game, colors = data.vu > 0 ? ['#ffe28a', '#9e682d', '#20102c'] : data.st >= 4 ? ['#da8aff', '#7d245e', '#29112e', '#0d0917'] : [def.color, '#7c42aa', '#35204d', '#0d0917'];
     this.auraAcc += dt * 60 * (quality().particles >= 1000 ? 2 : quality().particles >= 500 ? 1 : 0.35) * (data.st >= 4 ? 1.6 : 1);
     for (; this.auraAcc >= 1; this.auraAcc--) {
       const a = Math.random() * Math.PI * 2, r = boss.radius * (1 + Math.random() * 0.6);
       g.particles.spawn({
         x: boss.x + Math.cos(a) * r, y: boss.y + Math.sin(a) * r * 0.45, z: Math.random() * boss.headZ, vz: rand(25, 70),
-        vx: -Math.cos(a) * 10, vy: -Math.sin(a) * 5, life: rand(0.5, 0.95), size: rand(2, 3.5), sizeEnd: 0.5, colors, layer: Math.random() < 0.5 ? 'ground' : 'air',
+        vx: -Math.cos(a) * 10, vy: -Math.sin(a) * 5, life: rand(0.5, 0.95), size: rand(3, 6), sizeEnd: 0.5, alpha: .8, colors, layer: Math.random() < 0.5 ? 'ground' : 'air',
       });
     }
     if (this.charge && performance.now() < this.charge.until) {
@@ -746,12 +791,15 @@ export function drawBossGround(ctx, view, boss) {
   if (boss && !boss.hidden && boss.alive) {
     const pulse = 0.5 + 0.5 * Math.sin(view.tm * 4), rgb = view.vu > 0 ? [255, 220, 80] : view.st >= 4 ? [255, 90, 60] : def.rgb;
     const r = boss.radius * (2 + pulse * 0.3), grad = ctx.createRadialGradient(boss.x, boss.y, 2, boss.x, boss.y, r);
-    grad.addColorStop(0, `rgba(${rgb.join(',')},0.5)`);
-    grad.addColorStop(1, `rgba(${rgb.join(',')},0)`);
+    grad.addColorStop(0, 'rgba(8,4,18,0.9)');
+    grad.addColorStop(.55, 'rgba(38,13,62,0.7)');
+    grad.addColorStop(.8, `rgba(${rgb.join(',')},0.22)`);
+    grad.addColorStop(1, 'rgba(15,5,28,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.ellipse(boss.x, boss.y, r, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
+    drawRaidSigil(ctx, view.id, boss.x, boss.y, r * 2.4, view.tm, view.ul ? .8 : .4, .45);
   }
   for (const h of view.hz ?? []) {
     const left = h.at - view.tm;

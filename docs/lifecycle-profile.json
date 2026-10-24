@@ -1,0 +1,13 @@
+{
+  "cycles": 24,
+  "menuSelectBattleMenuTransitions": 24,
+  "switches": 48,
+  "megas": 24,
+  "faints": 24,
+  "updates": 38160,
+  "elapsedMs": 84.79,
+  "heapDeltaMB": 1.14,
+  "finalEffects": 0,
+  "finalTimers": 0,
+  "note": "Headless shared-engine lifecycle stress; no rendered-menu, physical-device or retained-heap guarantee."
+}

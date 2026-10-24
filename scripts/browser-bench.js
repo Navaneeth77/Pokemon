@@ -5,16 +5,19 @@ import {loadSpecies} from '../src/assets.js';
 import {spritesFor} from '../src/data/species.js';
 import {Game,prepareSprites} from '../src/game.js';
 import {BossEncounter} from '../src/bosses.js';
+import {preloadRaidArt} from '../src/raid-art.js';
 import {MOVES} from '../src/moves.js';
 import {applyHit} from '../src/combat.js';
 import {setQuality,qualityName} from '../src/quality.js';
 const noop=()=>{},status=document.querySelector('#status'),output=document.querySelector('#results'),button=document.querySelector('#run');
 const ids=['charizard','pikachu','rayquaza','blastoise','mewtwo','gengar','lugia','sceptile','lucario','gyarados','articuno'];
-await document.fonts.ready;await preloadImpactSprite();
+await document.fonts.ready;await Promise.all([preloadImpactSprite(), ...['rayquaza','mewtwo','lugia'].map(preloadRaidArt)]);
 const started=performance.now(),needed=spritesFor(ids),sprites=await loadSpecies(needed);prepareSprites(sprites,needed);
 const assetMs=performance.now()-started,ui=new Proxy({format:3},{get:(t,k)=>t[k]??noop}),game=new Game(document.querySelector('canvas'),sprites,ui);
 let current=null,last=performance.now();
 const results=[],originalQuality=qualityName();
+const preview = new URLSearchParams(location.search).get('preview');
+let previewPaused = false;
 const soakSeconds=Math.min(300,Math.max(0,Number(new URLSearchParams(location.search).get('soak'))||0));
 const scenarios=[['3v3',3,'balanced'],['6v6',6,'balanced'],['ultimates',3,'high'],['reactions',3,'high'],['raid-high',3,'high'],['raid-performance',3,'performance']];
 if(soakSeconds){scenarios.splice(0);scenarios.push(['soak',3,'high']);document.querySelector('aside p').textContent=`Mixed raid/ultimate/reaction soak: ${soakSeconds} seconds. Leave this tab active.`;}
@@ -28,6 +31,10 @@ function setup([name,format,quality]){
 const q=(a,p)=>a.slice().sort((x,y)=>x-y)[Math.min(a.length-1,Math.floor(a.length*p))]??0;
 function frame(now){
  requestAnimationFrame(frame);const elapsed=now-last;last=now;
+ if(preview && game.raid) {
+  if(!previewPaused){game.player.hp=game.player.maxHp;game.update(Math.min(.05,Math.max(0,elapsed/1000)));}
+  game.render();status.textContent=` ${preview} · ${game.raid.ult ? 'CHANNELING' : game.raid.ultRelease ? 'ULTIMATE' : 'ATTACK'} · ${game.raid.time.toFixed(1)}s`;return;
+ }
  if(!current||document.hidden)return;
  if(game.state!=='fighting'){game.showcase=null;game.finale=null;game.state='fighting';}
  for(const m of [game.player,game.opponent]){m.hp=m.maxHp;m.fainted=false;m.hidden=false;}
@@ -51,4 +58,14 @@ function frame(now){
  }
 }
 button.disabled=false;button.textContent='RUN ALL SCENARIOS';button.onclick=()=>{if(current||!scenarios.length)return;results.length=0;button.disabled=true;current=setup(scenarios.shift());last=performance.now();};
+if(['rayquaza','mewtwo','lugia'].includes(preview)){
+ current=setup(['raid-preview',3,'high']);game.opponentSelection=[preview];game.start();game.showcase=null;game.state='fighting';game.practice=true;game.timers=[];
+ for(const m of [game.player,game.opponent]){m.hidden=false;m.appear=0;}game.gold.hidden=true;
+ const raid=new BossEncounter([game],preview);raid.intro=0;raid.boss.x=180;raid.boss.y=raid.home.y;raid.next=999;
+ document.querySelector('h1').textContent='Legendary VFX preview';document.querySelector('aside p').textContent='Actual raid renderer. Attacks are triggered here for visual review.';
+ button.textContent='CAST ULTIMATE';button.onclick=()=>{if(raid.ultRelease)return;raid.startUlt();raid.ult.t=.8;};
+ for(const [label,run] of [['CAST BEAM',()=>{raid.ult=null;raid.ultRelease=null;raid.stage=2;raid.sequence=2;raid.launch([game]);raid.next=999;}],['HALF HP',()=>{raid.boss.hp=raid.boss.maxHp*.5;}],['FINAL HIT',()=>{raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.1s',()=>{for(let i=0;i<6;i++)game.update(1/60);}]]){
+  const b=document.createElement('button');b.textContent=label;b.onclick=run;button.after(b);
+ }
+}
 requestAnimationFrame(frame);

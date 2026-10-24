@@ -13,5 +13,35 @@
     "width": 64,
     "height": 64,
     "credits": 6
+  },
+  {
+    "asset_id": "1c207bbd-7f7d-4e37-8e74-3ed032539e57",
+    "sha12": "f4c717dcba27",
+    "label": "Rayquaza signature spell VFX",
+    "path": "public/art/raid-rayquaza.png",
+    "model": "pixel-engine-image-v1",
+    "width": 96,
+    "height": 96,
+    "credits": 6
+  },
+  {
+    "asset_id": "2d42a521-6060-4473-92e6-cb17be9d3b3e",
+    "sha12": "d0a6325746e7",
+    "label": "Mewtwo signature spell VFX",
+    "path": "public/art/raid-mewtwo.png",
+    "model": "pixel-engine-image-v1",
+    "width": 96,
+    "height": 96,
+    "credits": 6
+  },
+  {
+    "asset_id": "dbf1b0bc-f6be-4ee0-af6b-ae6584118e98",
+    "sha12": "dcc982a70626",
+    "label": "Lugia signature spell VFX",
+    "path": "public/art/raid-lugia.png",
+    "model": "pixel-engine-image-v1",
+    "width": 96,
+    "height": 96,
+    "credits": 6
   }
 ]

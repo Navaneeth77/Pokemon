@@ -1286,7 +1286,7 @@ class Ultimate extends MoveAction {
     const d = u.distTo(t) || 1;
     if (this.t-(this.lastImpact??-1)>.12) {
       this.lastImpact=this.t;
-      this.game.spawn(new UltimateImpact(t.x,t.y,t.bodyZ,u.boss?88:54));
+      this.game.spawn(new UltimateImpact(t.x,t.y,t.bodyZ,u.boss?(frac>=.25?88:frac>=.1?60:28):54));
     }
     applyHit(this.game, u, t, this.move, {
       power: this.move.power * frac, dirX: (t.x - u.x) / d, dirY: (t.y - u.y) / d, knockback: 160, stagger: 0.4,

@@ -44,7 +44,7 @@ test('hits respect dodge and shield, consume aura once and respect freeze grace'
 });
 
 import {saveSummary,readMastery,level} from '../src/mastery.js';
-import {BossEncounter, hazardHits} from '../src/bosses.js';
+import {BossEncounter, BossPresenter, hazardHits} from '../src/bosses.js';
 test('mastery storage tolerates corruption and deduplicates result IDs',()=>{
  let value='not json';const storage={getItem:()=>value,setItem:(_k,v)=>value=v};assert.equal(readMastery(storage).version,2);
  const s={id:'match-1',result:'win',arena:'mtSilver',mode:'raid',species:{charizard:{damage:1000,hits:5,kos:1,reactions:1,discovered:['melt']}},moves:{flamethrower:2}};
@@ -125,11 +125,47 @@ test('raid ultimate: timeout hits both players through dodges once; stage change
   for (const g of games) { g.player.hp = g.player.maxHp; g.player.dodgeInv = 9; }
   b.startUlt(); assert.ok(b.view().ul.sh > 0);
   b.ult.t = .01; b.tick(.02);
+  for (const g of games) assert.equal(g.player.hp, g.player.maxHp, 'damage waits for the cinematic impact');
+  for (let i = 0; i < 195; i++) b.tick(1 / 60);
   for (const g of games) assert.equal(g.player.hp, g.player.maxHp - Math.round(g.player.maxHp * share));
   assert.equal(b.ultFired, 1); b.tick(.02); assert.equal(b.ultFired, 1);
+  for (let i = 0; i < 70; i++) b.tick(1 / 60);
   b.startUlt(); b.boss.hp = b.boss.maxHp * .7; b.tick(.02);
   assert.equal(b.ult, null); assert.equal(b.ultFired, 1);
  }
+});
+
+test('legendary casts anchor position and facing; movement attacks still dash after their telegraph', () => {
+ for (const id of ['rayquaza', 'mewtwo', 'lugia']) {
+  const g = battle(), b = new BossEncounter([g], id);
+  b.intro = 0; b.boss.invuln = false; b.boss.x = 180; b.boss.y = 205;
+  b.home = { x: 70, y: 390 }; b.launch([g]);
+  const cast = [b.boss.x, b.boss.y, b.boss.dir];
+  for (let i = 0; i < 60; i++) { g.player.x = i % 2 ? 20 : 340; b.boss.vx = 100; b.tick(1 / 60); }
+  assert.deepEqual([b.boss.x, b.boss.y, b.boss.dir], cast, `${id} holds its casting pose`);
+  g.player.x = b.boss.x; g.player.y = b.boss.y + 1; g.separate();
+  assert.deepEqual([b.boss.x, b.boss.y], cast.slice(0, 2), 'body contact cannot push a casting boss');
+  b.hazards = []; b.startUlt();
+  for (let i = 0; i < 30; i++) b.tick(1 / 60);
+  assert.deepEqual([b.boss.x, b.boss.y, b.boss.dir], cast, `${id} channels in place`);
+  b.ult.t = 0; b.tick(1 / 60);
+  for (let i = 0; i < 50; i++) b.tick(1 / 60);
+  assert.deepEqual([b.boss.x, b.boss.y, b.boss.dir], cast, `${id} does not roam underneath its ultimate`);
+ }
+ const g = battle(), b = new BossEncounter([g], 'rayquaza'); b.intro = 0; b.boss.y = 205;
+ b.sequence = 1; b.launch([g]); const start = [b.boss.x, b.boss.y];
+ for (let i = 0; i < 100; i++) b.tick(1 / 60);
+ assert.notDeepEqual([b.boss.x, b.boss.y], start, 'Dragon Dive still travels');
+});
+
+import { bossMouth, LegendaryBeam } from '../src/raid-art.js';
+test('legendary beam originates at its scaled airborne mouth and expires without gameplay changes', () => {
+ const g = battle(), b = new BossEncounter([g], 'rayquaza'); b.boss.x = 180; b.boss.y = 205; b.boss.z = 30;
+ const m = b.boss.species.mouth, mouth = bossMouth(b.boss, { x: 180, y: 500 });
+ assert.equal(mouth.x, 180); assert.equal(mouth.y, 205 + m.fwd - m.z - 30);
+ const hp = g.player.hp, beam = new LegendaryBeam(b.boss, 180, 500, '#75f5b1');
+ assert.equal(beam.update(.2), true); beam.draw(g.ctx); assert.equal(beam.update(.4), false);
+ assert.equal(g.player.hp, hp);
 });
 
 test('Lugia aliases use valid cropped charge frames and wing beats', () => {
@@ -155,9 +191,14 @@ test('raid cinematics: player winds up without freezing the raid; legendary visu
   assert.equal(visual.action.done, true, id);
   assert.deepEqual([g.player.hp, b.boss.hp, g.player.x, g.player.y], before, id);
   assert.equal(g.player.held, false);
+  const presenter = new BossPresenter(g);
+  b.startUlt(); b.fireUlt(); presenter.update(1 / 60, b.view());
+  assert.ok(presenter.ultimateVisual); b.boss.hp = 0; presenter.update(1 / 60, b.view());
+  assert.equal(presenter.ultimateVisual, null, 'defeated boss leaves its ultimate pose for the defeat sequence');
+  b.boss.hp = b.boss.maxHp;
   const move = MOVES[g.player.species.ultimate];
   g.startUltCutscene(g.player, move);
-  assert.equal(g.cinematic, null); assert.equal(g.raidCards.length, 1);
+  assert.equal(g.cinematic, null); assert.equal(g.raidCards.filter(c => c.mon === g.player).length, 1);
   const windup = g.player.action; windup.update(.6); assert.equal(g.player.action, windup);
   windup.update(.71); assert.notEqual(g.player.action, windup); assert.equal(g.player.action.move, move);
  }

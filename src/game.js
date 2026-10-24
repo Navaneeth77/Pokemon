@@ -12,6 +12,7 @@ import { applyStatus, addBuff, benchStatus } from './status.js';
 import { comboRole, soften } from './combat.js';
 import { typeMultiplier } from './data/types.js';
 import { Showcase, Finale } from './cinema.js';
+import { FinalHitReplay } from './final-hit-replay.js';
 import { loadSpecies, measureDims } from './assets.js';
 import { WINGS } from './data/wings.js';
 import { addFlapAnim } from './flap.js';
@@ -31,7 +32,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','RaidBurst']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -111,6 +112,7 @@ export class Game {
   recordCombat(kind, actor, target, details) { recordCombat(this, kind, actor, target, details); }
 
   reset() {
+    if (!this.headless) (this.finishReplay ??= new FinalHitReplay()).clear();
     this.summary = newSummary(this);
     this.time = 0;
     this.effects = [];
@@ -947,6 +949,7 @@ export class Game {
   }
 
   auraWisp(mon, colors = mon.species.aura) {
+    if (mon.boss) colors = ['#ae80d9', '#50236a', '#170d26'];
     this.particles.spawn({
       x: mon.x + rand(-mon.radius, mon.radius), y: mon.y + rand(-3, 3), z: mon.z + rand(2, mon.species.headZ),
       vx: rand(-6, 6), vz: rand(14, 30), life: 0.6, size: rand(2, 3), sizeEnd: 1, colors, alpha: 0.85,
@@ -1393,7 +1396,7 @@ export class Game {
     const d = Math.hypot(dx, dy) || 0.01;
     const overlap = a.radius + b.radius - d;
     if (overlap <= 0) return;
-    const wa = b.species.weight / (a.species.weight + b.species.weight);
+    const wa = b.boss ? 1 : a.boss ? 0 : b.species.weight / (a.species.weight + b.species.weight);
     a.x -= (dx / d) * overlap * wa;
     a.y -= (dy / d) * overlap * wa;
     b.x += (dx / d) * overlap * (1 - wa);
@@ -1525,6 +1528,7 @@ export class Game {
     this.raidCards?.forEach((c, slot) => this.drawUltCard(ctx, { ...c, slot }));
     if (this.showcase) this.showcase.draw(ctx);
     if (this.finale) this.finale.draw(ctx);
+    if (!this.headless && (this.state === 'fighting' || (this.state === 'finale' && this.finale?.finisher && this.finale.t < .25))) this.finishReplay?.capture(this);
   }
 
   resize() {

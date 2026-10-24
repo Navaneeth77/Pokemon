@@ -31,6 +31,8 @@ Rayquaza and Mewtwo Mega Evolve once at **50% HP** into Mega Rayquaza and Mega M
 
 From stage two, bosses periodically channel their ultimate behind a shield worth 5% of maximum HP. **Break the shield** before the countdown expires to cancel the attack and earn a four-second vulnerability window. Shield damage can overflow into HP. An uninterrupted ultimate hits active players through dodges for 40/55/70/85% of maximum HP on Easy/Normal/Hard/Legendary. Existing Dragon Ascent, Psystrike and Aeroblast choreography plays cosmetically alongside the authoritative outcome. Dragon Ascent rises above the arena before diving. Player ultimates retain their charge intro and attack animation without pausing the shared raid.
 
+Bosses hold their position and facing while casting. Beams attach to their mouths, and dedicated SpriteCook spell effects animate the dark auras, charge and impact. Ultimate damage lands on the signature action's impact; movement attacks such as Dragon Ascent keep their flight/dive.
+
 ### Elemental reactions and Mega stats
 
 Compatible hits within four seconds can trigger Flash Freeze, Conduction, Wildfire, Melt, Steam, Grounded or Fanned Flames. Shields and dodges prevent priming. Reactions consume their aura, have a 1.5-second guard and bounded chains; chains do not hit allies or recursively trigger more reactions. Freeze retains the six-second thaw guard. Ground types resist conduction. The in-game guide lists combinations.
@@ -98,7 +100,7 @@ Sprites and art receive one-week cache headers from `vercel.json`; version the U
 
 Browser profiling: open `/scripts/browser-bench.html` through the Vite dev server; add `?soak=60` for a mixed-effects soak. `node scripts/network-profile.mjs` measures two ordinary matches plus a raid against an isolated local server. These diagnostic pages are not part of the production Vite entry.
 
-See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Full deterministic battle replay and network hit rewind are not implemented; event timelines and existing authoritative hit timing are used instead.
+See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Finishing sequences include a short visual replay of actual captured frames (raw pixel budget below 3 MB in High quality, cleared on exit). Full deterministic battle replay and network hit rewind are not implemented; match-history event timelines and existing authoritative hit timing are used instead.
 
 ## Asset credits
 
@@ -106,4 +108,4 @@ See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.m
 - Rayquaza: PMD2/PMD1 rips by Redblueyellow and MR.C, Dark Night repaint by Dialga22239, recoloured green for this game.
 - Trainer sprites and arenas are drawn in code. Sound effects and music are synthesized in code. The server skips arena textures, ground decoration, ambient particles and HUD animation while preserving gameplay callbacks.
 - Fonts: Pixelify Sans (OFL) and Luckiest Guy (Apache 2.0), via Fontsource.
-- The elemental crest and the transparent 64×64 ultimate-impact sprite were generated with SpriteCook; its provenance is retained in the asset manifest.
+- Five SpriteCook assets: elemental crest, 64×64 ultimate-impact sprite and three 96×96 legendary spell sprites. Asset IDs, hashes and local paths are retained in spritecook-assets.json.

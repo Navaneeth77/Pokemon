@@ -15,6 +15,8 @@ export function bossUltimateVisual(game, boss) {
   user.foe = target; target.foe = user;
   const stage = Object.create(game);
   stage.state = 'presentation'; // applyHit rejects non-combat stages
+  stage.hud = Object.create(game.hud);
+  stage.hud.showBanner = () => {}; // the raid's compact signature card already names this move
   for (const key of ['spawn', 'shake', 'flash', 'punch']) stage[key] = game[key].bind(game);
   stage.hitstop = () => {};
   const move = MOVES[boss.species.ultimate];

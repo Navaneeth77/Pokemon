@@ -5,6 +5,20 @@ import {saveEntry,saveSummary,readMastery,cosmeticLoadout,equipCosmetic,unlocked
 import {GroundFX} from '../src/groundfx.js';
 import {appendBattleEvents} from '../src/event-buffer.js';
 import {resolveReaction} from '../src/elemental.js';
+import {FinalHitReplay} from '../src/final-hit-replay.js';
+import {setQuality} from '../src/quality.js';
+test('final-hit visual capture is bounded, chronological and released on exit',()=>{
+ const replay=new FinalHitReplay(),canvas=document.createElement('canvas'),game={canvas,view:{ox:0,oy:0},k:1};
+ setQuality('high');
+ for(let i=0;i<1000;i++)replay.capture(game,i*100);
+ assert.equal(replay.frames.length,12);assert.equal(replay.clip().length,12);
+ assert.equal(replay.clip().at(-1),replay.frames[(replay.cursor+11)%12]);
+ assert.ok(replay.frames.reduce((n,f)=>n+f.width*f.height*4,0)<3*1024*1024);
+ setQuality('performance');for(let i=1000;i<1020;i++)replay.capture(game,i*200);
+ assert.equal(replay.frames.length,6);const frames=replay.clip();replay.clear();
+ assert.ok(frames.every(f=>f.width===0&&f.height===0));assert.equal(replay.clip().length,0);
+ setQuality('balanced');
+});
 function memory(){let s=null;return{getItem:()=>s,setItem:(_k,v)=>s=v};}
 test('entered and completed progression dedupe independently; cosmetics unlock without stat effects',()=>{
  const storage=memory();assert.equal(saveEntry('one','pikachu',storage),true);assert.equal(saveEntry('one','pikachu',storage),false);

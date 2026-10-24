@@ -1,0 +1,275 @@
+{
+  "assetLoadMs": 151.39999985694885,
+  "results": [
+    {
+      "scenario": "3v3",
+      "quality": "balanced",
+      "frames": 370,
+      "frameP95": 18.299999999995634,
+      "frameP99": 18.599999999998545,
+      "frameMax": 18.60000000000582,
+      "updateP95": 0.3000001907348633,
+      "renderP95": 1.2000000476837158,
+      "scriptedInputToRenderP95": 1.5,
+      "maxEffects": 4,
+      "maxParticles": 86,
+      "heapStartMB": 32.318498611450195,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 32.32
+        },
+        {
+          "seconds": 1,
+          "mb": 31.68
+        },
+        {
+          "seconds": 2,
+          "mb": 31.36
+        },
+        {
+          "seconds": 3,
+          "mb": 32.82
+        },
+        {
+          "seconds": 4,
+          "mb": 32.05
+        },
+        {
+          "seconds": 5,
+          "mb": 31.41
+        },
+        {
+          "seconds": 6,
+          "mb": 32.22
+        }
+      ],
+      "heapMB": 32.84285926818848
+    },
+    {
+      "scenario": "6v6",
+      "quality": "balanced",
+      "frames": 370,
+      "frameP95": 18.30000000000291,
+      "frameP99": 18.599999999998545,
+      "frameMax": 18.69999999999709,
+      "updateP95": 0.2999999523162842,
+      "renderP95": 1.2000000476837158,
+      "scriptedInputToRenderP95": 1.5999999046325684,
+      "maxEffects": 5,
+      "maxParticles": 82,
+      "heapStartMB": 32.84285926818848,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 32.84
+        },
+        {
+          "seconds": 1,
+          "mb": 32.17
+        },
+        {
+          "seconds": 2,
+          "mb": 32.87
+        },
+        {
+          "seconds": 3,
+          "mb": 31.89
+        },
+        {
+          "seconds": 4,
+          "mb": 32.73
+        },
+        {
+          "seconds": 5,
+          "mb": 31.86
+        },
+        {
+          "seconds": 6,
+          "mb": 32.6
+        }
+      ],
+      "heapMB": 33.176483154296875
+    },
+    {
+      "scenario": "ultimates",
+      "quality": "high",
+      "frames": 370,
+      "frameP95": 18.10000000000582,
+      "frameP99": 18.59999999999127,
+      "frameMax": 18.70000000001164,
+      "updateP95": 0.39999985694885254,
+      "renderP95": 1.2000000476837158,
+      "scriptedInputToRenderP95": null,
+      "maxEffects": 27,
+      "maxParticles": 155,
+      "heapStartMB": 33.176483154296875,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 33.18
+        },
+        {
+          "seconds": 1,
+          "mb": 31.87
+        },
+        {
+          "seconds": 2,
+          "mb": 32.36
+        },
+        {
+          "seconds": 3,
+          "mb": 32.24
+        },
+        {
+          "seconds": 4,
+          "mb": 33.04
+        },
+        {
+          "seconds": 5,
+          "mb": 31.49
+        },
+        {
+          "seconds": 6,
+          "mb": 33.02
+        }
+      ],
+      "heapMB": 32.35835075378418
+    },
+    {
+      "scenario": "reactions",
+      "quality": "high",
+      "frames": 370,
+      "frameP95": 18.29999999998836,
+      "frameP99": 18.60000000000582,
+      "frameMax": 18.60000000000582,
+      "updateP95": 0.2999999523162842,
+      "renderP95": 1.3999998569488525,
+      "scriptedInputToRenderP95": 3.5999999046325684,
+      "maxEffects": 16,
+      "maxParticles": 124,
+      "heapStartMB": 32.35835075378418,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 32.36
+        },
+        {
+          "seconds": 1,
+          "mb": 33.48
+        },
+        {
+          "seconds": 2,
+          "mb": 32.94
+        },
+        {
+          "seconds": 3,
+          "mb": 32.03
+        },
+        {
+          "seconds": 4,
+          "mb": 33.15
+        },
+        {
+          "seconds": 5,
+          "mb": 32.67
+        },
+        {
+          "seconds": 6,
+          "mb": 32.49
+        }
+      ],
+      "heapMB": 33.27216911315918
+    },
+    {
+      "scenario": "raid-high",
+      "quality": "high",
+      "frames": 370,
+      "frameP95": 18.10000000000582,
+      "frameP99": 18.59999999999127,
+      "frameMax": 18.60000000000582,
+      "updateP95": 0.40000009536743164,
+      "renderP95": 1.5,
+      "scriptedInputToRenderP95": 1.9000000953674316,
+      "maxEffects": 17,
+      "maxParticles": 447,
+      "heapStartMB": 33.27216911315918,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 33.27
+        },
+        {
+          "seconds": 1,
+          "mb": 33.49
+        },
+        {
+          "seconds": 2,
+          "mb": 33.48
+        },
+        {
+          "seconds": 3,
+          "mb": 32.6
+        },
+        {
+          "seconds": 4,
+          "mb": 33.1
+        },
+        {
+          "seconds": 5,
+          "mb": 32.87
+        },
+        {
+          "seconds": 6,
+          "mb": 32.98
+        }
+      ],
+      "heapMB": 32.624857902526855
+    },
+    {
+      "scenario": "raid-performance",
+      "quality": "performance",
+      "frames": 370,
+      "frameP95": 18.09999999999127,
+      "frameP99": 18.5,
+      "frameMax": 18.69999999999709,
+      "updateP95": 0.40000009536743164,
+      "renderP95": 1.5,
+      "scriptedInputToRenderP95": 3.6000001430511475,
+      "maxEffects": 16,
+      "maxParticles": 218,
+      "heapStartMB": 32.624857902526855,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 32.62
+        },
+        {
+          "seconds": 1,
+          "mb": 33.11
+        },
+        {
+          "seconds": 2,
+          "mb": 33.84
+        },
+        {
+          "seconds": 3,
+          "mb": 33.39
+        },
+        {
+          "seconds": 4,
+          "mb": 35.3
+        },
+        {
+          "seconds": 5,
+          "mb": 34.56
+        },
+        {
+          "seconds": 6,
+          "mb": 32.99
+        }
+      ],
+      "heapMB": 32.57967948913574
+    }
+  ]
+}

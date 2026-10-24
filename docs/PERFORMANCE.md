@@ -55,6 +55,28 @@ are saved as `browser-soak.json`; an initial run is also retained. The final 60-
 22.38 MB, ranged from 22.38 to 26.68 MB and ended at 24.73 MB. Short runs and approximate browser
 heap counters cannot certify behavior over hours or GPU memory retention.
 
+## Final visual pass
+
+`browser-visual-profile.json` repeats the six real-Canvas scenarios after the SpriteCook cast sprites,
+tapered mouth-attached beams, dark aura and final-hit capture were integrated. About 370 frames per
+scenario were measured. Frame p95 was 18.1–18.3 ms; the maximum interval was 18.7 ms. Update p95
+was 0.3–0.4 ms and render p95 1.2–1.5 ms. No runtime errors were captured. This is a different browser
+session from the earlier table: the stricter 16.67 ms target remains unproven. Ordinary render p95
+increased from 0.8 to 1.2 ms with the added capture/presentation work, while staying well within the
+per-frame work budget. No universal FPS claim follows from these short runs.
+
+The High raid peaked at 447 particles; Performance mode peaked at 218 and omits decorative beam
+orbits. Required hazard warnings remain. Approximate JS heap ended between 32.36 and 33.27 MB
+across scenarios; this does not measure all GPU memory. The final-hit buffer has at most twelve
+180×320 canvases (2.76 MB raw RGBA pixels), or six 120×214 canvases in Performance mode. Browser
+allocation overhead is additional. Buffers are zeroed/released on battle exit and never run on the server.
+
+`node scripts/lifecycle-profile.mjs` ran 24 ordinary/raid state lifecycles, 48 manual switches, 24 Megas
+and 24 forced faint replacements over 38,160 updates in 84.79 ms. Exit effects/timers were both zero;
+heap delta was 1.14 MB without forced GC. The script asserts switch cooldowns, retained Mega forms
+on re-entry and fresh next-battle stats. This covers shared-engine menu/select/battle/reset state, not
+DOM layout, physical devices or a proof of retained-memory stability over hours.
+
 ## Actual local match-server workload
 
 `node scripts/network-profile.mjs` starts an isolated server, six real WebSocket clients, two ordinary

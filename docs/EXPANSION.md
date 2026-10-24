@@ -16,15 +16,19 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 - Both draft formats with private/reveal rules, legal pools, timers, confirmation and battle launch.
   Ranked/unranked queues and regular/full-roster choices are separate; ranked results use server Elo.
 - Arcade mode menu/visual previews, trainer/team/arena intro, restored player ultimate charge scenes,
-  nonblocking online ultimate/Mega presentation, final-hit/victory effects, ping/jitter feedback.
+  nonblocking online ultimate/Mega presentation, final-hit/victory effects, short captured-frame final-hit replay, ping/jitter feedback.
 - Full-roster mastery search/sort/comparison, separate entered/completed counts, best results, next
   rewards and milestone history. Earned trainer frames, victory poses and send-out effects can be
   equipped. Existing badges, titles, profile, safe migration and result deduplication remain.
 - Reusable summaries cover ordinary, friend-room, draft and raid matches. Results show survivors,
   damage, moves, reactions, transforms and earned XP. Bounded event replay has play/pause/scrubbing;
   it does not claim deterministic simulation playback or award progression.
-- SpriteCook generated the original crest and a new transparent 64×64 impact sprite. The latter is
-  integrated into ultimate hits, preloaded, inspected and recorded in spritecook-assets.json.
+- Five SpriteCook assets are integrated: the crest, ultimate-impact sprite and three 96×96 signature
+  spell effects. Boss casts use dark auras, mouth-attached tapered beams and distinct impact sprites.
+  Ordinary casts anchor position/facing; Dragon Ascent and Dragon Dive retain their movement.
+  Ultimate damage lands at the signature move's impact rather than ending the fight before its animation.
+  The latest three assets cost 18 SpriteCook credits; the checked balance afterward was 10.
+  Asset IDs, hashes and paths are in spritecook-assets.json.
 - Abortable readiness/retries, legacy-health compatibility, welcome gating, feature negotiation,
   bounded co-op rejoin, coalesced wake requests and unchanged protocol 2.
 - Bounded decorative/event/stamp caches; hidden-page/menu render reduction; quality modes preserve
@@ -35,8 +39,8 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 
 ## Verification
 
-The focused/full test history is retained in the task. `npm test` passes all 34 tests; `npm run build` succeeds and `git diff --check` is clean.
-The build retains a large-chunk warning (about 612 KB uncompressed / 199 KB gzip). No lint script is
+The focused/full test history is retained in the task. `npm test` passes all 37 tests; `npm run build` succeeds and `git diff --check` is clean.
+The build retains a large-chunk warning (about 618 KB uncompressed / 201 KB gzip). No lint script is
 defined. Exact measurements are recorded in PERFORMANCE.md. Coverage includes all roster ultimate action completion, raid shield
 break/expiry, half-HP Mega state, skyward Dragon Ascent, immunity/switch/faint/chain behavior, mastery
 migration/rewards, bounded queues, ranked Elo, actual two-client drafts/co-op and reconnect.
@@ -49,7 +53,10 @@ not a claim that every old test was repeated in this continuation.
 A CPU profile found unnecessary visual work on the server. In the measured six-player workload,
 local CPU changed from 52 to 40 ms/second after removing it. Browser measurements and a sustained
 mixed-effects run are retained in JSON. An anomalous slow Node sample is explicitly reported rather
-than discarded. See PERFORMANCE.md for details, exact workloads and reproducible commands.
+than discarded. `lifecycle-profile.mjs` additionally runs 24 menu/select/battle/reset cycles,
+48 switches, 24 Megas and 24 forced replacements across ordinary and raid engines.
+It checks cooldowns, form retention, fresh next-battle stats and empty exit timers/effects.
+This is shared-engine lifecycle coverage, not a rendered-menu or physical-device claim. See PERFORMANCE.md for details, exact workloads and reproducible commands.
 
 ## Release gate still external
 
@@ -73,9 +80,30 @@ npm test
 npm run build
 node scripts/profile.mjs
 node scripts/network-profile.mjs
+node scripts/lifecycle-profile.mjs
 ```
 
 Use `?pid=a` / `?pid=b` for two local identities. For co-op choose matching boss/team size, then public
 partner or Create Room/Join Room. For drafts choose matching mode, team size, ranking and pool,
 make picks and confirm. Browser profiling is at `/scripts/browser-bench.html`; `?soak=60` runs a
-sustained mixed-effects scenario. The benchmark uses practice state and grants no progression.
+sustained mixed-effects scenario. The benchmark uses practice state and grants no progression. `?preview=rayquaza`, `?preview=mewtwo`
+and `?preview=lugia` expose real casting/ultimate/half-HP/final-hit controls for visual review; the
+preview UI does not persist results. These diagnostic pages are not production app entry points.
+
+## Main implementation files
+
+| Area | Files |
+|---|---|
+| Shared combat and forms | `src/reactions.js`, `src/elemental.js`, `src/combat.js`, `src/data/mega-stats.js` |
+| Boss authority and visuals | `src/bosses.js`, `src/raid-art.js`, `src/raid-cinematics.js` |
+| Real online raids and drafts | `server/raids.js`, `server/drafts.js`, `src/draft-rules.js`, `src/matchmaking.js` |
+| Presentation and integration | `src/cinema.js`, `src/final-hit-replay.js`, `src/moves.js`, `src/game.js`, `src/flow.js` |
+| Progression and results | `src/mastery.js`, `src/results.js`, `src/expansion-ui.js` |
+| Assets and performance evidence | `spritecook-assets.json`, `scripts/browser-bench.js`, `scripts/lifecycle-profile.mjs`, `docs/PERFORMANCE.md` |
+
+No new environment variable or secret is required. Preserve `VITE_MATCH_SERVER_URL`,
+`ALLOWED_ORIGINS` and existing Redis/file storage configuration. Defaults are `MAX_MATCHES=3` and
+`MAX_RAIDS=1`. Deploy the frontend and match server together; existing production is still older code.
+See README.md for the full variable table and deployment commands. Local multiplayer: start the
+server and Vite, use `?pid=a` and `?pid=b`, choose the same raid boss/team size (public partner or
+Create/Join Room), or matching draft mode/format/ranking/pool; finish picks and confirm both teams.

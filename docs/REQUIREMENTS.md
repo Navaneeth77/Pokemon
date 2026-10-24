@@ -75,8 +75,11 @@ proof of artistic quality, internet reliability, or universal device performance
   boss cards and draft-format visual previews. Narrow-phone layout is supported.
 - Existing skippable trainer/team VS intro now names the arena. Online player ultimate intros and
   Mega effects do not stop the shared clock. All roster ultimate actions are runtime-audited; existing
-  identity-specific choreography is preserved, with a new SpriteCook impact sprite integrated into hits.
-- Boss defeat variations, finishing hit emphasis, varied/equippable victory poses, survivor/stat/XP
+  identity-specific choreography is preserved, with a SpriteCook impact sprite integrated into hits.
+  Three additional SpriteCook spell sprites provide distinct boss cast/muzzle/impact effects; a dark
+  aura, stationary casts and mouth-attached tapered beams were checked in the real renderer.
+- Boss defeat variations, finishing hit emphasis, a brief skippable final-hit visual capture,
+  varied/equippable victory poses, survivor/stat/XP
   results, rematch paths, health/ultimate/Mega/status/switch/dodge indicators and online ping/jitter cues.
 - Procedural reaction, boss, transformation and existing menu/impact audio respects existing settings.
 - Evidence: browser title/mastery/phone/replay checks, intro/finale render tests, all-ultimate action audit,
@@ -102,6 +105,8 @@ proof of artistic quality, internet reliability, or universal device performance
 
 - Reusable summaries: outcome, duration, damage, moves/ultimates, KOs/faints/switches, reactions,
   Megas, boss contribution, survivors and earned XP across standard, friend, draft and raid modes.
+- Automatic finishing-blow playback uses a bounded in-memory capture of actual rendered frames
+  (12 at 180×320, six smaller frames in Performance mode), releases buffers on exit and grants no XP.
 - Honest event replay with play/pause and scrubbing. This is authoritative/local event history, not
   deterministic simulation playback; the PDF explicitly allows that alternative. Playback grants no XP.
 - Event logs capped at 600, histories at 30, result/entry dedupe at 500 IDs. No invented old-match logs.
@@ -129,6 +134,9 @@ proof of artistic quality, internet reliability, or universal device performance
 - Measured CPU profile identified arena/HUD/visual work on the server; headless matches now skip
   textures, decoration, snow, HUD/particle animation and decorative effect lifetimes. Gameplay callbacks
   remain active and regression-tested. Menu background arenas also stop redundant redraws.
+- Repeated lifecycle stress covers 24 menu/select/battle/reset cycles, 48 switches, 24 Megas and
+  24 faint replacements, with cooldown/form/reset and exit queue assertions (`lifecycle-profile.json`).
+  This is headless state-machine coverage; historical browser menu checks remain separately identified.
 - Three quality modes, auto lowering, particle/effect/hazard/chain/cache/event/history caps, preserved
   essential telegraphs, hidden-page rendering stop and bounded catch-up. Background event backlogs
   retain KO/Mega events instead of growing indefinitely.
