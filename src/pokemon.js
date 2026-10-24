@@ -173,7 +173,7 @@ export class Pokemon {
     if (flinch) this.cancelAction();
     if (this.charging && stagger > 0 && game) this.cancelCharge(game, true);
     // Attacks in progress have super armour: the hit lands but doesn't interrupt.
-    if (!this.action && this.frozen <= 0) {
+    if (!this.action && this.frozen <= 0 && !(this.animHold > 0)) {
       this.stagger = Math.max(this.stagger, stagger);
       this.sprite.play('Hurt', { loop: false, force: true });
     }
@@ -274,6 +274,7 @@ export class Pokemon {
     }
 
     this.busy = Math.max(0, this.busy - dt);
+    this.animHold = Math.max(0, (this.animHold ?? 0) - dt); // a raid boss's attack animation plays through
     this.root = Math.max(0, this.root - dt);
     this.stagger = Math.max(0, this.stagger - dt);
     this.dodgeCD = Math.max(0, this.dodgeCD - dt);
@@ -354,7 +355,7 @@ export class Pokemon {
     }
 
     if (this.charging) this.sprite.play('Charge');
-    else if (!this.action && this.stagger <= 0) {
+    else if (!this.action && this.stagger <= 0 && !(this.animHold > 0)) {
       // Flyers with a wing-beat animation flap (faster while moving) instead of walking.
       if (this.idleAnim() === 'Fly') this.sprite.play('Fly', { speed: this.moving ? 1.25 : 1 });
       else this.sprite.play(this.moving ? 'Walk' : 'Idle');
@@ -386,14 +387,14 @@ export class Pokemon {
 
   draw(ctx) {
     if (this.hidden) return;
-    let alpha = this.ab.ghost > 0 ? 0.4 : 1, scale = 1;
+    let alpha = this.ab.ghost > 0 ? 0.4 : 1, scale = this.drawScale ?? 1;
     let flash = Math.max(this.flash, this.appear);
     let color = this.appear > 0 ? '#ffffff' : this.flashColor;
     let sink = 0;
     if (this.recallT > 0) {
       // Drawn back into the Poké Ball: turns red and shrinks away.
       const k = Math.min(1, this.recallT / RECALL_TIME);
-      scale = 1 - 0.85 * k;
+      scale *= 1 - 0.85 * k;
       alpha = 1 - 0.4 * k;
       flash = 0.85;
       color = '#ff4a3a';

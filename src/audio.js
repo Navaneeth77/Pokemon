@@ -161,3 +161,9 @@ sfx.roar = () => {
   tone({ type: 'sawtooth', f0: 190, f1: 85, dur: 0.65, gain: 0.12 });
   noise({ dur: 0.65, filter: 'bandpass', f0: 520, f1: 260, q: 2, gain: 0.28, attack: 0.05 });
 };
+
+// Raid boss attack warning: a falling two-note alarm over a low rumble, so a telegraph is heard as well as seen.
+sfx.bossWarn = () => {
+  [880, 660].forEach((f, i) => tone({ type: 'square', f0: f, dur: 0.09, gain: 0.07, delay: i * 0.11 }));
+  noise({ dur: 0.5, filter: 'lowpass', f0: 300, f1: 120, q: 0.7, gain: 0.18, attack: 0.08 });
+};

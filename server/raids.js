@@ -1,6 +1,6 @@
 import { resultSummary } from '../src/mastery.js';
 import { randomBytes } from 'node:crypto';
-import { BOSSES, BossEncounter } from '../src/bosses.js';
+import { BOSSES, BossEncounter, RAID_DIFFICULTY } from '../src/bosses.js';
 export class RaidRooms {
   constructor({ send, validate, create, register, remove, snapshot, capacity }) {
     Object.assign(this,{send,validate,create,register,remove,snapshot,capacity,waiting:[],sessions:new Map()});
@@ -12,9 +12,9 @@ export class RaidRooms {
     const spec=this.validate(m);
     if(!spec || !BOSSES[m.boss] || !['public','private','join'].includes(m.kind)) {this.send(p,{t:'raid-cancelled',message:'Invalid raid or team.'});return true;}
     if(!this.capacity()) {this.send(p,{t:'raid-cancelled',message:'Raid capacity reached. Try again shortly.'});return true;}
-    const entry={player:p,...spec,boss:m.boss,kind:m.kind,code:randomBytes(3).toString('hex').toUpperCase(),at:Date.now()};
+    const entry={player:p,...spec,boss:m.boss,kind:m.kind,difficulty:RAID_DIFFICULTY[m.difficulty]?m.difficulty:'normal',code:randomBytes(3).toString('hex').toUpperCase(),at:Date.now()};
     let other;
-    if(m.kind==='public') other=this.waiting.find(e=>e.kind==='public' && e.boss===m.boss && e.format===m.format);
+    if(m.kind==='public') other=this.waiting.find(e=>e.kind==='public' && e.boss===m.boss && e.format===m.format && e.difficulty===entry.difficulty);
     if(m.kind==='join') {
       other=this.waiting.find(e=>e.kind==='private' && e.code===m.code && e.boss===m.boss && e.format===m.format);
       if(!other){this.send(p,{t:'raid-cancelled',message:'Room not found. Check code, boss, and team size.'});return true;}
@@ -22,6 +22,7 @@ export class RaidRooms {
     p.state='raid';
     if(!other){this.waiting.push(entry);this.send(p,{t:'raid-waiting',code:m.kind==='private'?entry.code:null});return true;}
     this.waiting.splice(this.waiting.indexOf(other),1);
+    entry.difficulty=other.difficulty;
     const session=new RaidSession(this,[other,entry]);this.sessions.set(session.id,session);this.register(session);session.intro();return true;
   }
   leaveWaiting(p) {this.waiting=this.waiting.filter(e=>e.player!==p);if(p.state==='raid')p.state='idle';}
@@ -44,12 +45,12 @@ class RaidSession {
     }
   }
   intro(player = null) {
-    this.members.forEach((m,i)=> { if(player && this.entries[i].player!==player)return; this.manager.send(this.entries[i].player,{t:'matched',id:this.id,you:'A',format:m.format,arena:m.arena,raid:this.entries[i].boss,allyTeam:this.entries[1-i].team,
+    this.members.forEach((m,i)=> { if(player && this.entries[i].player!==player)return; this.manager.send(this.entries[i].player,{t:'matched',id:this.id,you:'A',format:m.format,arena:m.arena,raid:this.entries[i].boss,difficulty:this.entries[0].difficulty,allyTeam:this.entries[1-i].team,
       me:{team:this.entries[i].team,lead:this.entries[i].lead,mega:this.entries[i].mega},foe:{name:BOSSES[this.entries[i].boss].name,team:[this.entries[i].boss],lead:0,mega:{}}}); });
   }
   begin() {
     for(const m of this.members){m.begin();const g=m.game;g.showcase=null;g.state='fighting';g.timers=[];for(const p of [g.player,g.opponent]){p.hidden=false;p.appear=0;}g.gold.hidden=true;}
-    this.encounter=new BossEncounter(this.members.map(m=>m.game),this.entries[0].boss);this.encounter.externalClock=true;
+    this.encounter=new BossEncounter(this.members.map(m=>m.game),this.entries[0].boss,{difficulty:this.entries[0].difficulty});this.flushes=0;this.encounter.externalClock=true;
     this.members.forEach((m,i)=>{m.game.recordCombat('entered',m.game.player);m.game.player.x=120+i*120;m.game.combatants=()=>[...this.members.map(m=>m.game.player),this.encounter.boss];});
     this.phase='battle';
   }
@@ -67,7 +68,7 @@ class RaidSession {
   }
   flush() {
     if(!this.encounter)return;
-    const boss=this.encounter.snapshot();
+    const boss=this.encounter.snapshot(this.flushes++%30===0);
     this.members.forEach((m,i)=>{
       const g=m.game,other=this.members[1-i].game,ack=m.ack.A&&[m.ack.A.q,Math.round((this.clock-m.ack.A.at)*1000)];
       this.manager.send(this.entries[i].player,{t:'b',ts:Math.round(this.clock*1000),e:m.out.splice(0,256),s:{A:this.manager.snapshot(g.playerTeam,g.switchCD,ack),B:this.manager.snapshot(g.opponentTeam,0,null)},raid:boss,
@@ -85,6 +86,10 @@ class RaidSession {
   finish(result,reason) {
     if(this.phase==='done')return;
     this.flush();this.phase='done';this.manager.remove(this.id);this.manager.sessions.delete(this.id);
-    this.entries.forEach((e,i)=>{e.player.match=null;e.player.state='idle';this.manager.send(e.player,{t:'end',id:this.id,result:this.eliminated.has(i)&&result==='win'?'loss':result,reason,raid:e.boss,summary:this.members[i].game?resultSummary(this.members[i].game,'player',{mode:'raid'}):null,record:e.player.record,delta:0});});
+    // Everyone's share of the fight, from the server's own records of each player's battle.
+    const party=this.members.map((m,i)=>{const own=m.game?.summary?.species.player??{},sum=k=>Math.round(Object.values(own).reduce((n,s)=>n+(s[k]??0),0));
+      return {name:this.entries[i].player.name,damage:sum('bossDamage'),faints:sum('faints'),reactions:sum('reactions'),survived:!this.eliminated.has(i)};});
+    const time=Math.round(this.encounter?.time??0),stage=this.encounter?.stage??1,difficulty=this.entries[0].difficulty;
+    this.entries.forEach((e,i)=>{e.player.match=null;e.player.state='idle';this.manager.send(e.player,{t:'end',id:this.id,result,reason,raid:e.boss,difficulty,stage,time,party,you:i,summary:this.members[i].game?resultSummary(this.members[i].game,'player',{mode:'raid'}):null,record:e.player.record,delta:0});});
   }
 }

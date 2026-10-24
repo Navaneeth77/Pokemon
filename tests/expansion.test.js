@@ -43,15 +43,46 @@ test('hits respect dodge and shield, consume aura once and respect freeze grace'
 });
 
 import {saveSummary,readMastery,level} from '../src/mastery.js';
-import {BossEncounter} from '../src/bosses.js';
+import {BossEncounter, hazardHits} from '../src/bosses.js';
 test('mastery storage tolerates corruption and deduplicates result IDs',()=>{
  let value='not json';const storage={getItem:()=>value,setItem:(_k,v)=>value=v};assert.equal(readMastery(storage).version,1);
  const s={id:'match-1',result:'win',arena:'mtSilver',mode:'raid',species:{charizard:{damage:1000,hits:5,kos:1,reactions:1,discovered:['melt']}},moves:{flamethrower:2}};
  assert.equal(saveSummary(s,storage),true);assert.equal(saveSummary(s,storage),false);const data=readMastery(storage);assert.equal(data.species.charizard.battles,1);assert.equal(data.species.charizard.raids,1);assert.equal(level(100),2);
 });
-test('boss hazards are bounded, telegraphed, phase-based and dodgeable',()=>{
- const g=battle();const b=new BossEncounter([g],'rayquaza');g.opponent.hidden=false;g.opponent.frozen=0;g.player.x=180;g.player.y=500;
- b.tick(2.6);assert.equal(b.hazards.length,1);assert.ok(b.hazards[0].left>0);
- const hp=g.player.hp;g.player.dodgeInv=2;b.tick(1.6);assert.equal(g.player.hp,hp);
- b.boss.hp=b.boss.maxHp*.2;b.tick(.01);assert.equal(b.phase,3);assert.ok(b.hazards.length<=2);
+test('boss: entrance, telegraphed dodgeable hazards, four HP stages, bounded hazards', () => {
+ const g = battle(), b = new BossEncounter([g], 'rayquaza', { difficulty: 'normal' });
+ g.player.x = 180; g.player.y = 500;
+ assert.ok(b.boss.maxHp > 10000); assert.equal(b.boss.drawScale, 1.9); assert.equal(g.opponent, b.boss);
+ for (let t = 0; t < 3.4; t += 1 / 60) b.tick(1 / 60);
+ assert.equal(b.hazards.length, 0, 'no attacks during the entrance'); assert.equal(b.boss.invuln, true);
+ for (let i = 0; i < 600 && !b.hazards.length; i++) b.tick(1 / 60);
+ const h = b.hazards[0]; assert.ok(h, 'attacks after the entrance'); assert.ok(h.at - b.time >= 0.85, 'telegraphed');
+ const hp = g.player.hp; g.player.dodgeInv = 9;
+ for (let i = 0; i < 600 && !h.hit; i++) b.tick(1 / 60);
+ assert.equal(g.player.hp, hp, 'a dodge avoids it');
+ b.boss.hp = b.boss.maxHp * 0.2; b.tick(1 / 60);
+ assert.equal(b.stage, 4); assert.ok(b.transition > 0); assert.equal(b.boss.invuln, true);
+ for (let i = 0; i < 60 * 40; i++) { g.player.dodgeInv = 9; b.tick(1 / 60); assert.ok(b.hazards.length <= 18); }
+ assert.ok(b.view().hz.every(h => h.d >= 0.9));
+});
+test('boss difficulty scales HP; hazard shapes hit where drawn', () => {
+ const easy = new BossEncounter([battle()], 'mewtwo', { difficulty: 'easy' }), legend = new BossEncounter([battle()], 'mewtwo', { difficulty: 'legendary' });
+ assert.ok(legend.boss.maxHp > easy.boss.maxHp * 2.5);
+ assert.equal(new BossEncounter([battle()], 'lugia', { difficulty: 'nonsense' }).difficulty, 'normal');
+ assert.equal(hazardHits({ s: 'ring', x: 0, y: 0, r0: 70, r: 300 }, 30, 0), false);
+ assert.equal(hazardHits({ s: 'ring', x: 0, y: 0, r0: 70, r: 300 }, 120, 0), true);
+ assert.equal(hazardHits({ s: 'line', x: 0, y: 0, x2: 100, y2: 0, r: 20 }, 50, 15), true);
+ assert.equal(hazardHits({ s: 'line', x: 0, y: 0, x2: 100, y2: 0, r: 20 }, 50, 30), false);
+ assert.equal(hazardHits({ s: 'cover', safe: [[100, 100, 40]] }, 110, 100), false);
+ assert.equal(hazardHits({ s: 'cover', safe: [[100, 100, 40]] }, 200, 100), true);
+});
+test('every boss runs every stage for a minute without errors', () => {
+ for (const id of ['rayquaza', 'mewtwo', 'lugia']) for (const difficulty of ['easy', 'legendary']) {
+  const g = battle(), b = new BossEncounter([g], id, { difficulty });
+  for (const frac of [1, 0.7, 0.45, 0.2]) {
+   b.boss.hp = b.boss.maxHp * frac;
+   for (let i = 0; i < 60 * 15; i++) { g.player.hp = g.player.maxHp; b.tick(1 / 60); }
+   assert.equal(b.stage, 1 + [0.75, 0.5, 0.25].filter(t => frac <= t).length, `${id} ${difficulty} stage`);
+  }
+ }
 });

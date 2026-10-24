@@ -1,6 +1,6 @@
 import { newSummary, recordCombat } from './mastery.js';
 import { quality, observeFrame } from './quality.js';
-import { drawBoss } from './bosses.js';
+import { BossPresenter, drawBossGround, drawBossHud } from './bosses.js';
 import { Arena, WORLD_W, WORLD_H } from './arena.js';
 import { Pokemon, CHARGE_MAX } from './pokemon.js';
 import { Trainer } from './trainer.js';
@@ -1005,11 +1005,15 @@ export class Game {
 
   update(dt) {
     this.online?.tick(dt);
-    if (this.raid && !this.raid.externalClock) this.raid.tick(dt);
     if (this.paused) {
       this.ui.update(this, 0);
       return;
     }
+    if (this.raid && !this.raid.externalClock) this.raid.tick(dt);
+    // Raid boss effects follow the encounter's state (solo: right here; co-op: the server's updates).
+    const boss = this.raid?.externalClock ? null : this.raid?.view() ?? this.raidState;
+    if (boss) (this.bossFx ??= new BossPresenter(this)).update(dt, boss);
+    else this.bossFx = null;
     if (this.state === 'cutscene') {
       // Story cutscene (cutscene.js) staged in the arena with the game's sprites and effects.
       this.director?.update(dt);
@@ -1450,6 +1454,7 @@ export class Game {
       ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
     }
     for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
+    drawBossGround(ctx, this.bossFx?.view, this.opponent);
     this.particles.draw(ctx, 'ground');
     const actors = [this.player, this.opponent, this.red, this.gold, ...(this.raidAlly ? [this.raidAlly] : [])].sort((a, b) => a.y - b.y);
     for (const a of actors) a.drawShadow(ctx);
@@ -1472,7 +1477,7 @@ export class Game {
     // Screen-space overlays (HUD, cutscene cards) sit over the arena column.
     ctx.setTransform(k, 0, 0, k, Math.round(v.ox * k), Math.round(v.oy * k));
     this.hud.draw(ctx);
-    drawBoss(ctx, this.raid?.snapshot() ?? this.raidState);
+    drawBossHud(ctx, this.bossFx?.view, this.bossFx);
     if (this.cinematic?.kind === 'ult') this.drawUltCard(ctx, this.cinematic);
     if (this.showcase) this.showcase.draw(ctx);
     if (this.finale) this.finale.draw(ctx);

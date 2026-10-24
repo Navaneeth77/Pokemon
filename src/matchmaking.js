@@ -2,6 +2,7 @@ import { saveSummary } from './mastery.js';
 import { DamageNumber } from './effects.js';
 import { Pokemon } from './pokemon.js';
 import { HIT_REACTIONS } from './reactions.js';
+import { BOSSES, RAID_DIFFICULTY, dressBoss } from './bosses.js';
 import { MOVES } from './moves.js';
 import { SPECIES } from './data/species.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -400,7 +401,13 @@ export class Matchmaker {
         if (this.match?.id === m.id && (this.state === 'loading' || this.state === 'matched')) this.beginBattle();
         return;
       case 'b':
-        if(m.raid) { this.game.raidState=m.raid; const b=this.game.opponent; if(b && b.maxHp!==m.raid.maxHp) b.species={...b.species,hp:m.raid.maxHp}; }
+        if (m.raid) {
+          // Pending hazards only come when they change; keep the last list otherwise.
+          const prev = this.game.raidState;
+          this.game.raidState = { ...m.raid, hz: m.raid.hz ?? prev?.hz ?? [], recv: performance.now() };
+          const b = this.game.opponent;
+          if (b && b.maxHp !== m.raid.maxHp) b.species = { ...b.species, hp: m.raid.maxHp };
+        }
         if(m.ally) this.updateAlly(m.ally);
         // One message per server wake-up: what happened since the last one, then the current state.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
@@ -463,7 +470,16 @@ export class Matchmaker {
     ui.format = g.selection.length;
     g.online = this;
     g.start();
-    if(m.raid){g.showcase=null;g.state='fighting';g.timers=[];for(const p of [g.player,g.opponent]){p.hidden=false;p.appear=0;}g.gold.hidden=true;g.hud.showBanner('LEGENDARY RAID',{life:1.5,size:24,color:'#ffe099'});}
+    if (m.raid) {
+      Object.assign(g, { showcase: null, state: 'fighting', timers: [] });
+      dressBoss(g.opponent, m.raid);
+      for (const p of [g.player, g.opponent]) {
+        p.hidden = false;
+        p.appear = 0;
+      }
+      g.gold.hidden = true;
+      $('#panel .loc').textContent = `CO-OP RAID · ${BOSSES[m.raid]?.name ?? ''} · ${RAID_DIFFICULTY[m.difficulty]?.label ?? ''}`;
+    }
   }
 
   updateAlly(s) {
@@ -880,8 +896,19 @@ export class Matchmaker {
     const delta = r.delta ? ` (${r.delta > 0 ? '+' : ''}${r.delta})` : '';
     const rating = r.record?.rating != null ? `<br><small class="mm-rating">Rating <b>${r.record.rating}</b>${delta}${r.rank ? ` · Rank #${r.rank}` : ''}</small>` : '';
     const rec = r.record ? `${rating}<br><small class="mm-rec">Online record: ${r.record.w}W · ${r.record.l}L${r.record.d ? ` · ${r.record.d}D` : ''}</small>` : '';
+    if (r.raid && r.party) return this.raidResultHtml(r);
     const stats = r.summary ? Object.entries(r.summary.species).map(([id,s])=>`${esc(SPECIES[id]?.name??id)}: ${Math.round(s.damage)} damage · ${s.kos} KOs · ${s.reactions} reactions`).join('<br>') : '';
     return `${title}${who}${esc(why)}${r.raid || this.match?.draftMode ? '<br><small>Unranked · no rating change</small>' : rec}<br><small>${stats}</small>`;
+  }
+
+  // Co-op raid result: who did what, from the server's records.
+  raidResultHtml(r) {
+    const boss = BOSSES[r.raid], total = r.party.reduce((n, p) => n + p.damage, 0) || 1;
+    const title = r.result === 'win' ? `<b class="win">${esc(boss?.name ?? 'Boss')} defeated!</b>` : `<b class="lose">The raid failed…</b>`;
+    const why = { ko: '', 'team-eliminated': 'Every Pokémon on your side fainted.', time: 'Time ran out.', cancelled: 'The raid was cancelled.', 'load-timeout': 'Your partner did not load in time.' }[r.reason] ?? '';
+    const rows = r.party.map((p, i) => `<tr class="${i === r.you ? 'me' : ''}"><td>${esc(p.name)}${i === r.you ? ' <b>(you)</b>' : ''}</td><td>${p.damage.toLocaleString()}</td><td>${Math.round((p.damage / total) * 100)}%</td><td>${p.reactions}</td><td>${p.survived ? 'Standing' : 'Fainted'}</td></tr>`).join('');
+    return `${title}${esc(why)}<br><small>${RAID_DIFFICULTY[r.difficulty]?.label ?? ''} · reached stage ${r.stage}/4 · ${Math.floor(r.time / 60)}:${String(r.time % 60).padStart(2, '0')}</small>
+      <table class="lb-table raid-party"><thead><tr><th>Trainer</th><th>Boss damage</th><th>Share</th><th>Reactions</th><th>End</th></tr></thead><tbody>${rows}</tbody></table><small>Unranked · no rating change</small>`;
   }
 
   // ── Search overlay (over the team-select screen) ──

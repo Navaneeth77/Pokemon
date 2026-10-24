@@ -57,6 +57,7 @@ export class UI {
         // Online, "again" is a rematch in the same room; after a matchmaking battle it queues again.
         const online = game.flow?.online;
         if (game.online?.server) game.online.again();
+        else if (game.raid && !game.raid.externalClock) game.flow.expansion.retryRaid();
         else if (online?.connected) online.toLobby();
         else if (this.online) game.flow?.leaveOnline();
         else game.toSelect();
@@ -764,6 +765,14 @@ export class UI {
     if (this.game.story) {
       if (this.game.story.onResult) this.game.story.onResult(win, winner);
       else this.game.flow.story.onResult(win, winner);
+      return;
+    }
+    if (this.game.raid && !this.game.raid.externalClock) {
+      this.resultText.innerHTML = this.game.flow.expansion.soloRaidResult(win);
+      $('#again-btn').textContent = 'Raid Again';
+      $('#again-btn').classList.remove('hidden');
+      $('#leave-btn').hidden = false;
+      this.resultOverlay.classList.remove('hidden');
       return;
     }
     const who = winner ? `<img class="win-mon" src="${winner.portrait.src}" alt="">${winner.species.name} wins the battle for ${esc(winner.trainer.name)}!` : '';

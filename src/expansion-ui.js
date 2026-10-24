@@ -1,5 +1,5 @@
 import { readMastery, level, MASTERY_THRESHOLDS } from './mastery.js';
-import { BOSSES, BossEncounter } from './bosses.js';
+import { BOSSES, BossEncounter, RAID_DIFFICULTY } from './bosses.js';
 import { HIT_REACTIONS } from './reactions.js';
 import { SPECIES } from './data/species.js';
 import { QUALITY, setQuality, qualityName } from './quality.js';
@@ -21,35 +21,112 @@ export class ExpansionUI {
     if(cancel && this.raidPending) {this.mm.send({t:'raid-cancel'});this.mm.cancel();this.mm.state='idle';this.raidPending=false;}
     if (cancel && this.drafting) { this.mm.send({ t: 'draft-cancel' }); this.mm.cancel(); this.mm.state = 'idle'; this.drafting = false; }
   }
+  // Raid setup: boss, difficulty, team size and how to play (solo, online partner, private room).
   raids() {
-    const el = this.open('LEGENDARY RAIDS', `<p>Telegraphed attacks · three phases · vulnerability windows<br>Bring 3 or 6 Pokémon. A faint sends out your next teammate; no revives.</p><div class="exp-options">${Object.entries(BOSSES).map(([id,b]) => `<button class="px-btn" data-boss="${id}"><img width="40" src="${portrait(id)}" alt="">${b.name}<small>${b.title}</small></button>`).join('')}</div><label>TEAM SIZE <select data-size><option value="3">3 Pokémon</option><option value="6">6 Pokémon</option></select></label><label> RAID FORMAT <select data-kind><option value="solo">Solo (offline)</option><option value="public">Online co-op</option><option value="private">Create private room</option><option value="join">Join private room</option></select></label><input data-code maxlength="6" placeholder="Room code" aria-label="Raid room code"><p class="exp-status">Choose your boss to prepare your team.</p>`);
+    const save = this.flow.save, pick = { difficulty: save.raidDifficulty ?? 'normal', size: save.raidSize ?? 3, kind: 'solo' };
+    const seg = (key, options) => `<div class="exp-seg" data-seg="${key}">${options.map(([v, label]) => `<button class="px-btn small${String(pick[key]) === String(v) ? ' primary' : ''}" data-v="${v}">${label}</button>`).join('')}</div>`;
+    const el = this.open('LEGENDARY RAIDS', `<p>Four stages as its HP falls · telegraphed attacks that break the arena · strike while it's staggered<br>A faint sends out your next teammate; no revives. In co-op, the raid goes on while either of you can fight.</p>
+      <div class="raid-bosses">${Object.entries(BOSSES).map(([id, b]) => `<button class="raid-boss" data-boss="${id}" style="--accent:${b.color}"><img src="${portrait(id)}" alt=""><b>${b.name}</b><small>${b.title}</small><i>${b.stages.join(' → ')}</i></button>`).join('')}</div>
+      <div class="raid-opts"><span>DIFFICULTY</span>${seg('difficulty', Object.entries(RAID_DIFFICULTY).map(([k, d]) => [k, d.label]))}
+      <span>TEAM</span>${seg('size', [[3, '3 POKÉMON'], [6, '6 POKÉMON']])}
+      <span>PLAY</span>${seg('kind', [['solo', 'SOLO'], ['public', 'ONLINE PARTNER'], ['private', 'CREATE ROOM'], ['join', 'JOIN ROOM']])}</div>
+      <input class="raid-code hidden" data-code maxlength="6" placeholder="ROOM CODE" aria-label="Raid room code" autocomplete="off" spellcheck="false">
+      <p class="exp-status">${this.diffNote(pick.difficulty)}</p>`);
+    const status = el.querySelector('.exp-status'), code = el.querySelector('[data-code]');
+    el.querySelectorAll('[data-seg]').forEach(box => box.querySelectorAll('button').forEach(btn => btn.onclick = () => {
+      const key = box.dataset.seg;
+      pick[key] = key === 'size' ? +btn.dataset.v : btn.dataset.v;
+      for (const o of box.querySelectorAll('button')) o.classList.toggle('primary', o === btn);
+      code.classList.toggle('hidden', pick.kind !== 'join');
+      status.textContent = pick.kind === 'join' ? 'Enter the code your friend sees, then pick the same boss.' : this.diffNote(pick.difficulty);
+    }));
     el.querySelectorAll('[data-boss]').forEach(b => b.onclick = () => {
-      const setup = {boss:b.dataset.boss,kind:el.querySelector('[data-kind]').value,code:el.querySelector('[data-code]').value.trim().toUpperCase()};
-      const format=+el.querySelector('[data-size]').value;
-      this.close(false); this.flow.enterQueueSelect(); this.mm.stop();
-      const ui=this.flow.ui; ui.setQueue(null); ui.format=format; ui.raidSetup=setup; ui.setFormat(format); ui.showSelect(0); ui.setVersus(BOSSES[setup.boss].name); document.body.classList.add('raid-setup');
+      const setup = { boss: b.dataset.boss, kind: pick.kind, difficulty: pick.difficulty, code: code.value.trim().toUpperCase() };
+      if (setup.kind === 'join' && !/^[A-F0-9]{6}$/.test(setup.code)) {
+        status.textContent = 'Room codes are 6 characters (letters A–F and digits).';
+        return;
+      }
+      save.raidDifficulty = pick.difficulty;
+      save.raidSize = pick.size;
+      this.flow.persist();
+      this.close(false);
+      this.prepareRaid(setup, pick.size);
     });
   }
+
+  // Team select for a raid (the start button enters the raid instead of a normal battle).
+  prepareRaid(setup, size) {
+    this.flow.enterQueueSelect();
+    this.mm.stop();
+    const ui = this.flow.ui;
+    ui.setQueue(null);
+    ui.format = size;
+    ui.raidSetup = setup;
+    ui.setFormat(size);
+    ui.showSelect(0);
+    ui.setVersus(BOSSES[setup.boss].name);
+    document.body.classList.add('raid-setup');
+  }
+
+  retryRaid() {
+    if (this.lastRaid) this.prepareRaid({ ...this.lastRaid }, this.flow.ui.format);
+    else this.raids();
+  }
+
+  // Solo raid result, from this browser's own battle.
+  soloRaidResult(win) {
+    const g = this.flow.game, enc = g.raid, boss = BOSSES[enc.id], own = Object.values(g.summary?.species.player ?? {});
+    const sum = k => Math.round(own.reduce((n, s) => n + (s[k] ?? 0), 0)), t = Math.round(enc.time);
+    const title = win ? `<b class="win">${boss.name} defeated!</b>` : '<b class="lose">The raid failed…</b>';
+    return `${title}${win ? `${boss.title} falls. ` : 'All of your Pokémon fainted. '}<br><small>${RAID_DIFFICULTY[enc.difficulty].label} · reached stage ${enc.stage}/4 · ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</small>
+      <table class="lb-table raid-party"><thead><tr><th>Boss damage</th><th>Boss HP left</th><th>Reactions</th><th>Faints</th></tr></thead>
+      <tbody><tr class="me"><td>${sum('bossDamage').toLocaleString()}</td><td>${Math.round((enc.boss.hp / enc.boss.maxHp) * 100)}%</td><td>${sum('reactions')}</td><td>${sum('faints')}</td></tr></tbody></table>`;
+  }
+
+  diffNote(k) {
+    const d = RAID_DIFFICULTY[k];
+    return `${d.label}: boss HP ×${d.hp} · damage ×${d.dmg} · ${d.tele > 1 ? 'longer' : d.tele < 1 ? 'shorter' : 'normal'} warnings${d.extra > 0 ? ` · +${d.extra} extra hazards` : ''}`;
+  }
+
   async startRaidTeam(ui) {
-    if(ui.loading) return;
-    ui.loading=true; document.body.classList.remove('raid-setup');
-    const g=this.flow.game, setup=ui.raidSetup;
+    if (ui.loading) return;
+    ui.loading = true;
+    document.body.classList.remove('raid-setup');
+    const g = this.flow.game, setup = ui.raidSetup;
     try {
-      if(setup.kind !== 'solo') {
-        this.raidPending=true; this.mm.state='connecting';
+      if (setup.kind !== 'solo') {
+        this.raidPending = true;
+        this.mm.state = 'connecting';
         this.open('CONNECTING TO RAID', '<p class="exp-status">Waking the match server…</p>');
         await this.mm.connectReady();
-        if(!this.raidPending) return;
-        this.mm.state='raid';
-        this.mm.send({t:'raid-queue',...setup,format:ui.format,team:ui.selection,lead:ui.lead,mega:ui.megaPick});
+        if (!this.raidPending) return;
+        this.mm.state = 'raid';
+        this.mm.send({ t: 'raid-queue', ...setup, format: ui.format, team: ui.selection, lead: ui.lead, mega: ui.megaPick });
         return;
       }
       await g.ensureSprites([...ui.selection, setup.boss]);
-      g.selection=[...ui.selection];g.lead=ui.lead;g.megaPicks={...ui.megaPick};g.opponentSelection=[setup.boss];g.arenaId=BOSSES[setup.boss].arena;g.online=null;g.story=null;
-      ui.raidSetup=null;g.foeTrainer={name:BOSSES[setup.boss].name};g.start();new BossEncounter([g],setup.boss);g.gold.hidden=true;ui.setLocation('LEGENDARY RAID · '+BOSSES[setup.boss].name,ui.format);
-    } catch(err) {this.open('RAID UNAVAILABLE','<p class="exp-status"></p>').querySelector('.exp-status').textContent=err.message;this.raidPending=false;this.mm.state='idle';}
-    finally {ui.loading=false;}
+      Object.assign(g, { selection: [...ui.selection], lead: ui.lead, megaPicks: { ...ui.megaPick }, opponentSelection: [setup.boss], arenaId: BOSSES[setup.boss].arena, online: null, story: null });
+      ui.raidSetup = null;
+      this.lastRaid = setup;
+      g.foeTrainer = { name: BOSSES[setup.boss].name };
+      g.start();
+      new BossEncounter([g], setup.boss, { difficulty: setup.difficulty });
+      // No send-out ceremony: the boss makes its own entrance (see BossEncounter's intro).
+      Object.assign(g, { showcase: null, state: 'fighting', timers: [] });
+      g.player.hidden = false;
+      g.player.appear = 1;
+      g.opponent.hidden = false;
+      g.gold.hidden = true;
+      ui.setLocation(`LEGENDARY RAID · ${BOSSES[setup.boss].name} · ${RAID_DIFFICULTY[setup.difficulty].label}`, ui.format);
+    } catch (err) {
+      this.open('RAID UNAVAILABLE', '<p class="exp-status"></p>').querySelector('.exp-status').textContent = err.message;
+      this.raidPending = false;
+      this.mm.state = 'idle';
+    } finally {
+      ui.loading = false;
+    }
   }
+
   guide() {
     this.open('ELEMENTAL REACTIONS', `<img class="element-crest" src="/art/element-crest.png" alt="Elemental crest"><p>Land two compatible elements within 4 seconds. A reaction consumes the aura. Shields and dodges prevent priming.</p><div class="reaction-grid">${HIT_REACTIONS.map(r => `<article style="--accent:${r.color}"><b>${r.label}</b><span>${r.pair.join(' + ').toUpperCase()}</span><small>${r.cleanse ? 'Clears burn and frost' : r.status ? `Applies ${r.status}, respecting immunity` : r.ground ? 'Clears paralysis and charge' : 'Bonus damage; up to two nearby wet enemies'}</small></article>`).join('')}</div><p>Reaction cooldown: 1.5s. Freeze protection: 6s after thawing. Chains never hit allies. Ground types resist conduction.</p>`);
   }
