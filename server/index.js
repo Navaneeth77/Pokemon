@@ -8,6 +8,9 @@
 //
 //   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated)
 import './shim.js';
+import { resultSummary } from '../src/mastery.js';
+import { RaidRooms } from './raids.js';
+import { DraftRooms } from './drafts.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -57,6 +60,9 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queued'|'match', entry, match, record }
 const queues = { 3: [], 6: [] }; // waiting entries per format, oldest first
 const matches = new Map();
+const MAX_MATCHES = Math.max(1, Math.min(32, Number(process.env.MAX_MATCHES) || 3));
+const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES);
+setInterval(() => drafts.tick(Date.now()), 1000).unref();
 // Online results and ratings (Elo, starting at 1000). Kept in Upstash Redis when
 // UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set, so they survive restarts and redeploys;
 // otherwise in a JSON file (lost on hosts without a persistent disk, such as Render's free plan).
@@ -158,7 +164,7 @@ function presence() {
 }
 
 function send(ws, msg) {
-  if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
+  if (ws?.readyState === 1) { if(ws.bufferedAmount>262144){ws.close(1013,'slow connection');return;} ws.send(JSON.stringify(msg)); }
 }
 
 function sendTo(player, msg) {
@@ -205,6 +211,7 @@ function dequeue(player) {
 function pair(format) {
   const q = queues[format];
   for (let i = 0; i < q.length; i++) {
+    if (matches.size >= MAX_MATCHES) break;
     const a = q[i];
     const j = q.findIndex((b, k) => k > i && b.player.pid !== a.player.pid);
     if (j < 0) continue;
@@ -222,6 +229,7 @@ class Match {
   constructor(a, b) {
     this.id = crypto.randomBytes(6).toString('hex');
     this.format = a.format;
+    this.draftMode = a.draftMode ?? null;
     this.arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
     this.side = { A: a, B: b };
     this.loaded = { A: false, B: false };
@@ -250,7 +258,7 @@ class Match {
     for (const s of ['A', 'B']) {
       const me = this.side[s], foe = this.side[this.other(s)];
       sendTo(me.player, {
-        t: 'matched', id: this.id, you: s, format: this.format, arena: this.arena,
+        t: 'matched', draftMode: this.draftMode, id: this.id, you: s, format: this.format, arena: this.arena,
         me: { team: me.team, lead: me.lead, mega: me.mega },
         foe: { name: foe.player.name, look: foe.player.look, team: foe.team, lead: foe.lead, mega: foe.mega },
       });
@@ -302,7 +310,7 @@ class Match {
     const data = JSON.stringify(msg);
     for (const s of ['A', 'B']) {
       const ws = this.side[s].player.ws;
-      if (ws?.readyState === 1) ws.send(data);
+      if (ws?.readyState === 1) {if(ws.bufferedAmount>262144)ws.close(1013,'slow connection');else ws.send(data);}
     }
   }
 
@@ -421,11 +429,11 @@ class Match {
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
       const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
-      if (!wasLoading) p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
+      if (!wasLoading && !this.draftMode) p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
       p.delta = 0;
     }
     // Ratings (Elo): beating a higher-rated player earns more. A server error changes nothing.
-    if (!wasLoading && reason !== 'error') {
+    if (!wasLoading && !this.draftMode && reason !== 'error') {
       const a = this.side.A.player, b = this.side.B.player;
       const expectA = 1 / (1 + 10 ** ((b.record.rating - a.record.rating) / 400));
       const scoreA = winner == null ? 0.5 : winner === 'A' ? 1 : 0, delta = Math.round(ELO_K * (scoreA - expectA));
@@ -442,7 +450,7 @@ class Match {
         p.match = null;
         p.state = 'idle';
       }
-      sendTo(p, { t: 'end', id: this.id, result, reason, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
+      sendTo(p, { t: 'end', id: this.id, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
     log(`match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
   }
@@ -482,9 +490,14 @@ function snapshot(team, switchCD, ack) {
     mv: p.moving ? 1 : 0, lx: r1(p.lastMove.x), ly: r1(p.lastMove.y), sg: p.stagger > 0 ? 1 : 0,
     ch: p.charging ? [p.charging.id, r1(p.charging.t)] : 0, iv: p.invuln ? 1 : 0, ph: p.phasing ? 1 : 0, hl: p.held ? 1 : 0, ab,
     mu: team.megaUsed ? 1 : 0, sw: r1(switchCD ?? 0), cd: Object.fromEntries(Object.entries(p.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => [k, r1(v)])),
-    q: ack || 0,
+    q: ack || 0, ea: p.elementAura ?? null,
   };
 }
+
+const raids = new RaidRooms({send:sendTo,validate:validTeam,create:(a,b)=>new Match(a,b),
+  register:s=>{matches.set(s.id,s);ensureLoop();},remove:id=>matches.delete(id),snapshot,
+  capacity:()=>raids.sessions.size < Math.max(1, Number(process.env.MAX_RAIDS)||1) && matches.size<MAX_MATCHES});
+setInterval(()=>raids.tick(Date.now()),1000).unref();
 
 function createMatch(a, b) {
   const m = new Match(a, b);
@@ -511,9 +524,11 @@ function onMessage(conn, raw) {
   if (m.t === 'hello') return hello(conn, m);
   const p = conn.player;
   if (!p || p.ws !== conn.ws) return send(conn.ws, { t: 'error', code: 'no-hello', message: 'Say hello first.' });
+  if (raids.handle(p,m)) return;
+  if (drafts.handle(p, m)) return;
   switch (m.t) {
     case 'queue': {
-      if (p.state === 'match') return sendTo(p, { t: 'error', code: 'in-match', message: 'You are already in a match.' });
+      if (p.state === 'match' || p.state === 'draft' || p.state === 'raid') return sendTo(p, { t: 'error', code: 'in-match', message: 'You are already in a match.' });
       const spec = validTeam(m);
       if (!spec) return sendTo(p, { t: 'error', code: 'bad-team', message: 'That team is not valid for this format.' });
       dequeue(p); // queueing again replaces the old entry (one entry per player)
@@ -553,7 +568,7 @@ function hello(conn, m) {
     } else {
       // Their old connection is going away: whatever it held is cleared now, not when it finally closes.
       if (p.state === 'queued') dequeue(p);
-      if (p.match) p.match.leave(p.matchSide, 'disconnect');
+      if (p.match && !p.match.raidSession) p.match.leave(p.matchSide, 'disconnect');
     }
   }
   if (!records.has(pid)) records.set(pid, { name: 'TRAINER', w: 0, l: 0, d: 0, rating: START_RATING });
@@ -564,12 +579,15 @@ function hello(conn, m) {
   p.look = LOOK_IDS.has(m.look) ? m.look : null;
   conn.player = p;
   send(conn.ws, { t: 'welcome', v: PROTOCOL, record: p.record });
+  if(p.match?.raidSession) p.match.raidSession.intro(p);
 }
 
 function onClose(conn) {
   const p = conn.player;
   if (!p || p.ws !== conn.ws) return;
   p.ws = null;
+  raids.leaveWaiting(p);
+  drafts.leave(p);
   if (p.state === 'queued') dequeue(p);
   if (p.match) p.match.leave(p.matchSide, 'disconnect');
   if (p.state === 'idle') players.delete(p.pid);
@@ -620,6 +638,7 @@ setInterval(() => {
         }
       }
     }
+    pair(3); pair(6);
     for (const m of matches.values()) {
       if (m.phase === 'loading' && t - m.created > LOAD_TIMEOUT_MS) m.abort('load-timeout', s => m.loaded[s]);
     }
@@ -657,6 +676,8 @@ function lobbyInfo(pid, fmt) {
 }
 
 const server = http.createServer((req, res) => {
+  const requestOrigin=req.headers.origin;
+  if(requestOrigin && (!ORIGINS.length || ORIGINS.includes(requestOrigin))) res.setHeader('access-control-allow-origin',requestOrigin);
   if (req.url === '/lobby') {
     const origin = req.headers.origin;
     if (origin && (!ORIGINS.length || ORIGINS.includes(origin))) res.setHeader('access-control-allow-origin', origin);
@@ -680,9 +701,9 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
-  if (req.url === '/health') {
+  if (req.url === '/health' || req.url === '/ready') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, keepAwake: !!SELF_URL, load }));
+    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, keepAwake: !!SELF_URL, load }));
     return;
   }
   res.writeHead(404).end();

@@ -2,6 +2,7 @@ import { typeMultiplier } from './data/types.js';
 import { abilityOf, isContact, typesOf } from './data/abilities.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
+import { prepareReaction, resolveReaction } from './elemental.js';
 import { sfx } from './audio.js';
 
 // Real-time battles are short, so type matchups are softened (2× → 1.5×, ½× → 0.7×) and
@@ -77,8 +78,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const power = o.power ?? move.power;
   // Foul Play turns the target's own attack against it.
   const atkSrc = move.foul ? target : attacker;
-  const stats = ((atkSrc.species.atk ?? 1) * buffMult(atkSrc, 'atk') * (atkSrc.buffT > 0 ? 1.3 : 1))
-    / ((target.species.def ?? 1) * buffMult(target, 'def'));
+  const stats = ((move.cat === 'special' ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1)) * buffMult(atkSrc, 'atk') * (atkSrc.buffT > 0 ? 1.3 : 1))
+    / ((move.cat === 'special' ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * buffMult(target, 'def'));
   const auraMult = [attacker, target].reduce((m, mon) => {
     const au = abilityOf(mon).aura;
     return m * (au && au.type === type && !mon.hidden && mon.alive ? au.mult : 1);
@@ -126,6 +127,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.spawn(new FloatText(target.x, head - 10, 'ABSORBED!', '#9fffc8'));
     return false;
   }
+  const reaction = prepareReaction(game, target, type, move, stack, o);
+  if (reaction && !(reaction.id === 'conduct' && defTypes.includes('ground'))) dmg *= 1 + reaction.bonus;
+  if (target.boss && game.raid?.vulnerable > 0) dmg *= 1.3;
   dmg *= (D.takeMult?.(game, target, attacker, move, info) ?? 1);
   if (guard) dmg *= guard.mult;
   dmg = Math.max(1, Math.round(dmg));
@@ -163,6 +167,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Heavy hits and launchers interrupt the foe's attack (never an ultimate).
   const interrupt = !guard && !move.ultimate && (power >= 100 || move.launch) && target.action && !target.action.move.ultimate;
 
+  const actualDamage = Math.min(target.hp, dmg);
   target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
 
   // Launchers start an aerial combo; up to three hits keep a juggled foe up, then it drops.
@@ -251,6 +256,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
     stack.recoiled = true;
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');
   }
+  if (reaction) resolveReaction(game, attacker, target, reaction, dmg, applyHit);
+  game.recordCombat?.('hit', attacker, target, { damage: actualDamage, move: move.id });
   if (o.hitstop) game.hitstop(o.hitstop);
   if (o.shake) game.shake(o.shake);
   if (!target.alive) game.onFaint(target, attacker, move);

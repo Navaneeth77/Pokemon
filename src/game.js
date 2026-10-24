@@ -1,3 +1,6 @@
+import { newSummary, recordCombat } from './mastery.js';
+import { quality, observeFrame } from './quality.js';
+import { drawBoss } from './bosses.js';
 import { Arena, WORLD_W, WORLD_H } from './arena.js';
 import { Pokemon, CHARGE_MAX } from './pokemon.js';
 import { Trainer } from './trainer.js';
@@ -102,7 +105,10 @@ export class Game {
     this.opponent.foe = this.player;
   }
 
+  recordCombat(kind, actor, target, details) { recordCombat(this, kind, actor, target, details); }
+
   reset() {
+    this.summary = newSummary(this);
     this.time = 0;
     this.effects = [];
     this.timers = [];
@@ -128,6 +134,7 @@ export class Game {
 
   // Team selection screen; the lead chosen there is used by start().
   toSelect() {
+    this.raid = null; this.raidState = null; this.raidAlly = null;
     this.online = null;
     this.endPractice();
     this.paused = false;
@@ -139,6 +146,7 @@ export class Game {
 
   // Opening, trainer setup and format screens (flow.js): no battle input, battle overlays hidden.
   toMenu() {
+    this.raid = null; this.raidState = null; this.raidAlly = null;
     this.online = null;
     this.paused = false;
     this.reset();
@@ -173,6 +181,7 @@ export class Game {
 
   // The player's team is whichever three Pokémon were picked on the selection screen.
   start(practice = false) {
+    this.raid = null; this.raidState = null; this.raidAlly = null;
     if (!practice && this.selection.length !== this.ui.format) return;
     initAudio();
     document.activeElement?.blur?.();
@@ -229,6 +238,8 @@ export class Game {
 
   // Online: tells the other player's game what our Pokémon just did.
   netSend(mon, msg) {
+    if (msg.t === 'move') this.recordCombat('move', mon, null, {id:msg.id,ultimate:MOVES[msg.id]?.ultimate});
+    if (msg.t === 'mega' || msg.t === 'switch') this.recordCombat(msg.t, mon);
     if (this.online && !mon.remote) this.online.send({ ...msg, side: mon.side });
   }
 
@@ -267,6 +278,7 @@ export class Game {
   }
 
   release(mon) {
+    this.recordCombat('entered',mon);
     mon.hidden = false;
     mon.appear = 1;
     mon.enteredAt = this.time;
@@ -644,6 +656,7 @@ export class Game {
   // Every ultimate opens with a cutscene: the battle freezes, letterbox bars slide in and the camera
   // pushes in on the user powering up. Then the move plays out across the whole arena.
   startUltCutscene(user, move) {
+    if (this.raid || this.raidState) { user.action = new move.Action(move,user,this); this.hud.callout(user.side,move.name); sfx.megaCharge(); return; }
     this.cinematic = { kind: 'ult', mon: user, move, t: 0, ringT: 0 };
     user.sprite.play('Charge', { loop: true, force: true });
     this.hud.callout(user.side, `${move.name}!`);
@@ -679,6 +692,15 @@ export class Game {
   drawUltCard(ctx, c) {
     const T = ULT_CUT, e = c.t < 0.2 ? ease(c.t / 0.2) : c.t > T - 0.2 ? ease(Math.max(0, (T - c.t) / 0.2)) : 1;
     const bar = 58 * e, [c1, c2] = this.ultColors(c);
+    const seed = c.move.name.split('').reduce((n,ch)=>n+ch.charCodeAt(0),0);
+    ctx.save();ctx.strokeStyle=c1;ctx.globalAlpha=.32*e;ctx.lineWidth=2;
+    const count=quality().particles>300?8:3;
+    for(let i=0;i<count;i++){
+      const a=(i/count)*Math.PI*2+c.t*(seed%2?1:-1),r=35+(seed%23)+c.t*18;
+      const x=c.mon.x+Math.cos(a)*r,y=c.mon.y-c.mon.bodyZ+Math.sin(a)*r*.65;
+      ctx.strokeRect(Math.round(x),Math.round(y),4+(seed+i)%7,4+(seed+i)%7);
+    }
+    ctx.restore();
     const v = this.view;
     ctx.fillStyle = '#05050a';
     ctx.fillRect(-v.ox, -v.oy, v.w, bar + v.oy);
@@ -794,6 +816,11 @@ export class Game {
     const tr = mon.trainer;
     team.megaUsed = true;
     this.netSend(mon, { t: 'mega', c: mon.megaChoice });
+    if (this.raid || this.raidState) {
+      const id=mon.species.mega.includes(mon.megaChoice)?mon.megaChoice:mon.species.mega[0], form=SPECIES[id];
+      mon.megaEvolve(form,this.sprites[form.sprite]);mon.ab={};abilityOf(mon).onEnter?.(this,mon);
+      this.spawn(new MegaAura(mon,1.1));rainbowBurst(this,mon.x,mon.y,mon.bodyZ);this.hud.callout(mon.side,form.name);sfx.megaBurst();return true;
+    }
     this.cinematic = { mon, t: 0, swapped: false };
     tr.setPose('point', 1.7);
     const h = tr.hand();
@@ -916,6 +943,7 @@ export class Game {
     }
     const team = this.teamOf(mon), next = net ? (net.last ? -1 : 0) : team.nextAlive();
     this.netSend(mon, { t: 'faint', i: team.members.indexOf(mon), mv: move?.id, last: next < 0 });
+    this.recordCombat('faint', mon, by);
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
@@ -977,6 +1005,7 @@ export class Game {
 
   update(dt) {
     this.online?.tick(dt);
+    if (this.raid && !this.raid.externalClock) this.raid.tick(dt);
     if (this.paused) {
       this.ui.update(this, 0);
       return;
@@ -995,12 +1024,12 @@ export class Game {
       // Practice never ends: both sides are topped up.
       for (const m of [this.player, this.opponent]) if (m.hp < m.maxHp * 0.35) m.hp = m.maxHp;
     }
-    if (this.hitstopT > 0) {
+    if (this.hitstopT > 0 && !this.raid && !this.raidState) {
       this.hitstopT -= dt;
       this.shakeT -= dt;
       return;
     }
-    if (this.slowT > 0) {
+    if (this.slowT > 0 && !this.raid && !this.raidState) {
       this.slowT -= dt;
       dt *= 0.35;
     }
@@ -1073,7 +1102,7 @@ export class Game {
       p.input.x = p.input.y = 0;
     }
 
-    if (!this.online) this.ai.update(dt, this);
+    if (!this.online && !this.raid) this.ai.update(dt, this);
     const own = this.online?.beforePlayer?.();
     p.update(dt, this);
     if (own) this.online.afterPlayer(dt, own);
@@ -1422,7 +1451,7 @@ export class Game {
     }
     for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
     this.particles.draw(ctx, 'ground');
-    const actors = [this.player, this.opponent, this.red, this.gold].sort((a, b) => a.y - b.y);
+    const actors = [this.player, this.opponent, this.red, this.gold, ...(this.raidAlly ? [this.raidAlly] : [])].sort((a, b) => a.y - b.y);
     for (const a of actors) a.drawShadow(ctx);
     for (const a of actors) a.draw(ctx);
     if (this.state === 'fighting') this.hud.drawTags(ctx);
@@ -1443,6 +1472,7 @@ export class Game {
     // Screen-space overlays (HUD, cutscene cards) sit over the arena column.
     ctx.setTransform(k, 0, 0, k, Math.round(v.ox * k), Math.round(v.oy * k));
     this.hud.draw(ctx);
+    drawBoss(ctx, this.raid?.snapshot() ?? this.raidState);
     if (this.cinematic?.kind === 'ult') this.drawUltCard(ctx, this.cinematic);
     if (this.showcase) this.showcase.draw(ctx);
     if (this.finale) this.finale.draw(ctx);
@@ -1473,7 +1503,7 @@ export class Game {
     document.body.classList.toggle('with-panel', panel > 0);
     // Whole-number render scale; capped (lower on phones) since extra pixels cost fill rate.
     const cssScale = vh / h;
-    this.k = Math.max(1, Math.min(touch ? 2 : 3, Math.round(cssScale * (devicePixelRatio || 1))));
+    this.k = Math.max(1, Math.min(quality().ratio, touch ? 2 : 3, Math.round(cssScale * (devicePixelRatio || 1))));
     this.canvas.width = Math.ceil(w * this.k);
     this.canvas.height = Math.ceil(h * this.k);
     this.particles.max = touch ? 450 : 1200;
@@ -1488,8 +1518,13 @@ export class Game {
       // a negative step would run every timer backwards, so clamp it.
       const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
+      if (document.hidden) return;
+      const start = performance.now();
       this.update(dt);
+      const updated = performance.now();
       this.render();
+      if (observeFrame(performance.now()-start)) this.resize();
+      if (this.profile) { this.profile.push([dt * 1000, updated-start, performance.now()-updated]); if(this.profile.length>3600)this.profile.shift(); }
     };
     requestAnimationFrame(frame);
   }

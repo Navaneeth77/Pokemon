@@ -1,3 +1,7 @@
+import { saveSummary } from './mastery.js';
+import { DamageNumber } from './effects.js';
+import { Pokemon } from './pokemon.js';
+import { HIT_REACTIONS } from './reactions.js';
 import { MOVES } from './moves.js';
 import { SPECIES } from './data/species.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -102,7 +106,7 @@ export class Matchmaker {
     try {
       const here = onQueue || this.busy;
       const body = JSON.stringify(here ? { pid: this.pid, fmt: this.spec?.format && this.busy ? this.spec.format : f.ui.format } : { pid: this.pid });
-      const res = await fetch(`${this.httpUrl}/lobby`, { method: 'POST', body, headers: { 'content-type': 'text/plain' }, cache: 'no-store' });
+      const res = await fetch(`${this.httpUrl}/lobby`, { method: 'POST', body, headers: { 'content-type': 'text/plain' }, cache: 'no-store', signal: AbortSignal.timeout(8000) });
       this.lobby = await res.json();
       f.lobbyChanged?.();
       f.ui.lobbyChanged?.();
@@ -164,6 +168,7 @@ export class Matchmaker {
       let ws;
       try { ws = new WebSocket(this.url); } catch (err) { return reject(err); }
       this.ws = ws;
+      this.cancelConnect = () => { clearTimeout(timer); reject(Object.assign(new Error('cancelled'), { code: 'cancelled' })); };
       this.lastSeen = performance.now();
       const timer = setTimeout(() => {
         reject(Object.assign(new Error('timeout'), { code: 'timeout' }));
@@ -208,6 +213,8 @@ export class Matchmaker {
 
   // Closes the socket without treating it as a lost connection.
   drop() {
+    this.cancelConnect?.();
+    this.cancelConnect = null;
     const ws = this.ws;
     this.ws = null;
     this.welcomed = false;
@@ -234,6 +241,10 @@ export class Matchmaker {
   }
 
   onClosed() {
+    if(this.match?.raid && this.state==='battle'){
+      this.state='connecting';this.game.paused=true;this.game.hud.callout('player','RECONNECTING · 15s GRACE');
+      this.connectReady().catch(()=>{this.game.paused=false;this.result={result:'draw',reason:'lost'};this.state='result';this.stopBattle();});return;
+    }
     if (this.state === 'connecting') return; // find() reports a connection that never opened
     if (this.busy) this.fail('Lost connection to the match server.', true);
     else if (this.state === 'battle') {
@@ -241,6 +252,26 @@ export class Matchmaker {
       this.result = { result: 'loss', reason: 'lost', record: this.record };
       this.stopBattle();
     }
+  }
+
+  async connectReady() {
+    if (!this.url) throw new Error('No match server configured');
+    const epoch = this.connectEpoch = (this.connectEpoch ?? 0) + 1;
+    const until = Date.now() + WAKE_WAIT_MS;
+    for (let attempt = 0; Date.now() < until; attempt++) {
+      if (epoch !== this.connectEpoch) throw new Error('cancelled');
+      try {
+        const res = await fetch(`${this.httpUrl}/ready`, { cache: 'no-store', signal: AbortSignal.timeout(6000) });
+        if (!res.ok || !(await res.json()).ready) throw new Error('not ready');
+        if (epoch !== this.connectEpoch) throw new Error('cancelled');
+        await this.connect();
+        return;
+      } catch (err) {
+        if (epoch !== this.connectEpoch || ['duplicate', 'version'].includes(err.code)) throw err;
+        await new Promise(resolve => { this.retryResolve = resolve; this.retryTimer = setTimeout(resolve, Math.min(8000, 500 * 2 ** attempt) * (0.8 + Math.random() * 0.4)); });
+      }
+    }
+    throw new Error('Server startup timed out');
   }
 
   // ── Queue ──
@@ -267,7 +298,7 @@ export class Matchmaker {
     }, 3500);
     for (;;) {
       try {
-        await this.connect();
+        await this.connectReady();
         break;
       } catch (err) {
         if (this.state !== 'connecting') return;
@@ -283,9 +314,13 @@ export class Matchmaker {
   }
 
   cancel() {
+    this.connectEpoch = (this.connectEpoch ?? 0) + 1;
+    clearTimeout(this.retryTimer); this.retryResolve?.();
+    clearTimeout(this.wakeNote);
     if (this.state === 'searching' || this.state === 'connecting') {
       this.send({ t: 'cancel' });
       this.setState('idle');
+      this.drop();
       sfx.denied?.();
     }
   }
@@ -296,6 +331,7 @@ export class Matchmaker {
 
   // "Find New Match" after a result: back to team select and straight into the queue with the same team.
   again() {
+    if(this.match?.raid || this.match?.draftMode){const raid=this.match.raid;this.stop();this.flow.showTitleMenu();if(raid)this.flow.expansion.raids();else this.flow.expansion.drafts();return;}
     const spec = this.spec;
     clearTimeout(this.koTimer);
     this.match = null;
@@ -307,8 +343,13 @@ export class Matchmaker {
 
   // Leaves whatever is going on (title menu, another mode). A running match is forfeited.
   stop() {
+    this.connectEpoch = (this.connectEpoch ?? 0) + 1;
+    clearTimeout(this.retryTimer); this.retryResolve?.();
+    clearTimeout(this.wakeNote);
     if (this.state === 'searching' || this.state === 'connecting') this.send({ t: 'cancel' });
     if (this.match && (this.state === 'battle' || this.state === 'matched' || this.state === 'loading')) this.send({ t: 'leave', id: this.match.id });
+    this.cancelConnect?.();
+    this.cancelConnect = null;
     const ws = this.ws;
     this.ws = null;
     this.welcomed = false;
@@ -323,6 +364,7 @@ export class Matchmaker {
   }
 
   onMessage(m) {
+    if (this.flow.expansion?.onMessage(m)) return;
     switch (m.t) {
       case 'pong': {
         // Round-trip time: the median of the last few, so one slow reply doesn't throw it off.
@@ -358,6 +400,8 @@ export class Matchmaker {
         if (this.match?.id === m.id && (this.state === 'loading' || this.state === 'matched')) this.beginBattle();
         return;
       case 'b':
+        if(m.raid) { this.game.raidState=m.raid; const b=this.game.opponent; if(b && b.maxHp!==m.raid.maxHp) b.species={...b.species,hp:m.raid.maxHp}; }
+        if(m.ally) this.updateAlly(m.ally);
         // One message per server wake-up: what happened since the last one, then the current state.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
         if (Array.isArray(m.e)) for (const e of m.e) if (e) this.events.push(e);
@@ -385,7 +429,7 @@ export class Matchmaker {
     this.setState('matched');
     sfx.megaBurst?.();
     try {
-      await this.game.ensureSprites([...m.me.team, ...m.foe.team]);
+      await this.game.ensureSprites([...m.me.team, ...m.foe.team, ...(m.allyTeam ?? [])]);
     } catch (err) {
       console.error(err);
       if (this.match === m) this.fail('Could not load the battle. Check your connection and try again.', true);
@@ -400,6 +444,7 @@ export class Matchmaker {
   // ── Battle ──
   beginBattle() {
     const g = this.game, m = this.match, ui = this.flow.ui;
+    this.flow.show(null); this.flow.opening.stop(); this.flow.screen='battle'; document.querySelector('#intro').classList.add('hidden');
     g.selection = [...m.me.team];
     g.lead = m.me.lead;
     g.megaPicks = { ...m.me.mega };
@@ -418,6 +463,14 @@ export class Matchmaker {
     ui.format = g.selection.length;
     g.online = this;
     g.start();
+    if(m.raid){g.showcase=null;g.state='fighting';g.timers=[];for(const p of [g.player,g.opponent]){p.hidden=false;p.appear=0;}g.gold.hidden=true;g.hud.showBanner('LEGENDARY RAID',{life:1.5,size:24,color:'#ffe099'});}
+  }
+
+  updateAlly(s) {
+    const g=this.game,sp=SPECIES[s.species];if(!sp || !g.sprites[sp.sprite])return;
+    if(g.raidAlly?.species.id!==sp.id){g.raidAlly=new Pokemon(sp,g.sprites[sp.sprite],'player');g.raidAlly.reset(s.x,s.y,s.dir);g.raidAlly.remote=true;}
+    const a=g.raidAlly;Object.assign(a,{x:s.x,y:s.y,dir:s.dir,hp:s.hp,hidden:s.hidden||s.eliminated});a.sprite.dir=s.dir;a.sprite.update(1/30);
+    if(s.disconnected)g.hud.callout('player','PARTNER DISCONNECTED · 15s GRACE');
   }
 
   begin() {
@@ -559,6 +612,11 @@ export class Matchmaker {
         const m = team.members[e.i] ?? mon;
         m.hp = 0;
         g.onFaint(m, foe, MOVES[e.mv], e);
+      } else if (e.t === 'boss-hit') {
+        g.spawn(new DamageNumber(e.x,e.y-e.z,e.damage,{color:'#ffb080',size:18}));mon.flash=1;
+      } else if (e.t === 'reaction') {
+        const r = HIT_REACTIONS.find(r => r.id === e.id);
+        if (r) { g.reactFx(this.fx(e.x), this.fy(e.y), e.z, r); g.hud.callout(loc, r.label); }
       } else if (e.t === 'cancel') {
         // Only the attack the server cut short (not a newer one we have already started).
         if (!e.id || mon.action?.move.id === e.id) mon.cancelAction();
@@ -659,6 +717,7 @@ export class Matchmaker {
     if (mon.ult < 100 && s.u >= 100) g.onUltReady(mon);
     mon.ult = s.u;
     mon.status = s.st ?? {};
+    mon.elementAura = s.ea ?? null;
     mon.buffs = s.bf ?? {};
     mon.frozen = s.fr;
     mon.shield = s.sh;
@@ -769,6 +828,7 @@ export class Matchmaker {
 
   // ── Result: always the server's ──
   onEnd(m) {
+    if(m.summary) saveSummary({...m.summary,id:m.id,result:m.result,verified:true});
     this.result = m;
     this.record = m.record;
     if (this.state !== 'battle') {
@@ -820,7 +880,8 @@ export class Matchmaker {
     const delta = r.delta ? ` (${r.delta > 0 ? '+' : ''}${r.delta})` : '';
     const rating = r.record?.rating != null ? `<br><small class="mm-rating">Rating <b>${r.record.rating}</b>${delta}${r.rank ? ` · Rank #${r.rank}` : ''}</small>` : '';
     const rec = r.record ? `${rating}<br><small class="mm-rec">Online record: ${r.record.w}W · ${r.record.l}L${r.record.d ? ` · ${r.record.d}D` : ''}</small>` : '';
-    return `${title}${who}${esc(why)}${rec}`;
+    const stats = r.summary ? Object.entries(r.summary.species).map(([id,s])=>`${esc(SPECIES[id]?.name??id)}: ${Math.round(s.damage)} damage · ${s.kos} KOs · ${s.reactions} reactions`).join('<br>') : '';
+    return `${title}${who}${esc(why)}${r.raid || this.match?.draftMode ? '<br><small>Unranked · no rating change</small>' : rec}<br><small>${stats}</small>`;
   }
 
   // ── Search overlay (over the team-select screen) ──

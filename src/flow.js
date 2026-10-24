@@ -1,3 +1,4 @@
+import { ExpansionUI } from './expansion-ui.js';
 import { Opening, GAME_TITLE } from './opening.js';
 import { AnimatedSprite } from './sprite.js';
 import { LOOKS, drawBust, backPalette, lookById } from './trainers.js';
@@ -37,6 +38,7 @@ export class Flow {
     this.tutorial = new Tutorial(game, skipped => this.endTutorial(skipped));
     this.online = new Online(game, this);
     this.mm = new Matchmaker(game, this);
+    this.expansion = new ExpansionUI(this);
     // Invite links (?room=CODE) jump straight into that room after the title screen.
     this.pendingRoom = cleanCode(new URLSearchParams(location.search).get('room')) || null;
     if (this.pendingRoom) history.replaceState(null, '', location.pathname);
@@ -115,6 +117,7 @@ export class Flow {
 
   // ── Title menu (returning players) ──
   showTitleMenu() {
+    this.ui.raidSetup = null; document.body.classList.remove('raid-setup');
     $('#intro').classList.remove('hidden');
     if (!this.opening.running) {
       this.opening.start();
@@ -125,6 +128,11 @@ export class Flow {
       ['BOT BATTLES', () => this.showFormat(), 'Easy · Medium · Hard'],
       ['ONLINE BATTLES', () => this.enterQueueSelect(), this.onlineSub()],
       ['FRIEND ROOM', () => this.showOnline('home', '', 'title')],
+      ['LEGENDARY RAIDS', () => this.expansion.raids(), 'Rayquaza · Mewtwo · Lugia'],
+      ['DRAFT BATTLES', () => this.expansion.drafts(), 'Snake · Blind trade · Online'],
+      ['POKÉMON MASTERY', () => this.expansion.mastery(), 'Records · Levels · Match history'],
+      ['ELEMENTAL GUIDE', () => this.expansion.guide()],
+      ['EFFECTS QUALITY', () => this.expansion.settings()],
       ['MY TEAMS', () => this.showTeams(), 'Build & save your teams'],
       ['EDIT TRAINER', () => this.showTrainer()],
       ['TUTORIAL', () => this.startTutorial()],
@@ -387,7 +395,7 @@ export class Flow {
       <div class="dm-head"><span class="dm-no">#${String(no).padStart(3, '0')}</span><b>${sp.name}</b><span class="cls c-${sp.class}">${CLASS_LABEL[sp.class]}</span>
         <span class="tp">${sp.types.map(t => `<i style="background:${TYPE_COLORS[t][1]}">${t}</i>`).join('')}</span></div>
       <div class="dm-body">
-        <div class="dm-stats">${stat('HP', sp.hp, 1900)}${stat('SPD', sp.speed, 130)}${stat('ATK', Math.round(sp.atk * 100), 150)}${stat('DEF', Math.round(sp.def * 100), 140)}</div>
+        <div class="dm-stats">${stat('HP', sp.hp, 1900)}${stat('SPD', sp.speed, 130)}${stat('ATK', Math.round(sp.atk * 100), 150)}${stat('DEF', Math.round(sp.def * 100), 140)}${stat('SP.ATK', Math.round((sp.spa??sp.atk)*100),180)}${stat('SP.DEF', Math.round((sp.spdef??sp.def)*100),180)}</div>
         <div class="dm-ability"><span>ABILITY</span><b>${ab.name}</b><p>${ab.desc}</p></div>
         <h3>MOVES</h3><ul class="dm-moves">${sp.moves.map(move).join('')}${move(sp.ultimate)}</ul>${megas}
       </div></div>`;

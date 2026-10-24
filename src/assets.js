@@ -5,13 +5,16 @@ export const TICK = 1 / 60;
 // Only the animations the game plays are loaded (plus the sheets they are copies of).
 export const USED = new Set(['Idle', 'Walk', 'Attack', 'Strike', 'Shoot', 'SpAttack', 'Swing', 'Charge', 'Hurt', 'Faint', 'Hop', 'RearUp', 'Rotate', 'Double', 'Roar', 'Launch', 'Pose']);
 
+const imageCache = new Map();
 export function loadImage(src) {
-  return new Promise((resolve, reject) => {
+  if(imageCache.has(src))return imageCache.get(src);
+  const pending = new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
+    img.onload = async () => { try { await img.decode?.(); } catch {} resolve(img); };
     img.onerror = () => reject(new Error(`Failed to load ${src}`));
     img.src = src;
-  });
+  }).catch(err=>{imageCache.delete(src);throw err;});
+  imageCache.set(src,pending);return pending;
 }
 
 function parseAnimData(xml) {
@@ -80,8 +83,12 @@ export async function addExtraAnims(id, set) {
   } catch { /* extras are optional */ }
 }
 
+const spriteCache = new Map();
 export async function loadSpecies(ids) {
-  const sets = await Promise.all(ids.map(loadSpriteSet));
+  const sets = await Promise.all(ids.map(id=>{
+    if(!spriteCache.has(id))spriteCache.set(id,loadSpriteSet(id).catch(err=>{spriteCache.delete(id);throw err;}));
+    return spriteCache.get(id);
+  }));
   return Object.fromEntries(ids.map((id, i) => [id, sets[i]]));
 }
 

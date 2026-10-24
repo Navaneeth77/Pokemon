@@ -1,3 +1,4 @@
+import { quality } from './quality.js';
 import { outlinedText, rainbowRing, megaSymbol } from './draw.js';
 import { blit } from './sprite.js';
 
@@ -28,7 +29,7 @@ export class ParticleSystem {
 
   // Dead particles are recycled to avoid garbage-collection hitches during heavy effects.
   spawn(p) {
-    if (this.list.length > (this.max ?? 1200)) return;
+    if (this.list.length >= Math.min(this.max ?? quality().particles, quality().particles)) return;
     const q = Object.assign(this.pool.pop() ?? {}, PARTICLE_DEFAULTS, p);
     q.age = 0;
     this.list.push(q);

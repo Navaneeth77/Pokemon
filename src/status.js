@@ -41,7 +41,7 @@ export function applyStatus(game, mon, name, { dur, source } = {}) {
     game.abilityPop(mon, 'Bounced it back!');
     return applyStatus(game, source, name, { dur });
   }
-  const d = (dur ?? S.dur) * (ab.statusMult ?? 1);
+  const d = (dur ?? S.dur) * (ab.statusMult ?? 1) * (mon.boss ? 0.3 : 1);
   if (name === 'freeze') {
     mon.freeze(d);
     iceShatter(game, mon.x, mon.y, mon.bodyZ);
@@ -113,6 +113,7 @@ export const statusSpeed = mon => (mon.status.slow > 0 ? 0.6 : 1) * (mon.status.
 
 export function statusPills(mon) {
   const out = [];
+  if (mon.elementAura?.type === 'water') out.push(['WET', '#71ceff']);
   if (mon.frozen > 0) out.push(['FRZ', STATUS.freeze.color]);
   for (const name of TIMED) if (mon.status[name] > 0) out.push([STATUS[name].label, STATUS[name].color]);
   return out;

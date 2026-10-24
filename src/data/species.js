@@ -8,6 +8,8 @@
 import { KANTO_NEW, KANTO_EXISTING, KANTO_MEGAS, TYPE_ULT } from './kanto.js';
 import { DIMS } from './dims.js';
 
+import { MEGA_STATS } from './mega-stats.js';
+
 const BASE = { atk: 1, def: 1, weight: 1, class: 'regular' };
 
 function mon(id, name, types, cls, [hp, speed, atk, def, weight], moves, ultimate, ability, extra = {}) {
@@ -176,6 +178,17 @@ for (const [baseId, id, name, o] of MEGAS) {
   const own = o.sprite && o.sprite !== base.sprite;
   const dims = own ? { radius: undefined, shadow: undefined, mouth: undefined, bodyZ: undefined, headZ: undefined } : {};
   SPECIES[id] = { ...base, ...dims, id, name, megaOf: baseId, mega: null, faintAnim: own ? null : base.faintAnim, ...o, sprite: o.sprite ?? base.sprite };
+  const verified = MEGA_STATS[id];
+  if (verified) {
+    const { base: b, form: f } = verified;
+    base.baseStats = b;
+    Object.assign(SPECIES[id], {
+      baseStats: f, types: verified.types, hp: base.hp,
+      atk: base.atk * f.atk / b.atk, def: base.def * f.def / b.def,
+      spa: base.atk * f.spa / b.spa, spdef: base.def * f.spd / b.spd,
+      speed: base.speed * f.spe / b.spe,
+    });
+  }
 }
 
 // Sizes for species without hand-tuned dimensions (measured from their sprites, see dims.js).

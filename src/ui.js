@@ -1,3 +1,4 @@
+import { resultSummary, saveSummary } from './mastery.js';
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
 import { SPECIES, ROSTER, OPPONENT_TEAM, CLASS_LABEL } from './data/species.js';
@@ -87,6 +88,7 @@ export class UI {
   async startBattle() {
     if (this.selection.length !== this.format || this.loading) return;
     if (this.builder) return this.saveBuilder();
+    if (this.raidSetup) return this.game.flow.expansion.startRaidTeam(this);
     const btn = $('#start-btn');
     this.game.flow?.enterFullscreen();
     if (this.online) {
@@ -232,6 +234,7 @@ export class UI {
 
   // The bot fields three random, distinct Pokémon; rolled again for every new battle.
   rollFoes() {
+    if(this.raidSetup){this.foes=[this.raidSetup.boss];$('.foe > span').textContent='Legendary boss';$('#foe-team').innerHTML=`<img src="${portrait(SPECIES[this.raidSetup.boss])}" alt="Boss">`;return;}
     if (this.story) {
       // Story: the Gym Leader's (or Elite Four's / Champion's) own team.
       this.foes = [...this.story.foes];
@@ -348,7 +351,7 @@ export class UI {
     return `
       <div class="mi-head"><img src="${portrait(s)}" alt=""><div><b>${s.name}</b> <span class="cls c-${s.class}">${CLASS_LABEL[s.class]}</span>
         <div class="tp">${typeChips(s.types)}</div></div></div>
-      <div class="stats">${stat('HP', s.hp, 1900)}${stat('SPD', s.speed, 130)}${stat('ATK', Math.round(s.atk * 100), 150)}${stat('DEF', Math.round(s.def * 100), 140)}</div>
+      <div class="stats">${stat('HP', s.hp, 1900)}${stat('SPD', s.speed, 130)}${stat('ATK', Math.round(s.atk * 100), 150)}${stat('DEF', Math.round(s.def * 100), 140)}${stat('SP.ATK', Math.round((s.spa??s.atk)*100),180)}${stat('SP.DEF', Math.round((s.spdef??s.def)*100),180)}</div>
       <div class="abil"><u>${ab.name}</u> — ${esc(ab.desc)}</div>
       <ul class="mv">${s.moves.map(moveLine).join('')}${moveLine(s.ultimate)}</ul>${megas}`;
   }
@@ -652,6 +655,7 @@ export class UI {
     const start = $('#start-btn');
     start.disabled = !full;
     start.textContent = full ? `Start ${this.format}v${this.format} battle ▶` : `Pick ${this.format - this.selection.length} more`;
+    if (this.raidSetup && full) start.textContent = 'ENTER LEGENDARY RAID ▶';
     if (this.story && full) start.textContent = `Battle ${this.story.stage.name} ▶`;
     if (this.builder) start.textContent = full ? '✓ Save team' : `Pick ${this.format - this.selection.length} more`;
     if (this.queue) {
@@ -745,6 +749,7 @@ export class UI {
   }
 
   showResult(win, winner) {
+    if (!this.game.online && !this.game.practice) saveSummary(resultSummary(this.game, 'player', {result:win?'win':'loss'}));
     if (this.game.online?.server) {
       // Matchmaking: the match server's verdict, whatever this screen saw.
       this.resultText.innerHTML = this.game.online.resultHtml(winner);

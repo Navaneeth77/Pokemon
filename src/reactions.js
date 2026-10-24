@@ -20,3 +20,26 @@ const RULES = [
 export function reactionBetween(a, b) {
   return RULES.find(r => (r.win === a && r.lose === b) || (r.win === b && r.lose === a)) ?? null;
 }
+
+// Hit reactions are separate from projectile clashes. One aura is consumed per reaction.
+export const HIT_REACTIONS = [
+  { id: 'freeze', pair: ['water', 'ice'], label: 'FLASH FREEZE', fx: 'frost', color: '#bfefff', bonus: 0.08, status: 'freeze', duration: 1.6 },
+  { id: 'conduct', pair: ['water', 'electric'], label: 'CONDUCTION', fx: 'shock', color: '#fff27a', bonus: 0.18, radius: 90, chains: 2 },
+  { id: 'wildfire', pair: ['fire', 'grass'], label: 'WILDFIRE', fx: 'ember', color: '#ff8a3d', bonus: 0.12, status: 'burn', duration: 6 },
+  { id: 'melt', pair: ['fire', 'ice'], label: 'MELT', fx: 'steam', color: '#cdefff', bonus: 0.08, cleanse: true },
+  { id: 'steam', pair: ['water', 'fire'], label: 'STEAM', fx: 'steam', color: '#dceeff', bonus: 0, cleanse: true },
+  { id: 'ground', pair: ['ground', 'electric'], label: 'GROUNDED', fx: 'dust', color: '#d8b878', bonus: 0, ground: true },
+  { id: 'fan', pair: ['fire', 'flying'], label: 'FANNED FLAMES', fx: 'ember', color: '#ffb070', bonus: 0.08, status: 'burn', duration: 4.5, radius: 65, chains: 1 },
+];
+export const AURA_WINDOW = 4;
+export function hitReaction(target, type, now, move) {
+  const aura = target.elementAura;
+  if (!aura || aura.until <= now || (target.reactionUntil ?? 0) > now) return null;
+  const rule = HIT_REACTIONS.find(r => r.pair.includes(aura.type) && r.pair.includes(type) && aura.type !== type);
+  // Contact Flying moves are not wind attacks.
+  if (!rule || (rule.id === 'fan' && type === 'flying' && move.cat !== 'special')) return null;
+  return rule;
+}
+export function primeElement(target, type, now) {
+  if (['water', 'ice', 'electric', 'fire', 'grass', 'ground'].includes(type)) target.elementAura = { type, until: now + AURA_WINDOW };
+}

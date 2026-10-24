@@ -29,7 +29,7 @@ export class Pokemon {
   get maxHp() { return this.species.hp; }
   get radius() { return this.species.radius; }
   get alive() { return this.hp > 0; }
-  get isMega() { return this.species !== this.baseSpecies; }
+  get isMega() { return this.species.megaOf === this.baseSpecies.id; }
   // Heights of the body centre and head above the ground, including flight altitude.
   get bodyZ() { return this.species.bodyZ + this.lift; }
   get headZ() { return this.species.headZ + this.lift; }
@@ -57,6 +57,7 @@ export class Pokemon {
     Object.assign(this, {
       x, y, z: 0, vx: 0, vy: 0, dir,
       shownHp: this.hp, trailHp: this.hp, trailDelay: 0,
+      elementAura: null, reactionUntil: 0, reactionComboUntil: 0, reactionCount: 0,
       action: null, cooldowns: {}, busy: 0, root: 0, stagger: 0, frozen: 0, status: this.status ?? {}, sGuard: {}, buffs: {},
       combo: { n: 0, uses: 0, t: 0, chain: 0, lastRole: -1, foe: null }, chainT: 0, chainRole: -1, comboHits: 0, comboTimer: 0, escapeT: 0,
       ab: {}, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
@@ -130,7 +131,9 @@ export class Pokemon {
   }
 
   megaEvolve(species, spriteSet) {
+    const damageTaken = this.maxHp - this.hp;
     this.species = species;
+    this.hp = Math.max(0, this.maxHp - damageTaken);
     this.sprite.set = spriteSet;
     this.portrait = spriteSet.portrait;
     this.sprite.play(this.idleAnim(), { force: true });
@@ -203,7 +206,7 @@ export class Pokemon {
 
   faint() {
     this.cancelAction();
-    Object.assign(this, { fainted: true, faintT: 0, frozen: 0, status: {}, buffs: {}, charging: null, held: false });
+    Object.assign(this, { elementAura: null, fainted: true, faintT: 0, frozen: 0, status: {}, buffs: {}, charging: null, held: false });
     this.sprite.play(this.species.faintAnim ?? 'Hurt', { loop: false, force: true, speed: 0.55 });
   }
 
@@ -237,6 +240,7 @@ export class Pokemon {
   }
 
   update(dt, game) {
+    if (this.elementAura && this.elementAura.until <= game.time) this.elementAura = null;
     if (this.hidden) return;
     if (this.recallT > 0) {
       this.recallT += dt;
