@@ -1,9 +1,11 @@
 import { readMastery, level, MASTERY_THRESHOLDS, BADGES, earnedBadges, profileStats, setTitle } from './mastery.js';
 import { MOVES } from './moves.js';
+import { ARENAS } from './arena.js';
 import { BOSSES, BossEncounter, RAID_DIFFICULTY } from './bosses.js';
 import { HIT_REACTIONS } from './reactions.js';
 import { SPECIES } from './data/species.js';
 import { QUALITY, setQuality, qualityName } from './quality.js';
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
 export class ExpansionUI {
   constructor(flow) { this.flow = flow; this.mm = flow.mm; this.timer = null; }
@@ -151,7 +153,7 @@ export class ExpansionUI {
     const badges = BADGES.map(b => `<button class="badge${earned.has(b.id) ? ' on' : ''}${data.title === b.id ? ' worn' : ''}" data-title="${b.id}" ${earned.has(b.id) ? '' : 'disabled'} title="${b.desc}"><b>${b.name}</b><small>${b.desc}</small></button>`).join('');
     const el = this.open('POKÉMON MASTERY', `<p class="exp-note">Saved in this browser only: clearing browser data or switching devices starts over. Mastery and badges never change battle stats.</p>
       <h3>TRAINER PROFILE</h3>
-      <div class="profile-grid">${stat('Battles', stats.battles)}${stat('Win rate', `${stats.rate}%`)}${stat('Wins', stats.wins)}${stat('Best streak', stats.bestStreak)}${stat('Favourite', name(stats.favorite))}${stat('Top mastery', name(stats.top))}${stat('Favourite arena', stats.arena ?? '—')}${stat('Reactions', stats.reactions)}${stat('Boss damage', Math.round(stats.bossDamage).toLocaleString())}${stat('Top moves', stats.moves.map(id => MOVES[id]?.name ?? id).join(', ') || '—')}</div>
+      <div class="profile-grid">${stat('Battles', stats.battles)}${stat('Win rate', `${stats.rate}%`)}${stat('Wins', stats.wins)}${stat('Best streak', stats.bestStreak)}${stat('Favourite', name(stats.favorite))}${stat('Top mastery', name(stats.top))}${stat('Favourite arena', ARENAS.find(a => a.id === stats.arena)?.name ?? stats.arena ?? '—')}${stat('Reactions', stats.reactions)}${stat('Boss damage', Math.round(stats.bossDamage).toLocaleString())}${stat('Top moves', stats.moves.map(id => MOVES[id]?.name ?? id).join(', ') || '—')}</div>
       <h3>BADGES · ${earned.size}/${BADGES.length}</h3><p class="exp-note">Tap an earned badge to wear it as your title.</p><div class="badge-grid">${badges}</div>
       ${detailHtml}
       <h3>POKÉMON</h3><div class="exp-pool">${rows.map(([id, r]) => `<button data-species="${id}" class="mastery-level-${Math.min(3, level(r.xp))}${id === selected ? ' on' : ''}"><div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${name(id)}</b><small>Level ${level(r.xp)} · ${r.wins}W</small></div></button>`).join('') || '<p>Finish a battle to start your mastery journey.</p>'}</div>
@@ -190,13 +192,49 @@ export class ExpansionUI {
     if (m.t === 'draft-waiting') { if (this.el) this.el.querySelector('.exp-status').textContent = 'Finding a compatible opponent… Cancel anytime.'; return true; }
     if (m.t === 'draft-cancelled') { this.drafting = false; this.mm.state = 'idle'; this.open('DRAFT ENDED', `<p class="exp-status"></p>`).querySelector('.exp-status').textContent = m.message; return true; }
     if (m.t !== 'draft-state') return true;
-    this.drafting = true; this.mm.state = 'draft'; this.draft = m;
-    const mine = m.you, canPick = m.phase === 'picking' && (m.mode === 'trade' ? !m.chosen : m.turn === mine);
-    const card = (id, origin = '') => `<div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${SPECIES[id].name}</b><small>${origin}</small></div>`;
-    const el = this.open(m.mode === 'snake' ? 'SHARED-POOL SNAKE' : `BLIND TRADE · ROUND ${Math.min(3, m.round + 1)}`, `<p class="exp-clock" role="status"></p><p>${m.phase === 'confirm' ? 'Final teams — confirm to battle (auto-start after timeout).' : m.phase === 'reveal' ? 'Both choices revealed together!' : canPick ? 'Your choice. Tap a Pokémon.' : 'Waiting for your opponent…'}</p><div class="exp-teams">${[mine, 1 - mine].map(s => `<section><h3>${s === mine ? 'YOUR TEAM' : 'OPPONENT'}</h3><div class="exp-roster">${m.teams[s].map((id, i) => card(id, m.origins[s][i])).join('')}</div></section>`).join('')}</div><div class="exp-pool">${m.pool.map(id => `<button data-pick="${id}" ${canPick ? '' : 'disabled'}>${card(id)}</button>`).join('')}</div>${m.phase === 'confirm' ? `<button class="px-btn primary" data-confirm ${m.confirmed[mine] ? 'disabled' : ''}>${m.confirmed[mine] ? 'CONFIRMED' : 'CONFIRM TEAM'}</button>` : ''}`);
-    el.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => this.mm.send({ t: 'draft-pick', id: m.id, species: b.dataset.pick }));
+    this.drafting = true;
+    this.mm.state = 'draft';
+    this.draft = m;
+    this.renderDraft(m);
+    return true;
+  }
+
+  // One draft screen for both modes: whose turn it is, the pick order, both teams as they grow (and
+  // where each Pokémon came from), the choices, and a countdown that ends in a fair automatic pick.
+  renderDraft(m) {
+    const mine = m.you, foe = 1 - mine, names = m.names ?? ['PLAYER 1', 'PLAYER 2'], snake = m.mode === 'snake';
+    const canPick = m.phase === 'picking' && (snake ? m.turn === mine : !m.chosen);
+    const deadline = Date.now() + (m.left ?? Math.max(0, m.deadline - Date.now()));
+    const card = (id, origin = '') => `<div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${SPECIES[id].name}</b>${origin ? `<small class="from-${origin}">${origin === 'picked' ? 'own pick' : 'handed over'}</small>` : ''}</div>`;
+    const done = m.teams[0].length + m.teams[1].length, total = m.format * 2;
+    const order = snake ? `<div class="draft-order">${Array.from({ length: total }, (_, k) => {
+      const s = [0, 1, 1, 0][k % 4];
+      return `<i class="${s === mine ? 'me' : 'foe'}${k === done && m.phase === 'picking' ? ' now' : ''}${k < done ? ' done' : ''}">${s === mine ? 'YOU' : 'OPP'}</i>`;
+    }).join('')}</div>` : '';
+    const banner = m.phase === 'confirm' ? 'FINAL TEAMS — CONFIRM TO BATTLE'
+      : m.phase === 'reveal' ? 'REVEAL! BOTH CHOICES ARE IN'
+      : canPick ? (snake ? 'YOUR PICK' : 'CHOOSE ONE — THE OTHER GOES TO YOUR OPPONENT')
+      : snake ? `${esc(names[foe])} IS PICKING…` : 'WAITING FOR YOUR OPPONENT\'S SECRET CHOICE…';
+    const left = snake ? `${Math.max(0, m.format - m.teams[mine].length)} picks left for you` : `round ${Math.min(3, m.round + 1)} of 3`;
+    const title = snake ? `SNAKE DRAFT · ${m.format} VS ${m.format}` : `BLIND TRADE · ROUND ${Math.min(3, m.round + 1)}/3`;
+    const el = this.open(title, `<div class="draft-banner${canPick ? ' go' : ''}">${banner}</div>${order}
+      <div class="draft-clock"><i></i><span></span></div><p class="exp-note">${left} · ${snake ? 'picks alternate A–B–B–A so nobody gets two strong picks in a row' : 'you keep one of each pair; the other joins your opponent\'s team'}</p>
+      <div class="exp-teams">${[mine, foe].map(s => `<section><h3>${s === mine ? 'YOUR TEAM' : esc(names[foe])} · ${m.teams[s].length}/${m.format}</h3><div class="exp-roster">${m.teams[s].map((id, i) => card(id, snake ? '' : m.origins[s][i])).join('') || '<small>—</small>'}</div></section>`).join('')}</div>
+      <div class="exp-pool">${m.pool.map(id => `<button data-pick="${id}" ${canPick ? '' : 'disabled'}>${card(id)}</button>`).join('')}</div>
+      ${m.phase === 'confirm' ? `<button class="px-btn primary" data-confirm ${m.confirmed[mine] ? 'disabled' : ''}>${m.confirmed[mine] ? 'CONFIRMED — WAITING' : 'CONFIRM TEAM'}</button>` : ''}`);
+    el.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+      for (const o of el.querySelectorAll('[data-pick]')) o.disabled = true;
+      this.mm.send({ t: 'draft-pick', id: m.id, species: b.dataset.pick });
+    });
     el.querySelector('[data-confirm]')?.addEventListener('click', () => this.mm.send({ t: 'draft-confirm', id: m.id }));
-    const tick = () => { const c = el.querySelector('.exp-clock'); if (c) c.textContent = `${Math.max(0, Math.ceil((m.deadline - Date.now()) / 1000))}s · timeout makes a legal automatic choice`; };
-    tick(); this.timer = setInterval(tick, 250); return true;
+    const span = (m.phase === 'reveal' ? 3500 : 25000), bar = el.querySelector('.draft-clock i'), txt = el.querySelector('.draft-clock span');
+    const tick = () => {
+      const ms = Math.max(0, deadline - Date.now());
+      bar.style.width = `${Math.min(100, (ms / span) * 100)}%`;
+      bar.classList.toggle('low', ms < 6000 && m.phase === 'picking');
+      txt.textContent = m.phase === 'reveal' ? 'next round soon' : `${Math.ceil(ms / 1000)}s${m.phase === 'picking' ? ' · then an automatic legal pick' : ' · then the battle starts'}`;
+    };
+    tick();
+    this.timer = setInterval(tick, 200);
   }
 }

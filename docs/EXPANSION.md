@@ -1,14 +1,26 @@
-# Expansion: progress and handoff
+# Expansion: progress and handoff (read this first, Astra)
 
-Spec: the "Major Feature Expansion" prompt (Prompot.pdf). Work so far: Astra (first pass), then Claude.
+Spec: the "Major Feature Expansion" prompt (Prompot.pdf). Astra did the first pass; Claude continued.
 
-**Where the work lives:** the local git branch `expansion`, in this folder. GitHub `master` (the live
-site) is untouched. Nothing here is pushed or deployed yet. Deploy only when the release gate in the
-spec passes: push `expansion` into `master`, and Vercel and Render redeploy on their own.
+**Where the work lives:** the local git branch `expansion`, in this folder (`git log --oneline` shows
+every step). GitHub `master`, the live site, is untouched, and nothing here is pushed or deployed.
+Deploy only when the spec's release gate passes: merge `expansion` into `master` and push. Vercel and
+Render then redeploy on their own.
+
+**How to run it:**
+
+```bash
+npm install
+npm run server   # local match server (ws://localhost:8787)
+npm run dev      # game on http://localhost:5173
+npm test         # 14 node tests (engine, drafts, raids, mastery, server)
+```
+
+For two online players on one machine, open two tabs with `?pid=a` and `?pid=b`.
 
 Status values:
 - **DONE**: built and verified.
-- **PARTIAL**: works, but parts of the spec are missing (listed under each feature).
+- **PARTIAL**: works, but parts of the spec are missing (listed below).
 - **TODO**: not started.
 
 The "verified" column says *how* each feature was checked:
@@ -20,24 +32,46 @@ The "verified" column says *how* each feature was checked:
 
 | Feature | Status | Verified | Main files |
 |---|---|---|---|
-| Elemental reactions: registry, 7 reactions, HUD callout, guide page | PARTIAL | node, browser (water → ice freezes) | `src/reactions.js` (HIT_REACTIONS), `src/elemental.js`, `game.reactFx` |
+| Elemental reactions: registry, 7 reactions, HUD callout, guide page | PARTIAL | node; browser (water → ice freezes; Lugia's tidal → storm triggers Conduction) | `src/reactions.js` (HIT_REACTIONS), `src/elemental.js`, `game.reactFx` |
 | Mega stats: 17 forms, effective-stat model, HP kept | DONE (data) | node; values match Showdown base stats | `src/data/mega-stats.js`, `src/data/species.js` |
-| Solo legendary raids (Rayquaza, Mewtwo, Lugia) | DONE | browser (all 3 bosses; entrance, telegraphs, impacts, stage 2/4, cataclysm), node | `src/bosses.js`, `src/expansion-ui.js` |
-| Online co-op raids (public queue + private room code) | PARTIAL | 2 windows: shared boss HP, difficulty + boss scale on both | `server/raids.js`, `src/matchmaking.js` |
-| Draft A: shared-pool snake, 3v3 and 6v6 | PARTIAL | 2 windows: teams agree on both clients, battle starts | `src/draft-rules.js`, `server/drafts.js`, `src/expansion-ui.js` |
-| Draft B: blind trade, 6v6 | PARTIAL | 2 windows: 6 distinct each, battle starts | same files |
-| Effects quality (High / Balanced / Performance, auto-downgrade) | PARTIAL | menu opens; effect on frame time not measured | `src/quality.js` |
-| Mastery and progression (per species, levels, match history) | PARTIAL | browser: a bot win recorded 2 species | `src/mastery.js`, `src/expansion-ui.js` |
-| Match summaries | PARTIAL | browser | `src/mastery.js` (`newSummary`, `recordCombat`) |
+| Solo legendary raids (Rayquaza, Mewtwo, Lugia) | DONE except the boss ultimate (see "In progress") | browser: all 3 bosses, all stages, 4 difficulties; node | `src/bosses.js`, `src/expansion-ui.js` |
+| Online co-op raids (public queue + private room code) | DONE (same caveat) | 2 windows: shared boss HP, difficulty and boss scale on both | `server/raids.js`, `src/matchmaking.js` |
+| Draft A: shared-pool snake, 3v3 and 6v6 | DONE | 2 windows: teams agree on both clients, battle starts | `src/draft-rules.js`, `server/drafts.js`, `src/expansion-ui.js` (`renderDraft`) |
+| Draft B: blind trade, 6v6 | DONE | 2 windows: 6 distinct each, origins shown, battle starts | same files |
+| Mastery, trainer profile, 14 badges, wearable titles | DONE | node (v1 → v2 migration, dedupe); browser (win → badge → title on menu) | `src/mastery.js`, `src/expansion-ui.js` (`mastery`) |
+| Match summaries | DONE | browser | `src/mastery.js` (`newSummary`, `recordCombat`, `resultSummary`) |
+| Effects quality (High / Balanced / Performance, auto-downgrade) | PARTIAL | menu works; the effect on slow devices hasn't been measured | `src/quality.js` |
+| Sprite audit (do the poses make sense?) | PARTIAL (see "In progress") | all 239 sets checked: files complete; 42 flyers measured | `src/assets.js` (`ALIASES`) |
 | Replays | TODO | | |
-| Presentation upgrade (title, intros, ultimates, KO, results) | TODO | | |
-| Cold start: `/ready`, backoff with jitter, cancel | PARTIAL | node test; real Render not tested | `server/index.js`, `src/matchmaking.js` (`connectReady`) |
+| Presentation upgrade (title, battle intro, ultimate sequences, KO) | TODO | | |
+| Cold start: `/ready`, backoff with jitter, cancel (Astra) | PARTIAL | node test; real Render not tested | `server/index.js`, `src/matchmaking.js` (`connectReady`) |
 | README update | TODO | | |
 
-Regression (browser, this pass): the title menu loads; Bot Battles 3v3 works through the real menus.
-Moves, Mega Evolution (Charizard → Mega Charizard X) and switching all work, and a win reaches the
-result screen. Online snake and trade drafts launch into normal battles. No console errors except a
-missing favicon.
+## In progress when Claude stopped (the owner's latest requests, in their words)
+
+1. **"Lugia looks weird when charging, flapping weirdly; the spin is so weird; its move animations got bad."**
+   - *Cause:* `ALIASES` in `src/assets.js` maps Lugia's Charge to its 2-frame Walk flap, which jitters,
+     and its Rotate to Swing. For Lugia, Swing is a full-body spin, and it's also used by Air Slash.
+   - *Fix being made:*
+     - Charge becomes a held spread-wing pose (frames 2–9 of Lugia's Shoot sheet). This needs a frame
+       `offset` in `AnimatedSprite.draw`.
+     - Swing and Rotate become Lugia's Attack (wing beat), so Lugia never spins.
+     - Idle stays Walk at 0.4 speed (calm hover).
+     - The boss animation tables in `src/bosses.js` (`WIND` / `STRIKE`) get per-boss overrides, so no
+       boss uses a spin.
+2. **"The boss has to use its ult sometimes: it gains a shield, you have to break the shield to stop
+   the ult, and the ult has to deal a lot of damage."** Planned design:
+   - A new rotation entry `ultimate` in each boss's `attacks` (from stage 2).
+   - **Channel:** about 6.5 s × difficulty `tele`. The boss gains a shield of about 5.5 % of its max HP.
+   - **Absorbing hits:** in `src/combat.js` `applyHit`, hits on `target.boss` while
+     `game.raid.ult.shield > 0` reduce the shield instead of HP. This runs on the server too.
+   - **Shield broken:** the ultimate is cancelled, and the boss is staggered for 4 s and takes ×1.3
+     damage.
+   - **Timer runs out:** the ultimate hits every player for a large share of max HP (Normal ~55 %,
+     Legendary ~85 %), even through dodges.
+   - **View:** `view()` gains `ul: { k, t, d, sh, shm }`. HUD: "BREAK THE SHIELD!" bar and countdown.
+     World: a shield bubble around the boss that cracks as it weakens. Presenter cues for start,
+     shield break and fire.
 
 ## Raids (how they work now)
 
@@ -50,44 +84,48 @@ missing favicon.
   - the aura;
   - the entrance, stage banners, boss bar and attack hints.
 
-  Co-op screens build all of this from the server's raid state, so the server does no visual work.
+  Co-op screens build all of this from the server's raid state; the server does no visual work.
 - **Stages.** There are 4 HP stages (75 / 50 / 25 %), each with its own attack rotation. The boss is
   briefly untouchable during each stage break. Stage 4 opens with the boss's cataclysm: everything is
   hit except 1–2 green safe circles.
-- **Attacks.** 13 patterns in `ATTACKS`, all telegraphed for at least 0.9 s. Lugia's tidal wave
-  makes targets Wet, so its thunderstorm then triggers a real Conduction reaction.
+- **Attacks.** 13 patterns in `ATTACKS`, all telegraphed for at least 0.9 s. Lugia's tidal wave makes
+  targets Wet, so its thunderstorm then triggers a real Conduction reaction.
 - **Staggered windows.** After dives, meteors, Aeroblast and the cataclysm the boss is "STAGGERED"
   for about 2–3 s. It takes ×1.3 damage then and doesn't attack.
 - **Difficulty** (`RAID_DIFFICULTY`): Easy / Normal / Hard / Legendary scale HP, damage, warning
   time, pace and extra hazards. Boss HP is `base × (4.5 + 0.6 × your team's Pokémon) × difficulty`;
-  for example, a solo 3-Pokémon Normal Rayquaza has 9,576 HP.
+  for example, solo 3-Pokémon Normal Rayquaza has 9,576 HP.
 - **Results.** Co-op results come from the server (each player's boss damage, share, reactions,
-  survived), and a win counts for both players. Solo results have a "Raid Again" button.
-- **Not done yet:** a dedicated defeat cinematic (the normal finishing sequence plays), boss music,
-  and online player-vs-boss hit timing compensation.
+  survived), and a win counts for both players. Solo results have "Raid Again", which goes back to
+  team select with the same boss and difficulty.
+- **Performance** (headless Chrome, M4): 1,080 frames through stages 2 → 4 plus the cataclysm, none
+  over 25 ms; p95 16.8 ms for every boss. Ground marks cost under 0.3 ms each.
 
 ## Known gaps (spec items not met yet)
 
-- **Drafts:** the screen doesn't show whose turn it is by name, the pick order or the remaining
-  picks. There is no ranked option (drafts are unranked by design for now).
-- **Reactions:** no dedicated sound per reaction yet. Freeze diminishing returns rely on the existing
+- **Raids:** no dedicated defeat cinematic (the normal finishing sequence plays), no boss music, no
+  online hit-timing compensation.
+- **Reactions:** no dedicated sound per reaction. Freeze diminishing returns rely on the existing
   6-second freeze guard.
-- **Progression:** no achievements or badges, no trainer profile page, no cosmetic unlocks.
-- **Presentation:** no upgrades yet to the title screen, battle intro, ultimates or KO.
-- **Title menu:** it now has 11 entries, so check it on phones.
+- **Drafts:** unranked only, by design.
+- **Presentation:** the title screen, battle intro, ultimate sequences and KO haven't been reworked.
+- **Title menu:** it has 11 entries now (scrollable). Consider grouping them.
 
 ## Log
 
-- Astra: first pass of every system above. Simulation microbenchmark baseline (node, 18,000 headless
+- **Astra:** first pass of every system. Simulation microbenchmark baseline (node, 18,000 headless
   updates, one 3v3 match, particles off): mean 0.00461 ms, p95 0.00717 ms, max 0.90 ms per update.
-  This is not a browser FPS measurement. Results are in `docs/performance-final.json`
-  (`node scripts/profile.mjs`).
-- Claude: audited everything above in real browsers (all of Astra's online systems work across
-  two windows). Then rebuilt raids as above; commit `ed8d007` on branch `expansion`. `npm test`:
-  13 pass. Frame times in stage 4 (headless Chrome, M4): p95 16.8 ms, max 16.8 ms for every boss.
+  This is not a browser FPS measurement; see `docs/performance-final.json` (`node scripts/profile.mjs`).
+- **Claude:**
+  - Audited everything in real browsers; all of Astra's online systems work across two windows.
+  - Rebuilt raids (stages, difficulty, 13 attacks, boss animations, arena damage, results).
+  - Rewrote mastery (profile, badges, titles, migration).
+  - Rebuilt the draft screen: whose turn, snake order, countdown from the server's time, origins.
+  - Lugia flight fix (first version; being refined, see "In progress").
+
   Bugs fixed:
   - the solo boss kept attacking while paused;
-  - the side panel said "vs Gold";
+  - the panel said "vs Gold";
   - "Rayquaza sent out Rayquaza!" appeared in the log;
   - "Restart Battle" after a raid started a normal battle;
   - Mewtwo's orb attack crashed.

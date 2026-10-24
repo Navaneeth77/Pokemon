@@ -1512,3 +1512,19 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 .mastery-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffd56b, #fff3b0); }
 .exp-pool button.on { border-color: #ffe099; }
 .tm-title { display: block; font-size: 9px; letter-spacing: 1px; color: #b0853a; }
+
+/* Draft screens */
+.draft-banner { margin: 6px auto 10px; padding: 8px 12px; font-size: 14px; letter-spacing: 2px; color: #cfe0ff; background: #0a1730; border: 1px solid #36507a; border-radius: 8px; }
+.draft-banner.go { color: #1a1406; background: linear-gradient(180deg, #ffe58a, #f5c542); border-color: #ffe9a8; animation: draft-pulse 1s ease-in-out infinite; }
+@keyframes draft-pulse { 50% { box-shadow: 0 0 22px #ffd56b99; } }
+.draft-order { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-bottom: 8px; }
+.draft-order i { font-style: normal; font-size: 9px; padding: 3px 6px; border-radius: 4px; background: #13223d; color: #8fa7cc; border: 1px solid #2b4466; }
+.draft-order i.me { color: #ffe099; }
+.draft-order i.done { opacity: 0.4; }
+.draft-order i.now { outline: 2px solid #ffe099; background: #3a2f10; opacity: 1; }
+.draft-clock { position: relative; height: 14px; margin: 4px auto; max-width: 420px; background: #13223d; border-radius: 7px; overflow: hidden; }
+.draft-clock i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #5fd38a, #b8f5c9); transition: width .2s linear; }
+.draft-clock i.low { background: linear-gradient(90deg, #ff6a4a, #ffb090); }
+.draft-clock span { position: relative; font-size: 9px; line-height: 14px; color: #071325; font-weight: 700; }
+.exp-mon small.from-picked { color: #9dffb8; }
+.exp-mon small.from-received { color: #ffb090; }

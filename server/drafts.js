@@ -25,7 +25,12 @@ export class DraftRooms {
     if (m.t === 'draft-confirm') room.draft.confirm(side);
     this.broadcast(room); this.complete(room); return true;
   }
-  broadcast(r) { r.players.forEach((p, s) => this.send(p, { t: 'draft-state', id: r.id, ...r.draft.view(s) })); }
+  // Each player's view, with both names and the time left (from the server's clock, so a client with a
+  // wrong clock still shows the right countdown).
+  broadcast(r) {
+    const names = r.players.map(p => p.name), left = Math.max(0, r.draft.deadline - Date.now());
+    r.players.forEach((p, s) => this.send(p, { t: 'draft-state', id: r.id, names, left, ...r.draft.view(s) }));
+  }
   complete(r) {
     if (r.draft.phase !== 'done') return;
     this.rooms.delete(r.id);
