@@ -7,7 +7,7 @@ import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
-import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, rainbowBurst, debris, dustCloud, electricBurst, rand } from './effects.js';
+import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, rainbowBurst, debris, dustCloud, electricBurst, rand } from './effects.js';
 
 // Legendary raids. BossEncounter is the authority (in the browser for solo raids, on the match server
 // for co-op): it moves the boss, picks attacks, and decides which hazards hit whom. Screens only draw
@@ -505,6 +505,9 @@ export class BossPresenter {
     if (data.in > 0 && !this.intro) {
       this.intro = true;
       g.spawn(new ScreenDim(data.in + 0.3, 0.5, '6,8,20'));
+      if (data.id==='mewtwo') g.spawn(new PsyDome(180,205,110,INTRO));
+      else if (data.id==='lugia') { g.spawn(new TidalWave(110,280,1.5,[90,180,240]));sfx.splash(); }
+      else for(let i=0;i<4;i++)g.spawn(new BeamLine(80+i*65,-80,130+i*35,240,1.3,def.color,2));
       sfx.roar();
       g.shake(3, 1.2);
     }

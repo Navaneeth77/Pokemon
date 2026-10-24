@@ -51,3 +51,15 @@ test('blind trade completes three rounds and launches six distinct picks',async(
  }finally{cs.forEach(c=>c.ws.close());}
 });
 test.after(()=>server.kill());
+
+test('ranked draft uses authoritative Elo; unranked queue remains a separate mode',async()=>{
+ const cs=await pair('ranked-draft');try{
+ for(const c of cs)c.send({t:'draft-queue',mode:'snake',format:3,ranked:true,roster:'all'});
+ let states=await Promise.all(cs.map(c=>c.wait('draft-state')));assert.ok(states.every(s=>s.ranked));
+ for(let i=0;i<6;i++){const turn=states[0].turn;cs[turn].send({t:'draft-pick',id:states[0].id,species:states[turn].pool[0]});states=await Promise.all(cs.map(c=>c.wait('draft-state')));}
+ for(const c of cs)c.send({t:'draft-confirm',id:states[0].id});
+ const ms=await Promise.all(cs.map(c=>c.wait('matched')));assert.ok(ms.every(m=>m.ranked));
+ cs.forEach((c,i)=>c.send({t:'loaded',id:ms[i].id}));await Promise.all(cs.map(c=>c.wait('start')));
+ cs[1].send({t:'leave',id:ms[1].id});const end=await cs[0].wait('end');assert.equal(end.ranked,true);assert.ok(end.delta>0);assert.equal(end.record.w,1);
+ }finally{cs.forEach(c=>c.ws.close());}
+});

@@ -21,3 +21,11 @@ test('startup cancellation aborts the active readiness request and never connect
   await assert.rejects(pending);assert.equal(signal.aborted,true);assert.equal(connected,false);
  } finally {globalThis.fetch=original;}
 });
+
+test('legacy protocol-2 health fallback still waits for the websocket welcome',async()=>{
+ const original=globalThis.fetch,urls=[];let connected=false;
+ globalThis.fetch=async url=>{urls.push(url);return url.endsWith('/ready')?{status:404,ok:false,json:async()=>({})}:{status:200,ok:true,json:async()=>({ok:true})};};
+ const mm={url:'ws://test',httpUrl:'http://test',connect:async()=>{connected=true;}};
+ try{await Matchmaker.prototype.connectReady.call(mm);assert.deepEqual(urls,['http://test/ready','http://test/health']);assert.equal(connected,true);}
+ finally{globalThis.fetch=original;}
+});

@@ -1,3 +1,5 @@
+import { appendBattleEvents } from './event-buffer.js';
+import { summaryHtml } from './results.js';
 import { saveSummary } from './mastery.js';
 import { DamageNumber } from './effects.js';
 import { Pokemon } from './pokemon.js';
@@ -93,7 +95,14 @@ export class Matchmaker {
   // A sleeping match server starts waking on its first request, so the game knocks as soon as it
   // loads: by the time the player has picked a team the server is usually up.
   wake() {
-    if (this.url) fetch(`${this.httpUrl}/health`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+    if (!this.url) return;
+    try {
+      const key='msb.serverWake',last=Number(localStorage.getItem(key));
+      if (Date.now()-last<30000) return;
+      localStorage.setItem(key,String(Date.now()));
+    } catch {}
+    this.wakeAbort?.abort(); this.wakeAbort=new AbortController();
+    fetch(`${this.httpUrl}/health`,{mode:'no-cors',cache:'no-store',signal:AbortSignal.any([this.wakeAbort.signal,AbortSignal.timeout(8000)])}).catch(()=>{});
   }
 
   // ── Who's online and the leaderboard ──
@@ -162,7 +171,7 @@ export class Matchmaker {
   get busy() { return ['connecting', 'searching', 'matched', 'loading'].includes(this.state); }
 
   // ── Connection ──
-  connect() {
+  connect(timeoutMs = CONNECT_TIMEOUT_MS) {
     if (this.ws?.readyState === 1 && this.welcomed) return Promise.resolve();
     this.drop();
     return new Promise((resolve, reject) => {
@@ -174,7 +183,7 @@ export class Matchmaker {
       const timer = setTimeout(() => {
         reject(Object.assign(new Error('timeout'), { code: 'timeout' }));
         if (this.ws === ws) this.drop();
-      }, CONNECT_TIMEOUT_MS);
+      }, Math.max(1,timeoutMs));
       ws.onopen = () => {
         const save = this.flow.save;
         ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pid: this.pid, name: save.name ?? 'TRAINER', look: save.look ?? null }));
@@ -190,6 +199,7 @@ export class Matchmaker {
             clearTimeout(timer);
             this.welcomed = true;
             this.record = m.record;
+            this.features=Array.isArray(m.features)?m.features:[];
             resolve();
           } else if (m.t === 'error') {
             clearTimeout(timer);
@@ -244,7 +254,11 @@ export class Matchmaker {
   onClosed() {
     if(this.match?.raid && this.state==='battle'){
       this.state='connecting';this.game.paused=true;this.game.hud.callout('player','RECONNECTING · 15s GRACE');
-      this.connectReady().catch(()=>{this.game.paused=false;this.result={result:'draw',reason:'lost'};this.state='result';this.stopBattle();});return;
+      const ended=()=>{this.game.paused=false;this.result={result:'draw',reason:'lost'};this.state='result';this.stopBattle();};
+      this.connectReady(14000).then(()=>{
+        clearTimeout(this.rejoinTimer);
+        this.rejoinTimer=setTimeout(()=>{if(this.state==='connecting')ended();},1500);
+      }).catch(ended);return;
     }
     if (this.state === 'connecting') return; // find() reports a connection that never opened
     if (this.busy) this.fail('Lost connection to the match server.', true);
@@ -255,19 +269,23 @@ export class Matchmaker {
     }
   }
 
-  async connectReady() {
+  async connectReady(maxWaitMs = WAKE_WAIT_MS) {
     if (!this.url) throw new Error('No match server configured');
     this.readyAbort?.abort();
     const controller = this.readyAbort = new AbortController();
     const epoch = this.connectEpoch = (this.connectEpoch ?? 0) + 1;
-    const until = Date.now() + WAKE_WAIT_MS;
+    const until = Date.now() + maxWaitMs;
     for (let attempt = 0; Date.now() < until; attempt++) {
       if (epoch !== this.connectEpoch) throw new Error('cancelled');
       try {
-        const res = await fetch(`${this.httpUrl}/ready`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6000)]) });
-        if (!res.ok || !(await res.json()).ready) throw new Error('not ready');
+        let res = await fetch(`${this.httpUrl}/ready`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(Math.max(1,Math.min(6000,until-Date.now())))]) });
+        // Old protocol-2 servers have /health only. The WebSocket welcome still gates readiness.
+        const legacy=res.status===404;
+        if(legacy) res=await fetch(`${this.httpUrl}/health`,{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(Math.max(1,Math.min(6000,until-Date.now())))])});
+        const status=await res.json();
+        if (!res.ok || !(legacy?status.ok:status.ready)) throw new Error('not ready');
         if (epoch !== this.connectEpoch) throw new Error('cancelled');
-        await this.connect();
+        await this.connect(Math.min(CONNECT_TIMEOUT_MS,until-Date.now()));
         return;
       } catch (err) {
         if (epoch !== this.connectEpoch || ['duplicate', 'version'].includes(err.code)) throw err;
@@ -318,8 +336,10 @@ export class Matchmaker {
 
   cancel() {
     this.readyAbort?.abort();
+    this.wakeAbort?.abort();
     this.connectEpoch = (this.connectEpoch ?? 0) + 1;
     clearTimeout(this.retryTimer); this.retryResolve?.();
+    clearTimeout(this.rejoinTimer);
     clearTimeout(this.wakeNote);
     if (this.state === 'searching' || this.state === 'connecting') {
       this.send({ t: 'cancel' });
@@ -348,8 +368,10 @@ export class Matchmaker {
   // Leaves whatever is going on (title menu, another mode). A running match is forfeited.
   stop() {
     this.readyAbort?.abort();
+    this.wakeAbort?.abort();
     this.connectEpoch = (this.connectEpoch ?? 0) + 1;
     clearTimeout(this.retryTimer); this.retryResolve?.();
+    clearTimeout(this.rejoinTimer);
     clearTimeout(this.wakeNote);
     if (this.state === 'searching' || this.state === 'connecting') this.send({ t: 'cancel' });
     if (this.match && (this.state === 'battle' || this.state === 'matched' || this.state === 'loading')) this.send({ t: 'leave', id: this.match.id });
@@ -377,7 +399,8 @@ export class Matchmaker {
         this.rtts = [...(this.rtts ?? []).slice(-6), rtt];
         this.rtt = [...this.rtts].sort((a, b) => a - b)[this.rtts.length >> 1];
         this.ping = Math.round(rtt);
-        if (this.state === 'battle') $('#panel .loc').textContent = `ONLINE MATCH · ${this.ping} MS`;
+        this.jitter=Math.round(Math.max(...this.rtts)-Math.min(...this.rtts));
+        if (this.state === 'battle') $('#panel .loc').textContent = `ONLINE MATCH · ${this.ping} MS${this.jitter>80?' · UNSTABLE CONNECTION':''}`;
         return;
       }
       case 'queued':
@@ -416,11 +439,11 @@ export class Matchmaker {
         if(m.ally) this.updateAlly(m.ally);
         // One message per server wake-up: what happened since the last one, then the current state.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
-        if (Array.isArray(m.e)) for (const e of m.e) if (e) this.events.push(e);
+        if (Array.isArray(m.e)) this.events=appendBattleEvents(this.events,m.e);
         if (m.s && this.state === 'battle') this.onSnapshot(m.s, m.ts);
         return;
       case 'ev':
-        if (this.match && (this.state === 'battle' || this.state === 'result') && m.e) this.events.push(m.e);
+        if (this.match && (this.state === 'battle' || this.state === 'result') && m.e) this.events=appendBattleEvents(this.events,[m.e]);
         return;
       case 's':
         if (this.match && this.state === 'battle') this.onSnapshot(m);
@@ -734,6 +757,9 @@ export class Matchmaker {
     });
     if (s.mu) team.megaUsed = true;
     const mon = team.members[s.i];
+    if (mon && s.sp && s.sp !== mon.species.id && SPECIES[s.sp]?.megaOf === mon.baseSpecies.id) {
+      const form=SPECIES[s.sp];mon.megaEvolve(form,g.sprites[form.sprite]);
+    }
     if (mon !== team.active || mon.hidden || mon.fainted) return;
     if (mon.ult < 100 && s.u >= 100) g.onUltReady(mon);
     mon.ult = s.u;
@@ -901,9 +927,9 @@ export class Matchmaker {
     const delta = r.delta ? ` (${r.delta > 0 ? '+' : ''}${r.delta})` : '';
     const rating = r.record?.rating != null ? `<br><small class="mm-rating">Rating <b>${r.record.rating}</b>${delta}${r.rank ? ` · Rank #${r.rank}` : ''}</small>` : '';
     const rec = r.record ? `${rating}<br><small class="mm-rec">Online record: ${r.record.w}W · ${r.record.l}L${r.record.d ? ` · ${r.record.d}D` : ''}</small>` : '';
-    if (r.raid && r.party) return this.raidResultHtml(r);
+    if (r.raid && r.party) return this.raidResultHtml(r) + summaryHtml({...r.summary,result:r.result});
     const stats = r.summary ? Object.entries(r.summary.species).map(([id,s])=>`${esc(SPECIES[id]?.name??id)}: ${Math.round(s.damage)} damage · ${s.kos} KOs · ${s.reactions} reactions`).join('<br>') : '';
-    return `${title}${who}${esc(why)}${r.raid || this.match?.draftMode ? '<br><small>Unranked · no rating change</small>' : rec}<br><small>${stats}</small>`;
+    return `${title}${who}${esc(why)}${r.raid || (this.match?.draftMode && !r.ranked) ? '<br><small>Unranked · no rating change</small>' : rec}<br><small>${stats}</small>${summaryHtml({...r.summary,result:r.result})}`;
   }
 
   // Co-op raid result: who did what, from the server's records.

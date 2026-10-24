@@ -1,5 +1,5 @@
 import { ExpansionUI } from './expansion-ui.js';
-import { currentTitle } from './mastery.js';
+import { currentTitle, cosmeticLoadout } from './mastery.js';
 import { Opening, GAME_TITLE } from './opening.js';
 import { AnimatedSprite } from './sprite.js';
 import { LOOKS, drawBust, backPalette, lookById } from './trainers.js';
@@ -142,6 +142,8 @@ export class Flow {
     const title = currentTitle();
     menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div>`
       + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
+    const frame = cosmeticLoadout().frame;
+    if (frame) menu.querySelector('canvas').style.border = `2px solid ${frame.color}`;
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
     this.menuItems = items;
     this.menuIndex = 0;

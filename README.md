@@ -18,8 +18,8 @@ Open http://localhost:5173. For two local players use separate browsers, or two 
 - **Online Battles:** server-authoritative battles, ratings and leaderboard.
 - **Friend Room:** peer-to-peer battles using a room code.
 - **Legendary Raids:** Rayquaza, Mewtwo and Lugia; solo or two-player online; public matchmaking or private six-character room codes. Bring three or six Pokémon. Four HP stages, telegraphed hazards, vulnerability windows and four difficulties.
-- **Draft Battles:** shared-pool snake draft (3v3/6v6), or simultaneous blind trade (6v6). The server validates picks, handles timeouts and reveals, and starts the battle after confirmation. Drafts are unranked.
-- **Pokémon Mastery:** species levels, statistics, discovered reactions, trainer profile, 14 badges and wearable titles. Cosmetic rewards never increase combat stats.
+- **Draft Battles:** shared-pool snake draft (3v3/6v6), or simultaneous blind trade (6v6). The server validates picks, handles timeouts and reveals, and starts the battle after confirmation. Choose ranked or unranked queues, plus regular-only or full legal roster pools. Ranked drafts use the existing Elo rules.
+- **Pokémon Mastery:** searchable species levels, side-by-side comparisons, entered/completed records, best results, discovered reactions, trainer profile, 14 badges and wearable titles. Mastery unlocks equippable trainer frames, victory poses and send-out effects. Cosmetic rewards never increase combat stats.
 - **Match history:** summaries and bounded event replay timelines. These show recorded events with play/pause and scrubbing; they do not recreate the battle simulation. Old matches without recorded events retain their summaries.
 - **My Teams, Edit Trainer, Tutorial, Elemental Guide and Effects Quality** remain accessible from the title menu. The existing story campaign modules remain in the codebase.
 
@@ -56,6 +56,8 @@ Phones use the floating joystick, move/ultimate buttons, Dodge/Mega buttons and 
 
 The 60 Hz shared engine runs in the browser for solo play and headlessly in Node for authoritative online battles. The match server sends snapshots at 30 Hz using protocol **2**. Prediction, interpolation and reconciliation remain in `src/matchmaking.js`. `server/raids.js` owns shared raid sessions; `server/drafts.js` owns online drafts. `BossPresenter` and `src/raid-cinematics.js` add local visuals without deciding damage.
 
+Results include surviving team members, damage, moves, reactions, transformations and earned XP. Friend-room progression is labelled local/unverified.
+
 Mastery is stored under the versioned `msb.mastery` key. Version 1 saves migrate to version 2. Result IDs prevent duplicate rewards. Match history is bounded to 30 entries, event logs to 600 events per match and processed result IDs to 500. Clearing browser storage loses local progression; there is no cross-device synchronization. Existing trainer and team saves retain their keys.
 
 ## Hosting and configuration
@@ -74,6 +76,8 @@ Vercel serves the frontend; a persistent Node/WebSocket service runs `npm run se
 | `KEEP_AWAKE`, `KEEP_AWAKE_URL`, `RENDER_EXTERNAL_URL` | Server | Optional best-effort self-ping; `KEEP_AWAKE=0` disables it |
 | `MATCH_TEST_HP` | Local testing only | Reduced starting HP; never enable for production |
 
+The frontend recognizes legacy protocol-2 `/health` responses when `/ready` is absent, but waits for a WebSocket welcome before calling a connection ready. New modes check the server feature list and report an update requirement rather than searching indefinitely on older deployments.
+
 No new secrets or environment variables are required by the expansion. Never put Redis credentials in `VITE_*` variables. Use `/health` for liveness/load information and `/ready` for startup readiness. Storage failures are reported separately; gameplay can run with the fallback. Readiness is served only after server initialization and WebSocket setup.
 
 The client checks readiness, retries temporary failures with bounded exponential backoff and jitter, waits for the WebSocket welcome, and aborts startup work on cancellation. Local battles do not depend on readiness. A free hosting service may still suspend the process: self-pinging cannot guarantee always-on matchmaking. Real Render sleep-to-ready timing and production capacity have not been measured in this continuation.
@@ -90,12 +94,16 @@ For co-op: both tabs choose Legendary Raids, matching boss/team size, then eithe
 
 High/Balanced/Performance settings bound particles and rendering resolution. Expensive decorative overlays are suppressed in Performance mode; essential telegraphs, shield warnings and status indicators remain. Decorative effect queues and replay histories are bounded. Background tabs skip drawing and resume with a capped simulation step.
 
-See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Full deterministic battle replay, ranked drafts and network hit rewind are not implemented; event timelines, unranked drafts and existing authoritative hit timing are used instead.
+Sprites and art receive one-week cache headers from `vercel.json`; version the URL or filename if an existing asset changes.
+
+Browser profiling: open `/scripts/browser-bench.html` through the Vite dev server; add `?soak=60` for a mixed-effects soak. `node scripts/network-profile.mjs` measures two ordinary matches plus a raid against an isolated local server. These diagnostic pages are not part of the production Vite entry.
+
+See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Full deterministic battle replay and network hit rewind are not implemented; event timelines and existing authoritative hit timing are used instead.
 
 ## Asset credits
 
 - Sprites and portraits: [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab), **CC BY-NC 4.0**, by its contributing artists, under `public/sprites`.
 - Rayquaza: PMD2/PMD1 rips by Redblueyellow and MR.C, Dark Night repaint by Dialga22239, recoloured green for this game.
-- Trainer sprites and arenas are drawn in code. Sound effects and music are synthesized in code.
+- Trainer sprites and arenas are drawn in code. Sound effects and music are synthesized in code. The server skips arena textures, ground decoration, ambient particles and HUD animation while preserving gameplay callbacks.
 - Fonts: Pixelify Sans (OFL) and Luckiest Guy (Apache 2.0), via Fontsource.
-- The elemental crest was generated with SpriteCook; its provenance is retained in the asset manifest.
+- The elemental crest and the transparent 64×64 ultimate-impact sprite were generated with SpriteCook; its provenance is retained in the asset manifest.

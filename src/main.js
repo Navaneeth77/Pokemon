@@ -2,6 +2,7 @@ import '@fontsource/pixelify-sans/500.css';
 import '@fontsource/pixelify-sans/700.css';
 import '@fontsource/luckiest-guy/400.css';
 import './style.css';
+import { preloadImpactSprite } from './effects.js';
 import { loadSpecies } from './assets.js';
 import { DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
 import { Game, prepareSprites } from './game.js';
@@ -15,7 +16,7 @@ async function main() {
   ]);
   // Only the default team and the opponent's are loaded up front; other picks load when a battle starts.
   const first = [...spritesFor([...DEFAULT_TEAM, ...OPPONENT_TEAM]), 'eevee', 'bidoof']; // + title-screen Pokémon
-  const sprites = await loadSpecies(first);
+  const [sprites] = await Promise.all([loadSpecies(first),preloadImpactSprite().catch(()=>{})]);
   prepareSprites(sprites, first);
   const ui = new UI();
   const game = new Game(document.getElementById('game'), sprites, ui);

@@ -3,7 +3,7 @@ import { TYPE_COLORS } from './data/types.js';
 import { CLASS_LABEL } from './data/species.js';
 import { WORLD_W, WORLD_H } from './arena.js';
 import {
-  Ring, Glow, Pillar, Spike, Lightning, rand, debris, dustCloud, windBurst, iceShatter, electricBurst, leafBurst, metalSparks, waterSplash, FIRE,
+  Ring, Glow, Pillar, Spike, Lightning, PsyDome, TidalWave, rand, debris, dustCloud, windBurst, iceShatter, electricBurst, leafBurst, metalSparks, waterSplash, FIRE,
 } from './effects.js';
 import { sfx } from './audio.js';
 import { quality } from './quality.js';
@@ -166,7 +166,7 @@ export class Finale {
     this.dir = { x: Math.sign(loser.x - winner.x) || 1, y: Math.sign(loser.y - winner.y) || -1 };
     this.from = { x: loser.x, y: loser.y };
     const poses = POSES.filter(p => winner.sprite.has(p));
-    this.pose = poses[(winner.baseSpecies.id.length + (game.summary?.species?.player?.[winner.baseSpecies.id]?.kos ?? 0)) % poses.length] ?? 'Idle';
+    this.pose = winner.side === 'player' && game.cosmetics?.pose && winner.sprite.has(game.cosmetics.pose.anim) ? game.cosmetics.pose.anim : poses[(winner.baseSpecies.id.length + (game.summary?.species?.player?.[winner.baseSpecies.id]?.kos ?? 0)) % poses.length] ?? 'Idle';
     this.type = move?.type ?? winner.species.types[0];
     game.slowT = 0;
   }
@@ -194,6 +194,9 @@ export class Finale {
         const rgb = hexRgb(TYPE_COLORS[l.species.types[0]][0]);
         g.spawn(new Pillar(l.x, l.y, 1.1, rgb, 520));
         g.marks.fracture(l.x, l.y, 100, 8);
+        if(l.baseSpecies.id==='mewtwo')g.spawn(new PsyDome(l.x,l.y,190,1.2));
+        else if(l.baseSpecies.id==='lugia')g.spawn(new TidalWave(l.y+100,l.y-80,1.2,[120,200,255]));
+        else windBurst(g,l.x,l.y,12,110,['#ffffff','#7dffb0','#ffe680']);
         for (let i = 0; i < (quality().particles > 500 ? 6 : 3); i++) {
           const a = i * Math.PI / 3;
           g.spawn(new Ring(l.x + Math.cos(a) * 50, l.y + Math.sin(a) * 30, { r0: 4, r1: 120, life: 0.8, color: TYPE_COLORS[l.species.types[0]][0], width: 3 }));

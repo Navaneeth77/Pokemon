@@ -1,0 +1,266 @@
+{
+  "assetLoadMs": 244.39999985694885,
+  "results": [
+    {
+      "scenario": "soak",
+      "quality": "high",
+      "frames": 3581,
+      "frameP95": 17.599999999998545,
+      "frameP99": 17.700000000000728,
+      "frameMax": 17.799999999999272,
+      "updateP95": 0.40000009536743164,
+      "renderP95": 1.2999999523162842,
+      "scriptedInputToRenderP95": null,
+      "maxEffects": 57,
+      "maxParticles": 535,
+      "heapStartMB": 22.383214950561523,
+      "heapSamples": [
+        {
+          "seconds": 0,
+          "mb": 22.38
+        },
+        {
+          "seconds": 1,
+          "mb": 23.73
+        },
+        {
+          "seconds": 2,
+          "mb": 24.19
+        },
+        {
+          "seconds": 3,
+          "mb": 23.19
+        },
+        {
+          "seconds": 4,
+          "mb": 23.59
+        },
+        {
+          "seconds": 5,
+          "mb": 23.66
+        },
+        {
+          "seconds": 6,
+          "mb": 24.01
+        },
+        {
+          "seconds": 7,
+          "mb": 24.26
+        },
+        {
+          "seconds": 8,
+          "mb": 23.98
+        },
+        {
+          "seconds": 9,
+          "mb": 24.53
+        },
+        {
+          "seconds": 10,
+          "mb": 24.21
+        },
+        {
+          "seconds": 11,
+          "mb": 23.97
+        },
+        {
+          "seconds": 12,
+          "mb": 23.2
+        },
+        {
+          "seconds": 13,
+          "mb": 24.65
+        },
+        {
+          "seconds": 14,
+          "mb": 24.1
+        },
+        {
+          "seconds": 15,
+          "mb": 23.32
+        },
+        {
+          "seconds": 16,
+          "mb": 24.4
+        },
+        {
+          "seconds": 17,
+          "mb": 23.93
+        },
+        {
+          "seconds": 18,
+          "mb": 23.58
+        },
+        {
+          "seconds": 19,
+          "mb": 25.76
+        },
+        {
+          "seconds": 20,
+          "mb": 23.76
+        },
+        {
+          "seconds": 21,
+          "mb": 24.21
+        },
+        {
+          "seconds": 22,
+          "mb": 23.3
+        },
+        {
+          "seconds": 23,
+          "mb": 25.88
+        },
+        {
+          "seconds": 24,
+          "mb": 25.13
+        },
+        {
+          "seconds": 25,
+          "mb": 24.69
+        },
+        {
+          "seconds": 26,
+          "mb": 25.28
+        },
+        {
+          "seconds": 27,
+          "mb": 24.4
+        },
+        {
+          "seconds": 28,
+          "mb": 23.73
+        },
+        {
+          "seconds": 29,
+          "mb": 24.91
+        },
+        {
+          "seconds": 30,
+          "mb": 23.93
+        },
+        {
+          "seconds": 31,
+          "mb": 26.36
+        },
+        {
+          "seconds": 32,
+          "mb": 25.06
+        },
+        {
+          "seconds": 33,
+          "mb": 24.36
+        },
+        {
+          "seconds": 34,
+          "mb": 23.7
+        },
+        {
+          "seconds": 35,
+          "mb": 24.79
+        },
+        {
+          "seconds": 36,
+          "mb": 23.86
+        },
+        {
+          "seconds": 37,
+          "mb": 26.24
+        },
+        {
+          "seconds": 38,
+          "mb": 24.42
+        },
+        {
+          "seconds": 39,
+          "mb": 23.74
+        },
+        {
+          "seconds": 40,
+          "mb": 25.99
+        },
+        {
+          "seconds": 41,
+          "mb": 24.62
+        },
+        {
+          "seconds": 42,
+          "mb": 26.68
+        },
+        {
+          "seconds": 43,
+          "mb": 25.78
+        },
+        {
+          "seconds": 44,
+          "mb": 23.88
+        },
+        {
+          "seconds": 45,
+          "mb": 26.22
+        },
+        {
+          "seconds": 46,
+          "mb": 25.43
+        },
+        {
+          "seconds": 47,
+          "mb": 23.45
+        },
+        {
+          "seconds": 48,
+          "mb": 25.73
+        },
+        {
+          "seconds": 49,
+          "mb": 25.04
+        },
+        {
+          "seconds": 50,
+          "mb": 24.46
+        },
+        {
+          "seconds": 51,
+          "mb": 25.57
+        },
+        {
+          "seconds": 52,
+          "mb": 24.68
+        },
+        {
+          "seconds": 53,
+          "mb": 23.98
+        },
+        {
+          "seconds": 54,
+          "mb": 25.11
+        },
+        {
+          "seconds": 55,
+          "mb": 24.38
+        },
+        {
+          "seconds": 56,
+          "mb": 26.53
+        },
+        {
+          "seconds": 57,
+          "mb": 24.72
+        },
+        {
+          "seconds": 58,
+          "mb": 23.86
+        },
+        {
+          "seconds": 59,
+          "mb": 26.11
+        },
+        {
+          "seconds": 60,
+          "mb": 24.73
+        }
+      ],
+      "heapMB": 24.72547721862793
+    }
+  ]
+}

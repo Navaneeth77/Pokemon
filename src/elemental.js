@@ -17,6 +17,7 @@ export function prepareReaction(game, target, type, move, stack, options) {
 }
 
 export function resolveReaction(game, attacker, target, rule, damage, applyHit) {
+  if (rule.cleanse) game.marks.removeNear?.(['frost','wet','burn'], target.x,target.y,60);
   if (rule.cleanse) { target.status.burn = 0; target.status.burnT = 0; target.frozen = 0; target.elementAura = null; }
   if (rule.ground) { target.status.para = 0; target.elementAura = null; }
   if (rule.status && target.alive) applyStatus(game, target, rule.status, { source: attacker, dur: rule.duration });

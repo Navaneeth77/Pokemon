@@ -23,7 +23,7 @@ import { loadSpriteSets } from './sprites.js';
 const { Game } = await import('../src/game.js');
 const { SPECIES, ROSTER } = await import('../src/data/species.js');
 const { MOVES } = await import('../src/moves.js');
-const { ARENAS, paintArena } = await import('../src/arena.js');
+const { ARENAS } = await import('../src/arena.js');
 const { LOOKS } = await import('../src/trainers.js');
 const { safeName } = await import('../src/names.js');
 
@@ -47,9 +47,7 @@ const HEARTBEAT_MS = 15_000;
 const RATE = { perSec: 90, burst: 180 };
 
 const sprites = loadSpriteSets();
-// Arena ground textures are made once per arena and cached; making them now keeps that work out of
-// the first match on each arena (on a small CPU plan it would stall the server for a moment).
-for (const a of ARENAS) paintArena(a);
+// Arena textures are client-only; the server loads animation timing without decoding art.
 const ROSTER_SET = new Set(ROSTER);
 const LOOK_IDS = new Set(LOOKS.map(l => l.id));
 const noop = () => {};
@@ -230,6 +228,7 @@ class Match {
     this.id = crypto.randomBytes(6).toString('hex');
     this.format = a.format;
     this.draftMode = a.draftMode ?? null;
+    this.ranked = !this.draftMode || (a.ranked === true && b.ranked === true);
     this.arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
     this.side = { A: a, B: b };
     this.loaded = { A: false, B: false };
@@ -258,7 +257,7 @@ class Match {
     for (const s of ['A', 'B']) {
       const me = this.side[s], foe = this.side[this.other(s)];
       sendTo(me.player, {
-        t: 'matched', draftMode: this.draftMode, id: this.id, you: s, format: this.format, arena: this.arena,
+        t: 'matched', draftMode: this.draftMode, ranked:this.ranked, id: this.id, you: s, format: this.format, arena: this.arena,
         me: { team: me.team, lead: me.lead, mega: me.mega },
         foe: { name: foe.player.name, look: foe.player.look, team: foe.team, lead: foe.lead, mega: foe.mega },
       });
@@ -274,7 +273,7 @@ class Match {
   // Both players have the battle loaded: build it with the real engine and start the clock.
   begin() {
     const { A, B } = this.side;
-    const ui = new Proxy({ format: this.format }, { get: (t, k) => (k in t ? t[k] : noop) });
+    const ui = new Proxy({ format: this.format, headless:true }, { get: (t, k) => (k in t ? t[k] : noop) });
     const g = new Game(document.createElement('canvas'), sprites, ui);
     g.particles.max = -1; // particles are purely visual: none on the server
     g.input = { vector: () => this.vec.A, clear: noop };
@@ -429,11 +428,11 @@ class Match {
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
       const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
-      if (!wasLoading && !this.draftMode) p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
+      if (!wasLoading && this.ranked) p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
       p.delta = 0;
     }
     // Ratings (Elo): beating a higher-rated player earns more. A server error changes nothing.
-    if (!wasLoading && !this.draftMode && reason !== 'error') {
+    if (!wasLoading && this.ranked && reason !== 'error') {
       const a = this.side.A.player, b = this.side.B.player;
       const expectA = 1 / (1 + 10 ** ((b.record.rating - a.record.rating) / 400));
       const scoreA = winner == null ? 0.5 : winner === 'A' ? 1 : 0, delta = Math.round(ELO_K * (scoreA - expectA));
@@ -450,7 +449,7 @@ class Match {
         p.match = null;
         p.state = 'idle';
       }
-      sendTo(p, { t: 'end', id: this.id, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
+      sendTo(p, { t: 'end', id: this.id, ranked:this.ranked, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
     log(`match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
   }
@@ -484,7 +483,7 @@ function snapshot(team, switchCD, ack) {
   const p = team.active, ab = {};
   for (const [k, v] of Object.entries(p.ab)) if (v == null || typeof v !== 'object') ab[k] = v;
   return {
-    i: team.index, x: r1(p.x), y: r1(p.y), d: p.dir, fz: r1(p.z), ah: p.air ? r1(p.air.h) : 0,
+    i: team.index, sp:p.species.id, x: r1(p.x), y: r1(p.y), d: p.dir, fz: r1(p.z), ah: p.air ? r1(p.air.h) : 0,
     hp: team.members.map(m => Math.ceil(Math.max(0, m.hp))), u: r1(p.ult), st: p.status, bf: p.buffs, fr: p.frozen > 0 ? r1(p.frozen) : 0,
     g: p.guard ? [p.guard.mult, p.guard.color, p.guard.label ?? null, !!p.guard.punish] : 0, sh: p.shield || 0, fm: p.form ?? null,
     mv: p.moving ? 1 : 0, lx: r1(p.lastMove.x), ly: r1(p.lastMove.y), sg: p.stagger > 0 ? 1 : 0,
@@ -578,7 +577,7 @@ function hello(conn, m) {
   p.record.name = p.name; // the leaderboard shows the latest name
   p.look = LOOK_IDS.has(m.look) ? m.look : null;
   conn.player = p;
-  send(conn.ws, { t: 'welcome', v: PROTOCOL, record: p.record });
+  send(conn.ws, { t: 'welcome', v: PROTOCOL, features:['raids','drafts','ranked-drafts','readiness'], record: p.record });
   if(p.match?.raidSession) p.match.raidSession.intro(p);
 }
 
@@ -602,6 +601,7 @@ function ensureLoop() {
   loop = setInterval(runBattles, WAKE_MS);
 }
 
+const runtimePerf = { simulationMs:0, snapshotMs:0, steps:0 };
 function runBattles() {
   const now = performance.now();
   acc = Math.min(acc + (now - last) / 1000, MAX_CATCHUP * STEP);
@@ -616,14 +616,18 @@ function runBattles() {
     acc -= STEP;
     for (const m of live) {
       try {
+        const measureAt=performance.now();
         m.step();
+        runtimePerf.simulationMs+=performance.now()-measureAt;runtimePerf.steps++;
       } catch (err) {
         console.error(`match ${m.id} crashed`, err);
         m.finish(null, 'error');
       }
     }
   }
+  const snapshotAt=performance.now();
   for (const m of live) if (m.phase === 'battle') m.flush();
+  runtimePerf.snapshotMs+=performance.now()-snapshotAt;
 }
 
 setInterval(() => {
@@ -653,9 +657,14 @@ let cpuMark = process.cpuUsage(), cpuAt = performance.now(), load = { cpuMsPerSe
 setInterval(() => {
   const now = performance.now(), used = process.cpuUsage(cpuMark);
   load = {
+    simulationMsPerSec: +(runtimePerf.simulationMs/((now-cpuAt)/1000)).toFixed(3),
+    snapshotMsPerSec: +(runtimePerf.snapshotMs/((now-cpuAt)/1000)).toFixed(3),
+    stepsPerSec: Math.round(runtimePerf.steps/((now-cpuAt)/1000)),
+    heapMB: +(process.memoryUsage().heapUsed/1048576).toFixed(2),
     cpuMsPerSec: Math.round((used.user + used.system) / 1000 / ((now - cpuAt) / 1000)),
     lagMs: { p50: Math.round(loopDelay.percentile(50) / 1e6), p99: Math.round(loopDelay.percentile(99) / 1e6), max: Math.round(loopDelay.max / 1e6) },
   };
+  runtimePerf.simulationMs=runtimePerf.snapshotMs=runtimePerf.steps=0;
   cpuMark = process.cpuUsage();
   cpuAt = now;
   loopDelay.reset();
@@ -703,7 +712,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/health' || req.url === '/ready') {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, keepAwake: !!SELF_URL, load }));
+    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, keepAwake: KEEP_AWAKE_ENABLED, load }));
     return;
   }
   res.writeHead(404).end();
@@ -740,8 +749,9 @@ setInterval(() => {
 // then waits for it to wake. Self-pings are best-effort and cannot guarantee that the host stays awake
 // or override the provider's lifecycle (RENDER_EXTERNAL_URL is set by Render; KEEP_AWAKE_URL works on other hosts; KEEP_AWAKE=0 turns it off).
 const SELF_URL = (envValue('KEEP_AWAKE_URL') || envValue('RENDER_EXTERNAL_URL')).replace(/\/$/, '');
-if (SELF_URL && envValue('KEEP_AWAKE') !== '0') {
+const KEEP_AWAKE_ENABLED=!!SELF_URL && envValue('KEEP_AWAKE')!=='0';
+if (KEEP_AWAKE_ENABLED) {
   setInterval(() => fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(15_000) }).catch(noop), 10 * 60_000);
 }
 
-server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${SELF_URL ? ', keep-awake on' : ''}${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
+server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${KEEP_AWAKE_ENABLED ? ', keep-awake on' : ''}${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));

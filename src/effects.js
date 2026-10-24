@@ -1,3 +1,4 @@
+import { loadImage } from './assets.js';
 import { quality } from './quality.js';
 import { outlinedText, rainbowRing, megaSymbol } from './draw.js';
 import { blit } from './sprite.js';
@@ -95,6 +96,21 @@ class Effect {
   update(dt) {
     this.age += dt;
     return !this.dead && this.age < this.life;
+  }
+}
+
+let ultimateImpactImage = null;
+export async function preloadImpactSprite() {
+  ultimateImpactImage = await loadImage('/art/ultimate-impact.png');
+}
+export class UltimateImpact extends Effect {
+  constructor(x,y,z,size=64) { super('air',.32);Object.assign(this,{x,y,z,size}); }
+  draw(ctx) {
+    if (!ultimateImpactImage) return;
+    const p=this.age/this.life,size=this.size*(.45+.65*Math.min(1,p*4));
+    ctx.save();ctx.globalAlpha=1-p;
+    ctx.drawImage(ultimateImpactImage,Math.round(this.x-size/2),Math.round(this.y-this.z-size/2),size,size);
+    ctx.restore();
   }
 }
 

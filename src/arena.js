@@ -251,14 +251,16 @@ function paintOuterTile(t) {
 }
 
 export class Arena {
-  constructor() {
-    this.marks = new GroundFX();
+  constructor(headless = false) {
+    this.headless = headless;
+    this.marks = new GroundFX(headless);
     this.t = 0;
     this.setTheme('mtSilver');
   }
 
   setTheme(id) {
     this.theme = arenaById(id);
+    if (this.headless) { this.flakes=[];this.ground=this.outer=null;return; }
     this.ground = paintArena(this.theme);
     this.outer = paintOuterTile(this.theme);
     this.pattern = null;
@@ -285,6 +287,7 @@ export class Arena {
   }
 
   update(dt) {
+    if(this.headless)return;
     this.t += dt;
     for (let i = 0; i < this.flakes.length; i++) {
       const f = this.flakes[i];

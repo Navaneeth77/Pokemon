@@ -17,6 +17,7 @@ function cachedStamp(kind, r, paint) {
   let img = stampCache.get(key);
   if (!img) {
     img = makeStamp(size, paint);
+    if (stampCache.size >= 256) stampCache.delete(stampCache.keys().next().value);
     stampCache.set(key, img);
   }
   return img;
@@ -281,7 +282,8 @@ class Fracture {
 }
 
 export class GroundFX {
-  constructor() {
+  constructor(disabled = false) {
+    this.disabled=disabled;
     this.list = [];
   }
 
@@ -314,7 +316,14 @@ export class GroundFX {
   }
 
   stamp(kind, x, y, r, life, paint) {
-    return this.add(new Stamp(cachedStamp(kind, r, paint), x, y, life));
+    if(this.disabled)return;
+    const mark = new Stamp(cachedStamp(kind, r, paint), x, y, life);
+    mark.kind = kind; mark.radius = r;
+    return this.add(mark);
+  }
+
+  removeNear(kinds, x, y, radius = 60) {
+    this.list = this.list.filter(m => !kinds.includes(m.kind) || Math.hypot(m.x-x,m.y-y) > radius+(m.radius ?? 0));
   }
 
   scorch(x, y, r, life = 5) { return this.stamp('scorch', x, y, r, life, paintScorch); }
@@ -324,5 +333,5 @@ export class GroundFX {
   leaves(x, y, r, life = 5) { return this.stamp('leaves', x, y, r, life, paintLeaves); }
   energy(x, y, r, rgb, life = 4) { return this.stamp(`energy${rgb}`, x, y, r, life, paintEnergy(rgb.join(','))); }
   dragon(x, y, r, life = 4) { return this.energy(x, y, r, [140, 100, 255], life); }
-  fracture(x, y, R, life = 6.5) { return this.add(new Fracture(x, y, R, life)); }
+  fracture(x, y, R, life = 6.5) { if(this.disabled)return;return this.add(new Fracture(x, y, R, life)); }
 }

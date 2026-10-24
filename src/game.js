@@ -1,4 +1,4 @@
-import { newSummary, recordCombat } from './mastery.js';
+import { newSummary, recordCombat, cosmeticLoadout } from './mastery.js';
 import { quality, observeFrame } from './quality.js';
 import { BossPresenter, drawBossGround, drawBossHud, drawBossShield } from './bosses.js';
 import { Arena, WORLD_W, WORLD_H } from './arena.js';
@@ -31,6 +31,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -63,10 +64,12 @@ export class Game {
     // Opaque: the arena always covers the canvas, so the browser can skip blending it with the page.
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.ui = ui;
+    this.headless=ui.headless===true;
     this.sprites = sprites;
-    this.arena = new Arena();
+    this.arena = new Arena(this.headless);
     this.marks = this.arena.marks;
     this.particles = new ParticleSystem();
+    if(this.headless)this.particles.max=-1;
     this.hud = new Hud(this);
     this.red = new Trainer('red', 'Red', 180, 598);
     this.gold = new Trainer('gold', 'Gold', 180, 104);
@@ -207,6 +210,7 @@ export class Game {
     }
     if (this.online?.server) for (const m of this.playerTeam.members) m.remote = true;
     this.playerTeam.members.forEach((m, i) => { m.megaPick = this.megaPicks?.[this.selection[i]] ?? null; });
+    this.cosmetics = this.online?.authority ? {} : cosmeticLoadout();
     this.ui.buildTeam(this);
     this.reset();
     for (const m of this.playerTeam.members) m.megaChoice = m.megaPick;
@@ -280,6 +284,9 @@ export class Game {
 
   release(mon) {
     this.recordCombat('entered',mon);
+    if (mon.side === 'player' && this.cosmetics?.effect) {
+      this.spawn(new Ring(mon.x,mon.y,{r0:8,r1:70,life:.8,color:this.cosmetics.effect.color,width:4}));
+    }
     mon.hidden = false;
     mon.appear = 1;
     mon.enteredAt = this.time;
@@ -657,7 +664,7 @@ export class Game {
   // Every ultimate opens with a cutscene: the battle freezes, letterbox bars slide in and the camera
   // pushes in on the user powering up. Then the move plays out across the whole arena.
   startUltCutscene(user, move) {
-    if (this.raid || this.raidState) {
+    if (this.raid || this.raidState || this.online?.server || this.online?.authority) {
       const game = this;
       this.showRaidUltCard(user, move);
       user.sprite.play('Charge', { loop: true, force: true });
@@ -838,7 +845,7 @@ export class Game {
     const tr = mon.trainer;
     team.megaUsed = true;
     this.netSend(mon, { t: 'mega', c: mon.megaChoice });
-    if (this.raid || this.raidState) {
+    if (this.raid || this.raidState || this.online?.server || this.online?.authority) {
       const id=mon.species.mega.includes(mon.megaChoice)?mon.megaChoice:mon.species.mega[0], form=SPECIES[id];
       mon.megaEvolve(form,this.sprites[form.sprite]);mon.ab={};abilityOf(mon).onEnter?.(this,mon);
       this.spawn(new MegaAura(mon,1.1));rainbowBurst(this,mon.x,mon.y,mon.bodyZ);this.hud.callout(mon.side,form.name);sfx.megaBurst();return true;
@@ -894,9 +901,8 @@ export class Game {
   }
 
   spawn(effect) {
-    // Only discard decorative effects; projectiles and callbacks still determine gameplay.
-    if (this.effects.length >= (quality().particles > 500 ? 400 : 160) &&
-        ['Ring', 'Glow', 'DamageNumber', 'FloatText', 'Afterimage', 'ScreenDim'].includes(effect.constructor.name)) return effect;
+    // Projectiles and callbacks still determine gameplay; visual-only objects need no server lifetime.
+    if ((this.headless || this.effects.length >= (quality().particles > 500 ? 400 : 160)) && DECORATIVE_EFFECTS.has(effect.constructor.name)) return effect;
     this.effects.push(effect);
     return effect;
   }
@@ -1047,8 +1053,8 @@ export class Game {
       // Story cutscene (cutscene.js) staged in the arena with the game's sprites and effects.
       this.director?.update(dt);
       this.updateEffects(dt);
-      this.particles.update(dt);
-      this.arena.update(dt);
+      if(!this.headless)this.particles.update(dt);
+      if(!this.headless)this.arena.update(dt);
       this.shakeT -= dt;
       this.ui.update(this, dt);
       return;
@@ -1067,13 +1073,13 @@ export class Game {
       dt *= 0.35;
     }
     this.flashT = Math.max(0, this.flashT - dt);
-    this.red.update(dt);
-    this.gold.update(dt);
+    if(!this.headless)this.red.update(dt);
+    if(!this.headless)this.gold.update(dt);
 
     if (this.showcase) {
       this.showcase.update(dt);
-      this.particles.update(dt);
-      this.hud.update(dt);
+      if(!this.headless)this.particles.update(dt);
+      if(!this.headless)this.hud.update(dt);
       this.ui.update(this, dt);
       if (this.showcase.done) this.beginSendOut();
       return;
@@ -1089,9 +1095,9 @@ export class Game {
       this.player.animate(dt);
       this.opponent.animate(dt);
       this.updateEffects(dt, true);
-      this.particles.update(dt);
-      this.arena.update(dt);
-      this.hud.update(dt);
+      if(!this.headless)this.particles.update(dt);
+      if(!this.headless)this.arena.update(dt);
+      if(!this.headless)this.hud.update(dt);
       this.shakeT -= dt;
       this.ui.update(this, dt);
       return;
@@ -1145,9 +1151,9 @@ export class Game {
     this.separate();
     this.updateEffects(dt);
     this.updateClashes();
-    this.particles.update(dt);
-    this.arena.update(dt);
-    this.hud.update(dt);
+    if(!this.headless)this.particles.update(dt);
+    if(!this.headless)this.arena.update(dt);
+    if(!this.headless)this.hud.update(dt);
     this.updateWinds();
     if (this.switchMenu && this.state !== 'fighting') this.toggleSwitchMenu(false);
 
@@ -1170,12 +1176,12 @@ export class Game {
       if (m !== f.winner || f.t < 1.4) m.animate(sdt);
       m.faintT += m.fainted ? sdt : 0;
     }
-    this.red.update(dt);
-    this.gold.update(dt);
+    if(!this.headless)this.red.update(dt);
+    if(!this.headless)this.gold.update(dt);
     this.updateEffects(sdt);
-    this.particles.update(sdt);
-    this.arena.update(dt);
-    this.hud.update(dt);
+    if(!this.headless)this.particles.update(sdt);
+    if(!this.headless)this.arena.update(dt);
+    if(!this.headless)this.hud.update(dt);
     this.shakeT -= dt;
     this.ui.update(this, dt);
     if (f.done) {
@@ -1547,6 +1553,7 @@ export class Game {
     // Whole-number render scale; capped (lower on phones) since extra pixels cost fill rate.
     const cssScale = vh / h;
     this.k = Math.max(1, Math.min(quality().ratio, touch ? 2 : 3, Math.round(cssScale * (devicePixelRatio || 1))));
+    this.menuRenderDirty = true;
     this.canvas.width = Math.ceil(w * this.k);
     this.canvas.height = Math.ceil(h * this.k);
     this.particles.max = touch ? 450 : 1200;
@@ -1563,6 +1570,14 @@ export class Game {
       const dt = Math.min(0.05, frameMs / 1000);
       last = now;
       if (document.hidden) return;
+      // The opening has its own animation loop. Team/title menus only need a static arena behind them.
+      if (this.state === 'menu' || this.state === 'select') {
+        if (this.menuRenderDirty || this.lastRenderedState !== this.state) {
+          this.render(); this.menuRenderDirty=false; this.lastRenderedState=this.state;
+        }
+        return;
+      }
+      this.lastRenderedState=this.state;
       const start = performance.now();
       this.update(dt);
       const updated = performance.now();

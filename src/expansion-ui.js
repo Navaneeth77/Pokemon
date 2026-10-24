@@ -1,9 +1,9 @@
-import { readMastery, level, MASTERY_THRESHOLDS, BADGES, earnedBadges, profileStats, setTitle } from './mastery.js';
+import { readMastery, level, MASTERY_THRESHOLDS, BADGES, earnedBadges, profileStats, setTitle, COSMETICS, unlockedCosmetics, equipCosmetic, cosmeticLoadout } from './mastery.js';
 import { MOVES } from './moves.js';
 import { ARENAS } from './arena.js';
 import { BOSSES, BossEncounter, RAID_DIFFICULTY } from './bosses.js';
 import { HIT_REACTIONS } from './reactions.js';
-import { SPECIES } from './data/species.js';
+import { SPECIES, ROSTER } from './data/species.js';
 import { QUALITY, setQuality, qualityName } from './quality.js';
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
@@ -103,6 +103,7 @@ export class ExpansionUI {
         this.open('CONNECTING TO RAID', '<p class="exp-status">Waking the match server…</p>');
         await this.mm.connectReady();
         if (!this.raidPending) return;
+        if(!this.mm.features?.includes('raids')) throw new Error('The match server needs the expansion update. Solo raids are available.');
         this.mm.state = 'raid';
         this.mm.send({ t: 'raid-queue', ...setup, format: ui.format, team: ui.selection, lead: ui.lead, mega: ui.megaPick });
         return;
@@ -160,35 +161,38 @@ export class ExpansionUI {
     draw();
   }
 
-  mastery(selected = null) {
-    const data = readMastery(), stats = profileStats(data), earned = new Set(earnedBadges(data).map(b => b.id));
-    const rows = Object.entries(data.species).filter(([id]) => SPECIES[id]).sort((a, b) => b[1].xp - a[1].xp);
-    const name = id => (id && SPECIES[id] ? SPECIES[id].name : '—');
-    const stat = (label, value) => `<div><small>${label}</small><b>${value}</b></div>`;
-    const detail = selected && data.species[selected];
-    const detailHtml = detail ? (() => {
-      const lv = level(detail.xp), next = MASTERY_THRESHOLDS[lv], prev = MASTERY_THRESHOLDS[lv - 1] ?? 0;
-      const pct = next ? Math.round(((detail.xp - prev) / (next - prev)) * 100) : 100;
-      const found = detail.discovered.map(id => HIT_REACTIONS.find(r => r.id === id)?.label ?? id).join(', ') || 'None yet';
-      return `<section class="mastery-detail"><img width="64" src="${portrait(selected)}" alt=""><h3>${name(selected)} · LEVEL ${lv}</h3>
-        <div class="mastery-bar"><i style="width:${pct}%"></i></div><p>${detail.xp} XP${next ? ` · ${next - detail.xp} to level ${lv + 1}` : ' · max level'}</p>
-        <div class="profile-grid">${stat('Battles', detail.battles)}${stat('Wins', detail.wins)}${stat('Best streak', detail.bestStreak)}${stat('KOs', detail.kos)}${stat('Damage', Math.round(detail.damage).toLocaleString())}${stat('Taken', Math.round(detail.received).toLocaleString())}${stat('Ultimates', detail.ultimates)}${stat('Megas', detail.mega)}${stat('Reactions', detail.reactions)}${stat('Boss damage', Math.round(detail.bossDamage).toLocaleString())}${stat('Raids', detail.raids)}${stat('Drafts won', `${detail.draftWins}/${detail.drafts}`)}</div>
-        <p>Milestones: ${MASTERY_THRESHOLDS.map((xp, i) => `<span class="mastery-milestone${detail.xp >= xp ? ' earned' : ''}">Lv ${i + 1} · ${xp} XP</span>`).join(' ')}</p><p>Reactions discovered: ${found}</p></section>`;
-    })() : '';
-    const badges = BADGES.map(b => `<button class="badge${earned.has(b.id) ? ' on' : ''}${data.title === b.id ? ' worn' : ''}" data-title="${b.id}" ${earned.has(b.id) ? '' : 'disabled'} title="${b.desc}"><b>${b.name}</b><small>${b.desc}</small></button>`).join('');
-    const el = this.open('POKÉMON MASTERY', `<p class="exp-note">Saved in this browser only: clearing browser data or switching devices starts over. Mastery and badges never change battle stats.</p>
-      <h3>TRAINER PROFILE</h3>
-      <div class="profile-grid">${stat('Battles', stats.battles)}${stat('Win rate', `${stats.rate}%`)}${stat('Wins', stats.wins)}${stat('Best streak', stats.bestStreak)}${stat('Favourite', name(stats.favorite))}${stat('Top mastery', name(stats.top))}${stat('Favourite arena', ARENAS.find(a => a.id === stats.arena)?.name ?? stats.arena ?? '—')}${stat('Reactions', stats.reactions)}${stat('Boss damage', Math.round(stats.bossDamage).toLocaleString())}${stat('Top moves', stats.moves.map(id => MOVES[id]?.name ?? id).join(', ') || '—')}</div>
-      <h3>BADGES · ${earned.size}/${BADGES.length}</h3><p class="exp-note">Tap an earned badge to wear it as your title.</p><div class="badge-grid">${badges}</div>
-      ${detailHtml}
-      <h3>POKÉMON</h3><div class="exp-pool">${rows.map(([id, r]) => `<button data-species="${id}" class="mastery-level-${Math.min(3, level(r.xp))}${id === selected ? ' on' : ''}"><div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${name(id)}</b><small>Level ${level(r.xp)} · ${r.wins}W</small></div></button>`).join('') || '<p>Finish a battle to start your mastery journey.</p>'}</div>
-      <h3>RECENT MATCHES</h3>${data.matches.map(m => `<details><summary>${m.result.toUpperCase()} · ${m.mode}${m.raid ? ` · ${BOSSES[m.raid]?.name ?? ''} ${m.difficulty ?? ''}` : ''} · ${m.duration}s · ${m.verified ? 'server verified' : 'this browser'}</summary>${m.events?.length ? `<button class="px-btn small" data-replay="${esc(m.id)}">EVENT REPLAY</button>` : ''}<p>${Object.entries(m.species).filter(([id]) => SPECIES[id]).map(([id, r]) => `${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('') || '<p>No matches yet.</p>'}`);
-    el.querySelectorAll('[data-replay]').forEach(b => b.onclick = () => this.replay(data.matches.find(m => m.id === b.dataset.replay)));
-    el.querySelectorAll('[data-species]').forEach(b => b.onclick = () => this.mastery(b.dataset.species));
-    el.querySelectorAll('[data-title]:not([disabled])').forEach(b => b.onclick = () => {
-      setTitle(data.title === b.dataset.title ? null : b.dataset.title);
-      this.mastery(selected);
-    });
+  mastery(selected = null, compare = null) {
+    const data=readMastery(),stats=profileStats(data),earned=new Set(earnedBadges(data).map(b=>b.id));
+    const rows=ROSTER.map(id=>[id,data.species[id]??{xp:0,battles:0,wins:0}]).sort((a,b)=>b[1].xp-a[1].xp || SPECIES[a[0]].name.localeCompare(SPECIES[b[0]].name));
+    const name=id=>SPECIES[id]?.name??'—', stat=(label,value)=>`<div><small>${label}</small><b>${esc(value??0)}</b></div>`;
+    const detail=id=> {
+      const r=data.species[id]??{xp:0,discovered:[]},lv=level(r.xp),next=MASTERY_THRESHOLDS[lv],prev=MASTERY_THRESHOLDS[lv-1]??0;
+      const reward=COSMETICS.filter(c=>c.at>lv).sort((a,b)=>a.at-b.at)[0];
+      return `<section class="mastery-detail"><img loading="lazy" width="64" src="${portrait(id)}" alt=""><h3>${name(id)} · LEVEL ${lv}</h3>
+        <div class="mastery-bar"><i style="width:${next?Math.min(100,100*(r.xp-prev)/(next-prev)):100}%"></i></div>
+        <p>${r.xp} XP · ${next?`${next-r.xp} to level ${lv+1}`:'Max level'}<br>Next cosmetic: ${reward?`${reward.name} at level ${reward.at}`:'All mastery cosmetics available'}</p>
+        <div class="profile-grid">${[['Entered',r.entries],['Completed',r.completed??r.battles],['Wins',r.wins],['Losses',r.losses],['Best streak',r.bestStreak],['KOs',r.kos],['Faints',r.faints],['Hits',r.hits],['Switches',r.switches],['Damage',Math.round(r.damage??0)],['Taken',Math.round(r.received??0)],['Ultimates',r.ultimates],['Megas',r.mega],['Reactions',r.reactions],['Boss damage',Math.round(r.bossDamage??0)],['Raids',r.raids],['Draft wins',`${r.draftWins??0}/${r.drafts??0}`],['Best damage',Math.round(r.bestDamage??0)],['Fastest win',r.bestWin?`${r.bestWin}s`:'—'],['Best raid',r.bestRaid??'—']].map(([k,v])=>stat(k,v)).join('')}</div>
+        <p>Milestones: ${MASTERY_THRESHOLDS.map((xp,i)=>`<span class="mastery-milestone${r.xp>=xp?' earned':''}">Lv ${i+1} · ${xp} XP</span>`).join(' ')}</p>
+        <p>${(r.milestones??[]).map(m=>`Level ${m.level} earned ${new Date(m.at).toLocaleDateString()}`).join(' · ')}</p>
+        <p>Discovered: ${(r.discovered??[]).map(id=>HIT_REACTIONS.find(v=>v.id===id)?.label??id).map(esc).join(', ')||'None yet'}</p></section>`;
+    };
+    const available=new Set(unlockedCosmetics(data).map(c=>c.id));
+    const cosmetics=['frame','pose','effect'].map(kind=>`<label>${kind.toUpperCase()} <select data-cosmetic="${kind}"><option value="">Default</option>${COSMETICS.filter(c=>c.kind===kind).map(c=>`<option value="${c.id}" ${available.has(c.id)?'':'disabled'} ${data.cosmetics[kind]===c.id?'selected':''}>${c.name}${available.has(c.id)?'':` · Level ${c.at}`}</option>`).join('')}</select></label>`).join('');
+    const el=this.open('POKÉMON MASTERY',`<p>Saved in this browser only. Cosmetics never change battle stats. Entered counts include unfinished local battles; completed records and XP require a result.</p>
+      <h3>TRAINER PROFILE</h3><div class="profile-grid">${stat('Battles',stats.battles)}${stat('Win rate',`${stats.rate}%`)}${stat('Wins',stats.wins)}${stat('Best streak',stats.bestStreak)}${stat('Favourite',name(stats.favorite))}${stat('Top mastery',name(stats.top))}${stat('Favourite arena',ARENAS.find(a=>a.id===stats.arena)?.name??stats.arena??'—')}${stat('Top moves',stats.moves.map(id=>MOVES[id]?.name??id).join(', ')||'—')}</div>
+      <h3>BADGES · ${earned.size}/${BADGES.length}</h3><p>Tap an earned badge to wear its title.</p><div class="badge-grid">${BADGES.map(b=>`<button class="badge${earned.has(b.id)?' on':''}${data.title===b.id?' worn':''}" data-title="${b.id}" ${earned.has(b.id)?'':'disabled'}><b>${b.name}</b><small>${b.desc}</small></button>`).join('')}</div>
+      <h3>UNLOCKABLE COSMETICS</h3><div class="cosmetic-options">${cosmetics}</div>
+      ${selected?`<label>COMPARE WITH <select data-compare><option value="">Choose Pokémon</option>${ROSTER.filter(id=>id!==selected).map(id=>`<option value="${id}" ${compare===id?'selected':''}>${name(id)}</option>`).join('')}</select></label><div class="mastery-compare">${detail(selected)}${compare?detail(compare):''}</div>`:''}
+      <h3>ALL POKÉMON</h3><label>Search <input type="search" data-mastery-search placeholder="Pokémon name or type"></label><label>Sort <select data-sort><option value="xp">Mastery</option><option value="name">Name</option><option value="wins">Wins</option><option value="damage">Damage</option></select></label>
+      <div class="exp-pool mastery-roster">${rows.map(([id,r])=>`<button data-species="${id}" data-name="${name(id).toLowerCase()} ${SPECIES[id].types.join(' ')}" data-xp="${r.xp}" data-wins="${r.wins??0}" data-damage="${r.damage??0}" class="${id===selected?'on':''}"><div class="exp-mon"><img loading="lazy" src="${portrait(id)}" alt=""><b>${name(id)}</b><small>Level ${level(r.xp)} · ${r.wins??0}W</small></div></button>`).join('')}</div>
+      <h3>RECENT MATCHES</h3>${data.matches.map(m=>`<details><summary>${esc(m.result.toUpperCase())} · ${esc(m.mode)} · ${m.duration}s · ${m.verified?'server verified':'this browser'}</summary>${m.events?.length?`<button class="px-btn small" data-replay="${esc(m.id)}">EVENT REPLAY</button>`:''}<p>${Object.entries(m.species).filter(([id])=>SPECIES[id]).map(([id,r])=>`${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('')||'<p>No matches yet.</p>'}`);
+    el.querySelectorAll('[data-species]').forEach(b=>b.onclick=()=>this.mastery(b.dataset.species));
+    el.querySelector('[data-mastery-search]').oninput=e=>{for(const b of el.querySelectorAll('[data-species]'))b.hidden=!b.dataset.name.includes(e.target.value.toLowerCase());};
+    el.querySelector('[data-sort]').onchange=e=>{const key=e.target.value,box=el.querySelector('.mastery-roster');[...box.children].sort((a,b)=>key==='name'?a.dataset.name.localeCompare(b.dataset.name):+b.dataset[key]-+a.dataset[key]).forEach(b=>box.append(b));};
+    const selector=el.querySelector('[data-compare]');if(selector)selector.onchange=()=>this.mastery(selected,selector.value||null);
+    el.querySelectorAll('[data-cosmetic]').forEach(s=>s.onchange=()=>{equipCosmetic(s.dataset.cosmetic,s.value);this.flow.game.cosmetics=cosmeticLoadout();});
+    el.querySelectorAll('[data-title]:not([disabled])').forEach(b=>b.onclick=()=>{setTitle(data.title===b.dataset.title?null:b.dataset.title);this.mastery(selected,compare);});
+    el.querySelectorAll('[data-replay]').forEach(b=>b.onclick=()=>this.replay(data.matches.find(m=>m.id===b.dataset.replay)));
   }
 
   settings() {
@@ -196,7 +200,7 @@ export class ExpansionUI {
     el.querySelectorAll('[data-quality]').forEach(b => b.onclick = () => { setQuality(b.dataset.quality); this.flow.game.resize(); this.settings(); });
   }
   drafts() {
-    const el = this.open('DRAFT BATTLES', `<p>Unranked online · regular Pokémon · server-controlled choices</p><div class="exp-options"><button class="px-btn primary" data-mode="snake" data-size="3">SNAKE · 3 VS 3</button><button class="px-btn primary" data-mode="snake" data-size="6">SNAKE · 6 VS 6</button><button class="px-btn" data-mode="trade" data-size="6">BLIND TRADE · 6 VS 6</button></div><p>Snake: pick from a shared pool in A–B–B–A order.<br>Trade: choose one Pokémon and give the other to your opponent. Three rounds, simultaneous reveals.</p><p class="exp-status" role="status"></p>`);
+    const el = this.open('DRAFT BATTLES', `<p>Online · server-controlled choices</p><label>QUEUE <select data-ranked><option value="no">UNRANKED</option><option value="yes">RANKED · affects your rating</option></select></label><label>POOL <select data-roster><option value="regular">REGULAR POKÉMON</option><option value="all">FULL LEGAL ROSTER</option></select></label><div class="exp-options"><button class="px-btn primary" data-mode="snake" data-size="3">SNAKE · 3 VS 3</button><button class="px-btn primary" data-mode="snake" data-size="6">SNAKE · 6 VS 6</button><button class="px-btn" data-mode="trade" data-size="6">BLIND TRADE · 6 VS 6</button></div><div class="draft-previews"><article><b>SHARED POOL</b><div><img src="${portrait('charizard')}" alt="Charizard"><img src="${portrait('pikachu')}" alt="Pikachu"><img src="${portrait('blastoise')}" alt="Blastoise"></div><span>A → B → B → A</span><small>Every pick removes a Pokémon from the common pool.</small></article><article><b>BLIND TRADE</b><div><img src="${portrait('sceptile')}" alt="Sceptile"><span>⇄</span><img src="${portrait('lucario')}" alt="Lucario"></div><span>KEEP ONE · SEND ONE</span><small>Three private rounds; simultaneous reveals.</small></article></div><p class="exp-status" role="status"></p>`);
     el.querySelectorAll('[data-mode]').forEach(b => b.onclick = async () => {
       if (this.drafting) return;
       this.drafting = true; this.mm.state = 'connecting';
@@ -204,9 +208,10 @@ export class ExpansionUI {
       try {
         await this.mm.connectReady();
         if (!this.drafting) return;
+        if(!this.mm.features?.includes('drafts')) throw new Error('The match server needs the expansion update for drafts.');
         this.mm.state = 'draft';
-        this.mm.send({ t: 'draft-queue', mode: b.dataset.mode, format: +b.dataset.size });
-      } catch { if (this.el) this.el.querySelector('.exp-status').textContent = 'Could not connect. Close and retry; bot battles remain available.'; this.drafting = false; this.mm.state = 'idle'; }
+        this.mm.send({ t: 'draft-queue', mode: b.dataset.mode, format: +b.dataset.size, ranked:el.querySelector('[data-ranked]').value==='yes', roster:el.querySelector('[data-roster]').value });
+      } catch (err) { if (this.el) this.el.querySelector('.exp-status').textContent = err.message || 'Could not connect. Close and retry; bot battles remain available.'; this.drafting = false; this.mm.state = 'idle'; }
     });
   }
   onMessage(m) {
@@ -243,8 +248,8 @@ export class ExpansionUI {
       : snake ? `${esc(names[foe])} IS PICKING…` : 'WAITING FOR YOUR OPPONENT\'S SECRET CHOICE…';
     const left = snake ? `${Math.max(0, m.format - m.teams[mine].length)} picks left for you` : `round ${Math.min(3, m.round + 1)} of 3`;
     const title = snake ? `SNAKE DRAFT · ${m.format} VS ${m.format}` : `BLIND TRADE · ROUND ${Math.min(3, m.round + 1)}/3`;
-    const el = this.open(title, `<div class="draft-banner${canPick ? ' go' : ''}">${banner}</div>${order}
-      <div class="draft-clock"><i></i><span></span></div><p class="exp-note">${left} · ${snake ? 'picks alternate A–B–B–A so nobody gets two strong picks in a row' : 'you keep one of each pair; the other joins your opponent\'s team'}</p>
+    const el = this.open(title, `<p>${m.ranked?'RANKED':'UNRANKED'} · ${m.roster==='all'?'FULL ROSTER':'REGULAR POKÉMON'}</p><div class="draft-banner${canPick ? ' go' : ''}">${banner}</div>${order}
+      <div class="draft-clock"><i></i><span></span></div><p class="exp-note">${left} · ${snake ? 'picks alternate A–B–B–A; each selected Pokémon leaves the shared pool' : 'you keep one of each pair; the other joins your opponent\'s team'}</p>
       <div class="exp-teams">${[mine, foe].map(s => `<section><h3>${s === mine ? 'YOUR TEAM' : esc(names[foe])} · ${m.teams[s].length}/${m.format}</h3><div class="exp-roster">${m.teams[s].map((id, i) => card(id, snake ? '' : m.origins[s][i])).join('') || '<small>—</small>'}</div></section>`).join('')}</div>
       <div class="exp-pool">${m.pool.map(id => `<button data-pick="${id}" ${canPick ? '' : 'disabled'}>${card(id)}</button>`).join('')}</div>
       ${m.phase === 'confirm' ? `<button class="px-btn primary" data-confirm ${m.confirmed[mine] ? 'disabled' : ''}>${m.confirmed[mine] ? 'CONFIRMED — WAITING' : 'CONFIRM TEAM'}</button>` : ''}`);

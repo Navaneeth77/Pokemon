@@ -1,3 +1,4 @@
+import { summaryHtml } from './results.js';
 import { resultSummary, saveSummary } from './mastery.js';
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -750,7 +751,7 @@ export class UI {
   }
 
   showResult(win, winner) {
-    if (!this.game.online && !this.game.practice) saveSummary(resultSummary(this.game, 'player', {result:win?'win':'loss'}));
+    if ((!this.game.online || !this.game.online.server) && !this.game.practice) saveSummary(resultSummary(this.game, 'player', {result:win?'win':'loss'}));
     if (this.game.online?.server) {
       // Matchmaking: the match server's verdict, whatever this screen saw.
       this.resultText.innerHTML = this.game.online.resultHtml(winner);
@@ -768,7 +769,7 @@ export class UI {
       return;
     }
     if (this.game.raid && !this.game.raid.externalClock) {
-      this.resultText.innerHTML = this.game.flow.expansion.soloRaidResult(win);
+      this.resultText.innerHTML = this.game.flow.expansion.soloRaidResult(win) + summaryHtml(resultSummary(this.game,'player',{result:win?'win':'loss'}));
       $('#again-btn').textContent = 'Raid Again';
       $('#again-btn').classList.remove('hidden');
       $('#leave-btn').hidden = false;
@@ -780,6 +781,7 @@ export class UI {
     this.resultText.innerHTML = win
       ? `<b class="win">Victory!</b>${who}<br>${foe} is out of usable Pokémon.`
       : `<b class="lose">Defeat…</b>${who}<br>All of your Pokémon fainted.`;
+    this.resultText.innerHTML += summaryHtml(resultSummary(this.game,'player',{result:win?'win':'loss'}));
     $('#again-btn').textContent = this.online ? 'Rematch' : 'Restart Battle';
     $('#again-btn').classList.remove('hidden');
     $('#leave-btn').hidden = false;

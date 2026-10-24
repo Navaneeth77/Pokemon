@@ -4,7 +4,7 @@ import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
 import {
-  FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
+  UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
   debris, windBurst, metalSparks, Missile, TidalWave, Moon, Tether, FloatingRock, PsyDome,
 } from './effects.js';
@@ -906,6 +906,7 @@ class DragonAscent extends MoveAction {
   impact() {
     const u = this.user, g = this.game, { x, y } = this.spot, mega = this.mega;
     const R = this.move.radius * (mega ? 1.35 : 1);
+    g.spawn(new UltimateImpact(x,y,12,mega?100:80));
     this.phase = 'burn';
     this.burnEnd = this.t + (mega ? 1.4 : 0.9);
     u.zOverride = null;
@@ -1283,6 +1284,10 @@ class Ultimate extends MoveAction {
     const u = this.user, t = this.target;
     if (!t.alive || t.hidden) return;
     const d = u.distTo(t) || 1;
+    if (this.t-(this.lastImpact??-1)>.12) {
+      this.lastImpact=this.t;
+      this.game.spawn(new UltimateImpact(t.x,t.y,t.bodyZ,u.boss?88:54));
+    }
     applyHit(this.game, u, t, this.move, {
       power: this.move.power * frac, dirX: (t.x - u.x) / d, dirY: (t.y - u.y) / d, knockback: 160, stagger: 0.4,
       unblockable: true, stack: this.stack, ...opts,

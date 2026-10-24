@@ -12,7 +12,7 @@ const COUNTERS = ['damage', 'received', 'hits', 'kos', 'faints', 'ultimates', 'm
 
 const blank = () => ({
   version: VERSION, species: {}, matches: [], processed: [], arenas: {}, moves: {},
-  profile: { battles: 0, wins: 0, losses: 0, streak: 0, bestStreak: 0 }, raids: {}, typesWon: [], title: null,
+  profile: { battles: 0, wins: 0, losses: 0, streak: 0, bestStreak: 0 }, raids: {}, typesWon: [], title: null, cosmetics: {}, entryIds: [],
 });
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 const num = v => (Number.isFinite(v) ? v : 0);
@@ -28,7 +28,14 @@ export function readMastery(storage = localStorage) {
     return clean;
   }
   if (!isObj(x) || ![1, 2].includes(x.version) || !isObj(x.species)) return clean;
-  for (const [id, r] of Object.entries(x.species)) if (isObj(r) && Number.isFinite(r.xp) && Array.isArray(r.discovered)) clean.species[id] = r;
+  for (const [id, r] of Object.entries(x.species)) if (SPECIES[id] && isObj(r) && Number.isFinite(r.xp) && Array.isArray(r.discovered)) {
+    const cleanRow = clean.species[id] = { ...row(), ...r, entries: num(r.entries ?? r.battles), completed: num(r.completed ?? r.battles), bestDamage: num(r.bestDamage), bestWin: num(r.bestWin), bestRaid: DIFF_RANK.includes(r.bestRaid)?r.bestRaid:null };
+    for(const key of [...COUNTERS,'xp','battles','wins','losses','streak','bestStreak','raids','drafts','draftWins']) cleanRow[key]=Math.max(0,num(cleanRow[key]));
+    cleanRow.discovered=r.discovered.filter(v=>typeof v==='string').slice(0,16);
+    cleanRow.milestones=Array.isArray(r.milestones)?r.milestones.filter(v=>isObj(v)&&Number.isInteger(v.level)&&Number.isFinite(v.at)).slice(-10):[];
+  }
+  if (isObj(x.cosmetics)) clean.cosmetics = x.cosmetics;
+  if (Array.isArray(x.entryIds)) clean.entryIds = x.entryIds.filter(v => typeof v === 'string').slice(-500);
   if (Array.isArray(x.processed)) clean.processed = x.processed.filter(v => typeof v === 'string').slice(-500);
   if (Array.isArray(x.matches)) clean.matches = x.matches.filter(m => isObj(m) && typeof m.result === 'string' && isObj(m.species)).slice(0, 30);
   if (isObj(x.arenas)) clean.arenas = x.arenas;
@@ -73,6 +80,12 @@ const row = () => ({ damage: 0, received: 0, hits: 0, kos: 0, faints: 0, ultimat
 export function recordCombat(game, kind, actor, target, details = {}) {
   if (game.practice || actor?.remote || !actor || !game.summary) return;
   const summary = game.summary;
+  if (kind === 'entered') {
+    const rows = summary.species[actor.side];
+    const stat = rows[actor.baseSpecies.id] ??= row();
+    stat.entered = 1;
+    if (!game.online?.authority && actor.side === 'player') saveEntry(summary.id, actor.baseSpecies.id);
+  }
   if (kind !== 'entered') {
     summary.events ??= [];
     if (summary.events.length < 600) summary.events.push({
@@ -107,7 +120,7 @@ export function recordCombat(game, kind, actor, target, details = {}) {
 
 export function resultSummary(game, side = 'player', extra = {}) {
   const raid = game.raid ? { raid: game.raid.id, difficulty: game.raid.difficulty } : {};
-  return { events: game.summary.events ?? [], droppedEvents: game.summary.droppedEvents ?? 0, replaySide: side, id: game.summary.id, arena: game.summary.arena, duration: Math.round(game.time), species: game.summary.species[side], moves: game.summary.moves[side], mode: game.raid ? 'raid' : 'battle', ...raid, ...extra };
+  return { events: game.summary.events ?? [], droppedEvents: game.summary.droppedEvents ?? 0, replaySide: side, id: game.summary.id, arena: game.summary.arena, duration: Math.round(game.time), species: game.summary.species[side], moves: game.summary.moves[side], mode: game.raid ? 'raid' : game.online && !game.online.server ? 'friend' : 'battle', survivors: (side === 'player' ? game.playerTeam : game.opponentTeam).members.filter(m => m.alive).map(m => ({id:m.baseSpecies.id,hp:Math.ceil(m.hp),maxHp:m.maxHp})), ...raid, ...extra };
 }
 
 // ── When the result is known ──
@@ -128,6 +141,12 @@ export function saveSummary(summary, storage = localStorage) {
   for (const [id, s] of Object.entries(summary.species)) {
     if (!/^[A-Za-z0-9]+$/.test(id) || !isObj(s)) continue;
     const r = (data.species[id] ??= { ...row(), battles: 0, wins: 0, losses: 0, xp: 0, streak: 0, bestStreak: 0, raids: 0, drafts: 0, draftWins: 0 });
+    const entryKey = `${summary.id}:${id}`;
+    if (!data.entryIds.includes(entryKey)) { r.entries = (r.entries ?? 0) + 1; data.entryIds.push(entryKey); }
+    r.completed = (r.completed ?? 0) + 1;
+    r.bestDamage = Math.max(r.bestDamage ?? 0, num(s.damage));
+    if (win && summary.duration > 0) r.bestWin = r.bestWin ? Math.min(r.bestWin, summary.duration) : summary.duration;
+    if (summary.mode === 'raid' && win && DIFF_RANK.indexOf(summary.difficulty) > DIFF_RANK.indexOf(r.bestRaid)) r.bestRaid = summary.difficulty;
     r.battles++;
     if (win) {
       r.wins++;
@@ -140,7 +159,11 @@ export function saveSummary(summary, storage = localStorage) {
     for (const key of COUNTERS) r[key] = (r[key] ?? 0) + Math.max(0, Math.min(1e6, Number(s[key]) || 0));
     r.discovered = [...new Set([...(r.discovered ?? []), ...(Array.isArray(s.discovered) ? s.discovered : [])])].slice(0, 16);
     // XP for taking part, for real damage and for winning; capped per battle so it can't be farmed.
-    r.xp += Math.min(100, 20 + Math.floor((Number(s.damage) || 0) / 100) + (win ? 30 : 0));
+    const beforeLevel = level(r.xp);
+    r.xp += matchXP(s, summary.result);
+    r.milestones ??= [];
+    for (let lv=beforeLevel+1;lv<=level(r.xp);lv++) r.milestones.push({level:lv,match:summary.id,at:Date.now()});
+    r.milestones = r.milestones.slice(-10);
     if (summary.mode === 'raid') r.raids++;
     if (summary.mode === 'draft') {
       r.drafts++;
@@ -154,6 +177,7 @@ export function saveSummary(summary, storage = localStorage) {
   }
   data.arenas[summary.arena] = (data.arenas[summary.arena] ?? 0) + 1;
   for (const [id, n] of Object.entries(summary.moves ?? {})) data.moves[id] = (data.moves[id] ?? 0) + (Number(n) || 0);
+  data.entryIds = data.entryIds.slice(-500);
   data.processed.push(summary.id);
   data.processed = data.processed.slice(-500);
   data.matches.unshift(summary);
@@ -205,3 +229,35 @@ export function profileStats(d) {
   const p = d.profile, rate = p.battles ? Math.round((p.wins / p.battles) * 100) : 0;
   return { ...p, rate, favorite: by('battles'), top: by('xp'), arena: fav, moves, reactions: total(d, 'reactions'), bossDamage: total(d, 'bossDamage') };
 }
+
+
+export function saveEntry(matchId, id, storage = localStorage) {
+  if (!SPECIES[id]) return false;
+  const data = readMastery(storage), key = `${matchId}:${id}`;
+  if (data.entryIds.includes(key)) return false;
+  const r = data.species[id] ??= { ...row(), xp:0, battles:0, wins:0, losses:0, streak:0, bestStreak:0, raids:0, drafts:0, draftWins:0, completed:0 };
+  r.entries = (r.entries ?? 0) + 1;
+  data.entryIds.push(key); data.entryIds = data.entryIds.slice(-500);
+  return store(data, storage);
+}
+
+export const COSMETICS = [
+  {id:'bronze',kind:'frame',name:'Bronze trainer frame',at:2,color:'#dca26a'},
+  {id:'silver',kind:'frame',name:'Silver trainer frame',at:5,color:'#d4e8ff'},
+  {id:'champion',kind:'frame',name:'Champion trainer frame',at:10,color:'#ffe074'},
+  {id:'hop',kind:'pose',name:'Victory hop',at:3,anim:'Hop'},
+  {id:'roar',kind:'pose',name:'Victory roar',at:7,anim:'Roar'},
+  {id:'starlight',kind:'effect',name:'Starlight send-out',at:4,color:'#9eeaff'},
+  {id:'sunburst',kind:'effect',name:'Sunburst send-out',at:8,color:'#ffd46c'},
+];
+export const unlockedCosmetics = data => COSMETICS.filter(c => topLevel(data) >= c.at);
+export function equipCosmetic(kind, id, storage = localStorage) {
+  const data = readMastery(storage);
+  if (!['frame','pose','effect'].includes(kind) || (id && !unlockedCosmetics(data).some(c=>c.kind===kind && c.id===id))) return false;
+  data.cosmetics[kind] = id || null; return store(data,storage);
+}
+export function cosmeticLoadout(storage = localStorage) {
+  const data = readMastery(storage), available = unlockedCosmetics(data);
+  return Object.fromEntries(['frame','pose','effect'].map(kind=>[kind,available.find(c=>c.kind===kind && c.id===data.cosmetics[kind]) ?? null]));
+}
+export const matchXP = (s, result) => Math.min(100,20+Math.floor(num(s.damage)/100)+(result==='win'?30:0));

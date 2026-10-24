@@ -1,79 +1,81 @@
-# Expansion implementation and verification
+# Expansion coverage and release evidence
 
-The specification is the Major Feature Expansion in Prompot.pdf. Work is in the local `expansion`
-branch. The deployed `master` branch has not been changed. See README.md for controls, configuration,
-local co-op/draft steps and credits; PERFORMANCE.md for measurements and external verification limits.
+Work is on the local `expansion` branch. The complete PDF requirement-by-requirement accounting is
+in REQUIREMENTS.md. README.md gives controls, configuration, credits and local multiplayer steps;
+PERFORMANCE.md separates measurements from deployment/device limits.
 
-## Implementation checklist
+## Implemented
 
-| Area | Delivered behavior | Verification |
-|---|---|---|
-| Elemental reactions | Seven central hit reactions, aura windows, consume-once behavior, bounded chains, immunity/guard handling, guide, HUD and distinct sound cues | Combat tests; earlier browser freeze/conduction checks |
-| Mega stats | All 17 supported forms use verified stat ratios and preserve HP; physical/special effective stats | Data and lifecycle tests |
-| Solo raids | Three bosses, four stages/difficulties, telegraphs, vulnerability windows, arena damage, results and retry | Earlier browser runs and shared-engine tests |
-| Online raids | Server-owned shared boss, public/private matchmaking, contribution results, disconnect grace and reconnect | Earlier two-window checks; current local WebSocket reconnect/forged-damage tests |
-| Boss ultimates | Shield, countdown, shield-break cancellation, four-second punish window; large unblockable expiry damage; original legendary choreography | Shield/damage tests, detached-visual safety test, browser review |
-| Boss Mega forms | Rayquaza → Mega Rayquaza; Mewtwo → Mega Mewtwo Y at or below 50% HP, once; remaining/max HP preserved, replicated form | Exact-threshold/idempotence tests; browser Mega Rayquaza review |
-| Lugia animations | Calm flight idle, cropped spread-wing Charge, wing-beat Swing/Rotate | Frame-bounds/timing test; browser review |
-| Dragon Ascent | Boss visual altitude updates and rises above the arena before diving, including Mega form | Altitude/rise/dive regression test and browser launch check |
-| Player ultimates in raids | Restored 1.3-second charge intro and move choreography without freezing the shared raid | Wind-up timing test; all roster ultimate runtime audit |
-| Drafts | Shared-pool snake 3v3/6v6 and blind trade 6v6; timers, hidden choices, reveal, origins, confirmation | Rules and current two-client WebSocket tests; earlier two-window browser checks |
-| Presentation | Arcade title mode cards/groups, arena name on intro, compact raid ultimate cards, boss defeat collapse, varied victory poses, raid/final-stage music | Browser title/mobile layout; intro/finale render test |
-| Mastery | Trainer/species records, levels, milestone progress, discoveries, 14 badges, wearable titles, migration/deduplication | Migration/stat tests; earlier browser title/profile checks |
-| Match history/replay | Honest event timeline, play/pause/scrub, bounded logs; no rewards from playback | Bounded-event test; mobile browser playback/layout check |
-| Quality/performance | Three quality levels, automatic lowering, bounded particles/decorative effects, lighter overlays, preserved warnings | Profiling and targeted presentation checks; see PERFORMANCE.md |
-| Startup | Readiness, bounded retry/backoff/jitter, welcome gating, immediate cancellation of readiness work | Startup tests and local readiness/network checks |
-| Documentation | Current README, deployment configuration, credits, local verification steps and performance report | Source/diff review |
+- Seven shared-engine elemental reactions, immunity/guard handling, bounded enemy-only chains,
+  combo windows, terrain cleanup, guide, HUD and distinct procedural sound cues.
+- Verified effective stats for all 17 Mega forms; HP/form lifecycle correctness. Raid Rayquaza and
+  Mewtwo transform once at half HP; Mega form state is authoritative and replicated.
+- Three solo/co-op bosses, four phases/difficulties, telegraphed attacks, reaction-compatible patterns,
+  vulnerability windows, shielded interruptible ultimates, original legendary choreography, unique
+  entrances/defeat effects, raid music, contribution/survivor/reward results and reconnect handling.
+- Both draft formats with private/reveal rules, legal pools, timers, confirmation and battle launch.
+  Ranked/unranked queues and regular/full-roster choices are separate; ranked results use server Elo.
+- Arcade mode menu/visual previews, trainer/team/arena intro, restored player ultimate charge scenes,
+  nonblocking online ultimate/Mega presentation, final-hit/victory effects, ping/jitter feedback.
+- Full-roster mastery search/sort/comparison, separate entered/completed counts, best results, next
+  rewards and milestone history. Earned trainer frames, victory poses and send-out effects can be
+  equipped. Existing badges, titles, profile, safe migration and result deduplication remain.
+- Reusable summaries cover ordinary, friend-room, draft and raid matches. Results show survivors,
+  damage, moves, reactions, transforms and earned XP. Bounded event replay has play/pause/scrubbing;
+  it does not claim deterministic simulation playback or award progression.
+- SpriteCook generated the original crest and a new transparent 64×64 impact sprite. The latter is
+  integrated into ultimate hits, preloaded, inspected and recorded in spritecook-assets.json.
+- Abortable readiness/retries, legacy-health compatibility, welcome gating, feature negotiation,
+  bounded co-op rejoin, coalesced wake requests and unchanged protocol 2.
+- Bounded decorative/event/stamp caches; hidden-page/menu render reduction; quality modes preserve
+  essential warnings. Actual headless matches skip arena textures, snow, ground decoration, HUD and
+  cosmetic effect lifetimes while retaining projectiles, callbacks and gameplay timers.
+- Repeatable browser/Node/network profiling scripts, server diagnostic timings, one-week art/sprite
+  cache headers and current documentation. No dependency, account system or monetization added.
 
-## Final behavior notes
+## Verification
 
-Boss shields are 5% of maximum boss HP. Channel duration is 6.5 seconds times difficulty's telegraph
-factor, with a four-second minimum. Fully blocked hits do not prime reactions or apply move statuses;
-overflow reaches HP. Shield break cancels the attack and grants four seconds of ×1.3 boss damage.
-Expiry hits each active visible player through dodges for 40/55/70/85% max HP by difficulty.
-Stage transitions cancel pending channels. Boss ultimate animations use detached actors, so their
-visual hits cannot apply extra combat damage or seize the live player.
+The focused/full test history is retained in the task. `npm test` passes all 34 tests; `npm run build` succeeds and `git diff --check` is clean.
+The build retains a large-chunk warning (about 612 KB uncompressed / 199 KB gzip). No lint script is
+defined. Exact measurements are recorded in PERFORMANCE.md. Coverage includes all roster ultimate action completion, raid shield
+break/expiry, half-HP Mega state, skyward Dragon Ascent, immunity/switch/faint/chain behavior, mastery
+migration/rewards, bounded queues, ranked Elo, actual two-client drafts/co-op and reconnect.
 
-Lugia Charge samples Shoot frames 2–9 at 0.35 speed, Idle uses Walk at 0.4 speed, and Swing/Rotate use
-Attack. The renderer, afterimages and body-centre sampling all respect the cropped frame offset.
+Browser checks cover title/phone layout, mastery roster search/comparison/cosmetic controls, replay
+playback, boss charge/shield/reveal/choreography and actual Canvas performance. Earlier Claude
+checks cover the pre-existing full mode flows across separate windows; they are historical evidence,
+not a claim that every old test was repeated in this continuation.
 
-The original raid shortcut bypassed the player's ultimate intro. The continuation restored it using
-an action wind-up; the arena and partner continue updating. The boss's original Dragon Ascent,
-Psystrike and Aeroblast actions are reused for presentation. The visual actor now runs flight updates,
-which fixes Dragon Ascent's former ground-level appearance.
+A CPU profile found unnecessary visual work on the server. In the measured six-player workload,
+local CPU changed from 52 to 40 ms/second after removing it. Browser measurements and a sustained
+mixed-effects run are retained in JSON. An anomalous slow Node sample is explicitly reported rather
+than discarded. See PERFORMANCE.md for details, exact workloads and reproducible commands.
 
-## Verification boundaries and deliberate limits
+## Release gate still external
 
-- Deterministic simulation playback is not offered; the specification permits an honest event replay.
-  Old matches have no retroactively fabricated event logs.
-- Drafts remain unranked. The optional ranked-draft integration is deferred to preserve current ratings.
-- Dedicated network hit rewind is not implemented; current authoritative timing/prediction remains.
-- Mastery is local to this browser. Titles/badges are cosmetic and cannot affect battle stats.
-- The current continuation did not repeat every earlier Friend Room, saved-team, physical-phone and
-  two-window browser test. It retains Claude's results as historical evidence and labels new checks.
-- Actual Render sleep-to-ready timing, WAN behavior and production CPU capacity remain external
-  verification items. No claim of stable 60 FPS on every device or always-on free hosting is made.
-- No new SpriteCook generation or credits were used in this continuation. The earlier generated crest
-  and its manifest remain in the project.
+The deployed frontend and /health responded successfully. The live older server returned 404 for
+/ready; it does not yet include this expansion. The frontend's compatibility path can still establish
+ordinary protocol-2 connections, but new modes require the updated server and advertise that fact.
+No production push/deployment was performed by this continuation.
 
-## Final checks
+Deploy server/frontend together, then verify real Render sleep-to-ready, WAN play and host capacity.
+There is no Render management connection among the available tools, so a genuine provider suspension
+was not forced. Physical-phone performance is also unverified. The strict 16.67 ms p95 target is not
+established in this browser environment, and no universal 60 FPS guarantee is made. These limits are
+explicitly allowed to be reported by the PDF; they are not labelled successful tests.
 
-`npm test`: 25 passed, 0 failed. `npm run build`: passed; Vite reports the existing large
-JavaScript chunk warning (about 600 KB before gzip, 195 KB gzip). `git diff --check`: passed.
-No new dependency, production push or deployment was performed.
-
-## Run and release
+## Local run
 
 ```sh
+npm run server
+npm run dev
 npm test
 npm run build
 node scripts/profile.mjs
+node scripts/network-profile.mjs
 ```
 
-For local multiplayer run `npm run server` and `npm run dev`; use `?pid=a` / `?pid=b` in separate tabs.
-Both players select compatible raid boss/team size or draft mode/format. Private raids use the
-six-character code from Create Room in the other tab's Join Room screen. See README.md for details.
-
-Before a production release, run the real-host checklist in PERFORMANCE.md. No secrets or additional
-environment variables are needed by these changes. Pushing `master` deploys Vercel and Render;
-this continuation leaves deployment under the owner's control.
+Use `?pid=a` / `?pid=b` for two local identities. For co-op choose matching boss/team size, then public
+partner or Create Room/Join Room. For drafts choose matching mode, team size, ranking and pool,
+make picks and confirm. Browser profiling is at `/scripts/browser-bench.html`; `?soak=60` runs a
+sustained mixed-effects scenario. The benchmark uses practice state and grants no progression.

@@ -1,4 +1,5 @@
 import '../server/shim.js';
+import { Falling } from '../src/effects.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Draft } from '../src/draft-rules.js';
@@ -232,4 +233,36 @@ test('presentation renders the ordinary intro, boss defeat and victory without r
  new BossEncounter([g],'rayquaza');g.opponent.hp=0;
  g.startFinale(g.player,g.opponent,null);
  for(const t of [.1,.3,1.4,2.8]) {g.finale.update(t);g.render();}
+});
+
+test('online ultimate and Mega presentation never stop the authoritative clock or dodge timers',()=>{
+ const g=battle();g.online={authority:true,server:true,send:noop,tick:noop,processEvents:noop,beforePuppet:noop,afterPuppet:noop};
+ g.opponent.dodgeCD=2;g.startUltCutscene(g.player,MOVES[g.player.species.ultimate]);
+ assert.equal(g.cinematic,null);g.update(.1);assert.ok(g.time>0);assert.ok(g.opponent.dodgeCD<2);
+ g.player.cancelAction();g.player.busy=0;const hp=g.player.hp;
+ assert.equal(g.megaEvolve(g.player,true),true);assert.equal(g.cinematic,null);assert.equal(g.player.hp,hp);
+});
+test('reactions respect type immunity, switching and fainting; conduction only chains to nearby wet enemies',()=>{
+ const g=battle(),p=g.player,t=g.opponent,wet=g.opponentTeam.members[1],dry=g.opponentTeam.members[2],ally=g.playerTeam.members[1];
+ for(const m of [p,t,wet,dry,ally]){m.hidden=false;m.appear=0;m.hp=m.maxHp;}
+ t.x=150;t.y=250;wet.x=170;wet.y=250;dry.x=180;dry.y=250;ally.x=175;ally.y=250;
+ const move=type=>({id:`reaction-${type}`,name:type,type,cat:'special',power:2,cooldown:1,status:['slow',0]});
+ primeElement(t,'water',g.time);primeElement(wet,'water',g.time);primeElement(ally,'water',g.time);
+ g.combatants=()=>[p,t,wet,dry,ally];const hp=[wet.hp,dry.hp,ally.hp];
+ applyHit(g,p,t,move('electric'),{critChance:0});assert.ok(wet.hp<hp[0]);assert.equal(dry.hp,hp[1]);assert.equal(ally.hp,hp[2]);
+ assert.equal(wet.elementAura,null,'chain consumes the aura');
+ primeElement(t,'water',g.time);t.enter(180,250,0);assert.equal(t.elementAura,null,'switch clears priming');t.hidden=false;
+ t.species={...t.species,types:['ice']};primeElement(t,'water',g.time);applyHit(g,p,t,move('ice'),{critChance:0});assert.equal(t.frozen,0,'Ice type is immune');
+ primeElement(t,'fire',g.time);t.hp=0;t.faint();assert.equal(t.elementAura,null,'faint clears priming');assert.equal(applyHit(g,p,t,move('water')),false);
+});
+
+test('headless matches skip arena art and decorative effects while preserving landing callbacks and timers',()=>{
+ const ui=new Proxy({format:3,headless:true},{get:(t,k)=>t[k]??noop});
+ const g=new Game(document.createElement('canvas'),sprites,ui);g.start();g.showcase=null;g.state='fighting';g.timers=[];
+ for(const m of [g.player,g.opponent]){m.hidden=false;m.appear=0;}
+ assert.equal(g.arena.ground,null);assert.equal(g.arena.flakes.length,0);
+ g.marks.fracture(180,250,100);assert.equal(g.marks.list.length,0);
+ let landed=0,timed=0;g.spawn(new Falling(180,250,.05,'draco',()=>landed++));g.later(.05,()=>timed++);
+ for(let i=0;i<12;i++)g.update(1/60);
+ assert.equal(landed,1);assert.equal(timed,1);assert.ok(g.time>0);
 });

@@ -73,6 +73,10 @@ export class Hud {
     this.drawPanel(ctx, g.player, g.playerTeam, false);
     this.drawPanel(ctx, g.opponent, g.opponentTeam, true);
     this.drawTimer(ctx);
+    if (g.online?.server) {
+      const ping=g.online.ping,unstable=(g.online.jitter??0)>80;
+      outlinedText(ctx,ping==null?'CONNECTING':`${ping}ms${unstable?' · JITTER':''}`,354,72,{size:6,color:unstable?'#ffb077':'#b7e9cf',align:'right',lw:2});
+    }
     this.drawSwitch(ctx);
     if (this.callouts.player) this.drawCallout(ctx, this.callouts.player, false);
     if (this.callouts.opponent) this.drawCallout(ctx, this.callouts.opponent, true);
@@ -152,6 +156,7 @@ export class Hud {
     const bust = !right && this.game.playerBust;
     if (bust) {
       ctx.drawImage(bust, nx - 1, 36.5, 9, 9);
+      if (this.game.cosmetics?.frame) { ctx.strokeStyle=this.game.cosmetics.frame.color;ctx.lineWidth=1;ctx.strokeRect(nx-2,35.5,11,11); }
       nx += 10;
     }
     nx = right ? W - nx : nx;

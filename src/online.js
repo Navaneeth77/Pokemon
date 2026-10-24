@@ -1,3 +1,4 @@
+import { appendBattleEvents } from './event-buffer.js';
 import { Peer } from 'peerjs';
 import { MOVES } from './moves.js';
 import { SPECIES } from './data/species.js';
@@ -279,7 +280,7 @@ export class Online {
         return;
       default:
         // Battle actions: replayed in order once the battle is running and no cutscene is playing.
-        if (this.inBattle && ['move', 'dodge', 'mega', 'switch', 'faint', 'cancel'].includes(m.t)) this.queue.push(m);
+        if (this.inBattle && ['move', 'dodge', 'mega', 'switch', 'faint', 'cancel'].includes(m.t)) this.queue=appendBattleEvents(this.queue,[m]);
     }
   }
 

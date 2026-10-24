@@ -1,0 +1,93 @@
+{
+  "startupMs": 119.00579199999999,
+  "seconds": 12.005522542,
+  "scenario": "two ordinary matches plus one two-player hard raid",
+  "players": 6,
+  "health": {
+    "ok": true,
+    "ready": true,
+    "protocol": 2,
+    "capacity": 4,
+    "drafts": 0,
+    "players": 6,
+    "matches": 3,
+    "queued": 0,
+    "leaderboard": {
+      "storage": "file",
+      "players": 6
+    },
+    "keepAwake": false,
+    "load": {
+      "simulationMsPerSec": 11.207,
+      "snapshotMsPerSec": 10.691,
+      "stepsPerSec": 177,
+      "heapMB": 18.44,
+      "cpuMsPerSec": 40,
+      "lagMs": {
+        "p50": 11,
+        "p99": 12,
+        "max": 12
+      }
+    }
+  },
+  "traffic": [
+    {
+      "raid": false,
+      "bytes": 211034,
+      "snapshots": 364
+    },
+    {
+      "raid": false,
+      "bytes": 211034,
+      "snapshots": 364
+    },
+    {
+      "raid": false,
+      "bytes": 209886,
+      "snapshots": 362
+    },
+    {
+      "raid": false,
+      "bytes": 209886,
+      "snapshots": 362
+    },
+    {
+      "raid": true,
+      "bytes": 319518,
+      "snapshots": 360
+    },
+    {
+      "raid": true,
+      "bytes": 320197,
+      "snapshots": 360
+    }
+  ],
+  "stderr": "",
+  "afterLeave": {
+    "ok": true,
+    "ready": true,
+    "protocol": 2,
+    "capacity": 4,
+    "drafts": 0,
+    "players": 6,
+    "matches": 0,
+    "queued": 0,
+    "leaderboard": {
+      "storage": "file",
+      "players": 6
+    },
+    "keepAwake": false,
+    "load": {
+      "simulationMsPerSec": 11.207,
+      "snapshotMsPerSec": 10.691,
+      "stepsPerSec": 177,
+      "heapMB": 18.44,
+      "cpuMsPerSec": 40,
+      "lagMs": {
+        "p50": 11,
+        "p99": 12,
+        "max": 12
+      }
+    }
+  }
+}

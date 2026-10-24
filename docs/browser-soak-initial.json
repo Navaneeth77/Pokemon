@@ -1,0 +1,19 @@
+{
+  "assetLoadMs": 265.2000000476837,
+  "results": [
+    {
+      "scenario": "soak",
+      "quality": "high",
+      "frames": 3580,
+      "frameP95": 17.299999999995634,
+      "frameP99": 17.60000000000582,
+      "frameMax": 17.80000000000291,
+      "updateP95": 0.39999985694885254,
+      "renderP95": 1.2999999523162842,
+      "scriptedInputToRenderP95": 0,
+      "maxEffects": 56,
+      "maxParticles": 535,
+      "heapMB": 25.235023498535156
+    }
+  ]
+}

@@ -41,5 +41,5 @@ export function hitReaction(target, type, now, move) {
   return rule;
 }
 export function primeElement(target, type, now) {
-  if (['water', 'ice', 'electric', 'fire', 'grass', 'ground'].includes(type)) target.elementAura = { type, until: now + AURA_WINDOW };
+  if (['water', 'ice', 'electric', 'fire', 'grass', 'ground', 'flying'].includes(type)) target.elementAura = { type, until: now + AURA_WINDOW };
 }

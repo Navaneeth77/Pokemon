@@ -7,14 +7,15 @@ export class DraftRooms {
     if (m.t === 'draft-queue') {
       if (p.state !== 'idle') return true;
       if (!['snake', 'trade'].includes(m.mode) || ![3, 6].includes(m.format) || (m.mode === 'trade' && m.format !== 6)) return true;
-      const other = this.waiting.find(e => e.mode === m.mode && e.format === m.format && e.p !== p);
+      const ranked = m.ranked === true, roster = m.roster === 'all' ? 'all' : 'regular';
+      const other = this.waiting.find(e => e.mode === m.mode && e.format === m.format && e.ranked === ranked && e.roster === roster && e.p !== p);
       if (other && !this.capacity()) { this.send(p, { t: 'error', message: 'Server at capacity. Please retry shortly.' }); return true; }
       p.state = 'draft';
-      if (!other) { this.waiting.push({ p, mode: m.mode, format: m.format, at: Date.now() }); this.send(p, { t: 'draft-waiting' }); return true; }
+      if (!other) { this.waiting.push({ p, mode: m.mode, format: m.format, ranked, roster, at: Date.now() }); this.send(p, { t: 'draft-waiting' }); return true; }
       this.waiting.splice(this.waiting.indexOf(other), 1);
-      const pool = ROSTER.filter(id => SPECIES[id].class === 'regular');
+      const pool = ROSTER.filter(id => roster === 'all' || SPECIES[id].class === 'regular');
       for (let i = pool.length - 1; i > 0; i--) { const j = randomInt(i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-      const room = { id: randomBytes(6).toString('hex'), players: [other.p, p], draft: new Draft(m.mode, m.format, pool.slice(0, m.mode === 'trade' ? 12 : m.format * 4)) };
+      const room = { ranked, roster, id: randomBytes(6).toString('hex'), players: [other.p, p], draft: new Draft(m.mode, m.format, pool.slice(0, m.mode === 'trade' ? 12 : m.format * 4)) };
       this.rooms.set(room.id, room); this.broadcast(room); return true;
     }
     if (!m.t.startsWith('draft-')) return false;
@@ -29,13 +30,13 @@ export class DraftRooms {
   // wrong clock still shows the right countdown).
   broadcast(r) {
     const names = r.players.map(p => p.name), left = Math.max(0, r.draft.deadline - Date.now());
-    r.players.forEach((p, s) => this.send(p, { t: 'draft-state', id: r.id, names, left, ...r.draft.view(s) }));
+    r.players.forEach((p, s) => this.send(p, { t: 'draft-state', id: r.id, ranked:r.ranked, roster:r.roster, names, left, ...r.draft.view(s) }));
   }
   complete(r) {
     if (r.draft.phase !== 'done') return;
     this.rooms.delete(r.id);
     if (!this.capacity()) { for (const p of r.players) { p.state = 'idle'; this.send(p, { t: 'draft-cancelled', message: 'Server is at capacity. Please retry.' }); } return; }
-    const entries = r.players.map((player, s) => ({ player, format: r.draft.format, team: r.draft.teams[s], lead: 0, mega: {}, draftMode: r.draft.mode }));
+    const entries = r.players.map((player, s) => ({ player, format: r.draft.format, team: r.draft.teams[s], lead: 0, mega: {}, draftMode: r.draft.mode, ranked:r.ranked }));
     this.start(...entries);
   }
   leave(p) {
