@@ -29,6 +29,10 @@ test('private co-op uses shared boss HP; forged damage ignored; disconnect survi
  const snaps=await Promise.all(cs.map(c=>c.wait('b',m=>!!m.raid)));assert.equal(snaps[0].raid.hp,snaps[1].raid.hp);assert.ok(snaps[0].ally);
  cs[0].send({t:'damage',id:ms[0].id,hp:0,damage:999999});const next=await cs[0].wait('b',m=>m.ts>snaps[0].ts);assert.equal(next.raid.hp,snaps[0].raid.hp);
  cs[1].ws.close();const disconnected=await cs[0].wait('b',m=>m.ally?.disconnected);assert.equal(disconnected.raid.hp,snaps[0].raid.hp);
+ const rejoined = client('raid-playerb'); cs[1] = rejoined; await rejoined.hello();
+ const restored = await rejoined.wait('matched'); assert.equal(restored.id, ms[0].id);
+ rejoined.send({t:'loaded', id:restored.id}); await rejoined.wait('start');
+ const resumed = await rejoined.wait('b',m=>!!m.raid); assert.ok(resumed.raid.hp > 0);
  }finally{cs.forEach(c=>c.ws.close());}
 });
 test('blind trade completes three rounds and launches six distinct picks',async()=>{

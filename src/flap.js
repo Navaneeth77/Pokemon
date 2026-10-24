@@ -41,7 +41,7 @@ function cutWing(img, { box, not }) {
 function bodyCentre(anim, frame) {
   const c = makeCanvas(anim.fw, anim.fh);
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(anim.image, frame * anim.fw, 0, anim.fw, anim.fh, 0, 0, anim.fw, anim.fh);
+  ctx.drawImage(anim.image, (frame + (anim.offset ?? 0)) * anim.fw, 0, anim.fw, anim.fh, 0, 0, anim.fw, anim.fh);
   const d = ctx.getImageData(0, 0, anim.fw, anim.fh).data;
   let top = -1, bottom = -1;
   for (let y = 0; y < anim.fh; y++) {

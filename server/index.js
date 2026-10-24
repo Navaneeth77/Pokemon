@@ -702,7 +702,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/health' || req.url === '/ready') {
-    res.writeHead(200, { 'content-type': 'application/json' });
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, keepAwake: !!SELF_URL, load }));
     return;
   }
@@ -737,8 +737,8 @@ setInterval(() => {
 }, HEARTBEAT_MS);
 
 // Render's free plan puts a service to sleep after 15 minutes without requests, and the next player
-// then waits up to a minute for it to wake. A request to our own public address every 10 minutes keeps
-// it awake (RENDER_EXTERNAL_URL is set by Render; KEEP_AWAKE_URL works on other hosts; KEEP_AWAKE=0 turns it off).
+// then waits for it to wake. Self-pings are best-effort and cannot guarantee that the host stays awake
+// or override the provider's lifecycle (RENDER_EXTERNAL_URL is set by Render; KEEP_AWAKE_URL works on other hosts; KEEP_AWAKE=0 turns it off).
 const SELF_URL = (envValue('KEEP_AWAKE_URL') || envValue('RENDER_EXTERNAL_URL')).replace(/\/$/, '');
 if (SELF_URL && envValue('KEEP_AWAKE') !== '0') {
   setInterval(() => fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(15_000) }).catch(noop), 10 * 60_000);

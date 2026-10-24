@@ -99,3 +99,137 @@ test('mastery: version 1 saves migrate; profile, raid bests, types and badges', 
  const ids = earnedBadges(after).map(b => b.id); assert.ok(ids.includes('first-win') && ids.includes('raid'));
  setTitle('raid', storage); assert.equal(currentTitle(storage), 'Raid Victor'); setTitle('mythbreaker', storage); assert.equal(currentTitle(storage), null, 'unearned titles cannot be worn');
 });
+
+
+test('raid ultimate: shield absorbs hits, blocks reactions and breaks into a punish window', () => {
+ const g = battle(), b = new BossEncounter([g], 'lugia');
+ b.intro = 0; b.boss.invuln = false; b.startUlt();
+ const hp = b.boss.hp, shield = b.ult.shield;
+ const move = { id: 'shield-test', name: 'Water', type: 'water', cat: 'special', power: 10, cooldown: 1, status: ['burn', 1] };
+ assert.equal(applyHit(g, g.player, b.boss, move, { critChance: 0 }), true);
+ assert.equal(b.boss.hp, hp); assert.ok(b.ult.shield < shield);
+ assert.equal(b.boss.elementAura, null); assert.equal(b.boss.status.burn ?? 0, 0);
+ b.ult.shield = 1;
+ applyHit(g, g.player, b.boss, move, { critChance: 0 });
+ assert.equal(b.ult, null); assert.equal(b.ultBroken, 1); assert.equal(b.vulnerable, 4);
+ assert.ok(b.boss.hp < hp, 'overflow reaches HP');
+ b.tick(0.1); assert.equal(b.ultFired, 0);
+ assert.equal(b.view().ub, 1); assert.equal(b.view().ul, null);
+});
+
+test('raid ultimate: timeout hits both players through dodges once; stage change cancels', () => {
+ for (const [difficulty, share] of [['normal', .55], ['legendary', .85]]) {
+  const games = [battle(), battle()], b = new BossEncounter(games, 'mewtwo', { difficulty });
+  b.intro = 0; b.boss.invuln = false;
+  for (const g of games) { g.player.hp = g.player.maxHp; g.player.dodgeInv = 9; }
+  b.startUlt(); assert.ok(b.view().ul.sh > 0);
+  b.ult.t = .01; b.tick(.02);
+  for (const g of games) assert.equal(g.player.hp, g.player.maxHp - Math.round(g.player.maxHp * share));
+  assert.equal(b.ultFired, 1); b.tick(.02); assert.equal(b.ultFired, 1);
+  b.startUlt(); b.boss.hp = b.boss.maxHp * .7; b.tick(.02);
+  assert.equal(b.ult, null); assert.equal(b.ultFired, 1);
+ }
+});
+
+test('Lugia aliases use valid cropped charge frames and wing beats', () => {
+ const a = sprites.lugia.anims;
+ assert.equal(a.Charge.offset, 2); assert.equal(a.Charge.frames, 8);
+ assert.ok(a.Charge.offset + a.Charge.frames <= a.Shoot.frames);
+ assert.ok(a.Charge.durations.every(d => d > 0));
+ assert.deepEqual(a.Swing.durations, a.Attack.durations);
+ assert.deepEqual(a.Rotate.durations, a.Attack.durations);
+});
+
+import { bossUltimateVisual } from '../src/raid-cinematics.js';
+import { MOVES } from '../src/moves.js';
+import { resultSummary } from '../src/mastery.js';
+test('raid cinematics: player winds up without freezing the raid; legendary visuals cannot damage live actors', () => {
+ for (const id of ['rayquaza', 'mewtwo', 'lugia']) {
+  const g = battle(); g.opponentSelection = [id]; g.start(); g.showcase = null; g.state = 'fighting';
+  for (const m of [g.player, g.opponent]) { m.hidden = false; m.appear = 0; }
+  const b = new BossEncounter([g], id); b.intro = 0;
+  const before = [g.player.hp, b.boss.hp, g.player.x, g.player.y];
+  const visual = bossUltimateVisual(g, b.boss);
+  for (let i = 0; i < 480 && !visual.action.done; i++) { visual.update(1 / 60); g.updateEffects(1 / 60); }
+  assert.equal(visual.action.done, true, id);
+  assert.deepEqual([g.player.hp, b.boss.hp, g.player.x, g.player.y], before, id);
+  assert.equal(g.player.held, false);
+  const move = MOVES[g.player.species.ultimate];
+  g.startUltCutscene(g.player, move);
+  assert.equal(g.cinematic, null); assert.equal(g.raidCards.length, 1);
+  const windup = g.player.action; windup.update(.6); assert.equal(g.player.action, windup);
+  windup.update(.71); assert.notEqual(g.player.action, windup); assert.equal(g.player.action.move, move);
+ }
+});
+test('event replay is bounded and boss damage received is included in summaries', () => {
+ const g = battle(); g.opponent.boss = 'rayquaza';
+ g.recordCombat('hit', g.opponent, g.player, {damage: 77, move: 'boss-ultimate'});
+ for (let i = 0; i < 650; i++) g.recordCombat('move', g.player, null, {id: 'flamethrower'});
+ const summary = resultSummary(g);
+ assert.equal(summary.events.length, 600); assert.equal(summary.droppedEvents, 51);
+ assert.equal(summary.species[g.player.baseSpecies.id].received, 77);
+});
+
+test('ultimate audit: every roster ultimate finishes its existing choreography without errors', () => {
+ const seen = new Set();
+ for (const species of Object.values(SPECIES)) {
+  if (!species.ultimate || species.megaOf || seen.has(species.ultimate)) continue;
+  seen.add(species.ultimate);
+  const g = battle(); g.selection = [species.id, 'pikachu', 'blastoise']; g.start(); g.showcase = null; g.state = 'fighting';
+  for (const m of [g.player,g.opponent]) {m.hidden=false;m.appear=0;m.hp=100000;}
+  g.particles.max=-1;
+  g.startUltCutscene(g.player, MOVES[species.ultimate]);
+  for (let i=0;i<720;i++) {
+   if(g.cinematic)g.updateUltCutscene(1/60);
+   else if(g.player.action && !g.player.action.done)g.player.action.update(1/60);
+   g.updateEffects(1/60);
+  }
+  assert.equal(g.cinematic,null,species.ultimate);
+  assert.equal(g.player.action?.done,true,species.ultimate);
+ }
+ assert.ok(seen.size >= 91);
+});
+
+import { evolveRaidBoss } from '../src/bosses.js';
+test('raid Mega evolution: exact half HP trigger, health preservation and idempotent co-op state', () => {
+ for(const id of ['rayquaza','mewtwo','lugia']) {
+  const g=battle();g.opponentSelection=[id];g.start();g.showcase=null;g.state='fighting';
+  for(const m of [g.player,g.opponent]){m.hidden=false;m.appear=0;}
+  const b=new BossEncounter([g],id);b.intro=0;b.next=100;
+  const max=b.boss.maxHp;b.boss.hp=max*.51;b.tick(1/60);assert.equal(b.boss.isMega,false);
+  b.boss.hp=max*.5;b.tick(1/60);
+  assert.equal(b.boss.isMega,id!=='lugia');assert.equal(b.boss.hp,max*.5);assert.equal(b.boss.maxHp,max);
+  if(id!=='lugia') {
+   const form=b.boss.species;assert.equal(b.view().mg,true);b.tick(1/60);assert.equal(b.boss.species,form);
+   const remote=battle();remote.opponentSelection=[id];remote.start();
+   const r=new BossEncounter([remote],id);r.boss.hp=max*.5;
+   assert.equal(evolveRaidBoss(r.boss,id,sprites),true);assert.equal(evolveRaidBoss(r.boss,id,sprites),false);
+   assert.equal(r.boss.maxHp,max);assert.equal(r.boss.hp,max*.5);assert.equal(r.boss.species.id,form.id);
+  }
+ }
+});
+
+
+test('Dragon Ascent visually rises above the arena before its dive in both boss forms', () => {
+ for(const mega of [false,true]) {
+  const g=battle();g.opponentSelection=['rayquaza'];g.start();g.showcase=null;g.state='fighting';
+  for(const m of [g.player,g.opponent]) {m.hidden=false;m.appear=0;}
+  const b=new BossEncounter([g],'rayquaza'); b.boss.y=230;
+  if(mega)evolveRaidBoss(b.boss,'rayquaza',sprites);
+  const v=bossUltimateVisual(g,b.boss), liveZ=b.boss.z;
+  for(let i=0;i<55;i++)v.update(1/60);
+  assert.ok(v.user.z > 300, 'drawn altitude follows the rise');
+  assert.ok(v.user.y-v.user.z < 0, 'Rayquaza rises above the arena');
+  assert.equal(b.boss.z,liveZ,'visual rise does not move the authoritative boss');
+  for(let i=0;i<45;i++)v.update(1/60);
+  assert.ok(v.user.z < 100, 'returns from the sky for impact');
+ }
+});
+
+test('presentation renders the ordinary intro, boss defeat and victory without runtime errors', () => {
+ const g=battle();g.start();g.render();g.showcase=null;g.state='fighting';
+ for(const m of [g.player,g.opponent]) {m.hidden=false;m.appear=0;}
+ new BossEncounter([g],'rayquaza');g.opponent.hp=0;
+ g.startFinale(g.player,g.opponent,null);
+ for(const t of [.1,.3,1.4,2.8]) {g.finale.update(t);g.render();}
+});

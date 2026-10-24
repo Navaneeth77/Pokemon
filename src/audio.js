@@ -167,3 +167,12 @@ sfx.bossWarn = () => {
   [880, 660].forEach((f, i) => tone({ type: 'square', f0: f, dur: 0.09, gain: 0.07, delay: i * 0.11 }));
   noise({ dur: 0.5, filter: 'lowpass', f0: 300, f1: 120, q: 0.7, gain: 0.18, attack: 0.08 });
 };
+
+let lastReactionAt = -Infinity;
+sfx.reaction = id => {
+  if (!ac || ac.currentTime - lastReactionAt < 0.1) return;
+  lastReactionAt = ac.currentTime;
+  const notes = { freeze: [1568, 2093, 2637], conduct: [220, 880, 440], wildfire: [110, 165, 220], melt: [1047, 784, 523], steam: [523, 659, 784], ground: [196, 147, 98], fan: [392, 587, 880] }[id] ?? [440, 660];
+  notes.forEach((f, i) => tone({ type: id === 'conduct' ? 'square' : 'triangle', f0: f, dur: 0.15, gain: 0.08, delay: i * 0.045 }));
+  noise({ dur: 0.22, f0: id === 'ground' ? 180 : 1800, f1: 400, gain: 0.12 });
+};

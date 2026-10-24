@@ -6,6 +6,7 @@ import {
   Ring, Glow, Pillar, Spike, Lightning, rand, debris, dustCloud, windBurst, iceShatter, electricBurst, leafBurst, metalSparks, waterSplash, FIRE,
 } from './effects.js';
 import { sfx } from './audio.js';
+import { quality } from './quality.js';
 
 const ease = t => 1 - (1 - t) * (1 - t);
 const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
@@ -83,6 +84,7 @@ export class Showcase {
       outlinedText(ctx, 'VS', 0, 12, { family: 'Luckiest Guy', weight: 400, size: 38, color: '#ffffff', stroke: '#24100c', lw: 6, align: 'center' });
       ctx.restore();
     }
+    outlinedText(ctx, g.arena.theme.name.toUpperCase(), WORLD_W / 2, 120, { size: 10, align: 'center', color: '#ffd84a', lw: 3 });
     outlinedText(ctx, 'PRESS ENTER TO SKIP', WORLD_W / 2, WORLD_H - 18, { size: 6, align: 'center', color: '#c9d2de', lw: 2 });
     ctx.restore();
   }
@@ -156,13 +158,15 @@ export class Finale {
     this.winner = winner;
     this.loser = loser;
     this.move = move;
-    this.finisher = !!move && (move.ultimate || move.power >= 90 || move.chargeLevel > 0);
+    this.raidVictory = !!loser.boss;
+    this.finisher = this.raidVictory || !!move && (move.ultimate || move.power >= 90 || move.chargeLevel > 0);
     this.t = this.finisher ? 0 : 1.4;
     this.end = 4.4;
     this.fired = new Set();
     this.dir = { x: Math.sign(loser.x - winner.x) || 1, y: Math.sign(loser.y - winner.y) || -1 };
     this.from = { x: loser.x, y: loser.y };
-    this.pose = POSES.find(p => winner.sprite.has(p)) ?? 'Idle';
+    const poses = POSES.filter(p => winner.sprite.has(p));
+    this.pose = poses[(winner.baseSpecies.id.length + (game.summary?.species?.player?.[winner.baseSpecies.id]?.kos ?? 0)) % poses.length] ?? 'Idle';
     this.type = move?.type ?? winner.species.types[0];
     game.slowT = 0;
   }
@@ -184,6 +188,20 @@ export class Finale {
   update(dt) {
     const g = this.game, w = this.winner, l = this.loser;
     this.t += dt;
+    if (this.raidVictory) {
+      this.once('raid-collapse', 0.25, () => {
+        l.sprite.play('Faint', { loop: false, force: true });
+        const rgb = hexRgb(TYPE_COLORS[l.species.types[0]][0]);
+        g.spawn(new Pillar(l.x, l.y, 1.1, rgb, 520));
+        g.marks.fracture(l.x, l.y, 100, 8);
+        for (let i = 0; i < (quality().particles > 500 ? 6 : 3); i++) {
+          const a = i * Math.PI / 3;
+          g.spawn(new Ring(l.x + Math.cos(a) * 50, l.y + Math.sin(a) * 30, { r0: 4, r1: 120, life: 0.8, color: TYPE_COLORS[l.species.types[0]][0], width: 3 }));
+        }
+        sfx.roar();
+      });
+      l.sprite.update(dt);
+    }
     if (this.finisher) {
       this.once('impact', 0, () => {
         g.flash(0.25);
@@ -256,8 +274,8 @@ export class Finale {
       ctx.rotate(-0.08);
       ctx.scale(1.8 - 0.8 * ease(k), 1.8 - 0.8 * ease(k));
       ctx.globalAlpha = t > 1.1 ? Math.max(0, (1.3 - t) / 0.2) : 1;
-      outlinedText(ctx, 'FINISH!', 0, 14, { family: 'Luckiest Guy', weight: 400, size: 44, color: '#ffffff', stroke: '#24100c', lw: 7, align: 'center' });
-      outlinedText(ctx, this.move.name.toUpperCase(), 0, 40, { family: 'Luckiest Guy', weight: 400, size: 13, color: c1, stroke: '#24100c', lw: 4, align: 'center' });
+      outlinedText(ctx, this.raidVictory ? 'LEGEND DEFEATED!' : 'FINISH!', 0, 14, { family: 'Luckiest Guy', weight: 400, size: this.raidVictory ? 28 : 44, color: '#ffffff', stroke: '#24100c', lw: 7, align: 'center' });
+      outlinedText(ctx, (this.move?.name ?? this.loser.species.name).toUpperCase(), 0, 40, { family: 'Luckiest Guy', weight: 400, size: 13, color: c1, stroke: '#24100c', lw: 4, align: 'center' });
       ctx.restore();
     }
     if (t > 1.7) {
@@ -274,6 +292,7 @@ export class Finale {
       outlinedText(ctx, `${w.trainer.name.toUpperCase()} IS VICTORIOUS`, WORLD_W / 2, 530, { family: 'Luckiest Guy', weight: 400, size: 11, color: '#ffd84a', stroke: '#24100c', lw: 3, align: 'center' });
       ctx.restore();
     }
+    outlinedText(ctx, this.game.arena.theme.name.toUpperCase(), WORLD_W / 2, 120, { size: 10, align: 'center', color: '#ffd84a', lw: 3 });
     outlinedText(ctx, 'PRESS ENTER TO SKIP', WORLD_W / 2, WORLD_H - 12, { size: 6, align: 'center', color: '#c9d2de', lw: 2 });
   }
 }

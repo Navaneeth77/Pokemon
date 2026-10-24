@@ -779,7 +779,7 @@ class DragonAscent extends MoveAction {
   start() {
     const u = this.user;
     this.mega = u.isMega;
-    this.H = this.mega ? 200 : 160;
+    this.H = u.boss ? Math.max(this.mega ? 200 : 160, u.y + 120) : this.mega ? 200 : 160;
     this.fire = this.mega ? MEGA_FIRE : DRAGON_FIRE;
     this.z0 = u.z;
     this.phase = 'crouch';

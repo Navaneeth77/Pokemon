@@ -6,15 +6,25 @@ export const TICK = 1 / 60;
 export const USED = new Set(['Idle', 'Walk', 'Attack', 'Strike', 'Shoot', 'SpAttack', 'Swing', 'Charge', 'Hurt', 'Faint', 'Hop', 'RearUp', 'Rotate', 'Double', 'Roar', 'Launch', 'Pose']);
 
 // Sheets whose own animation doesn't fit how the Pokémon appears here. Lugia always flies in this
-// game, but its Idle, Charge and Rotate sheets stand on the ground with folded wings: those use its
-// spread-wing flight instead (slowed to a calm wing beat while hovering) and its spinning flight.
-// Applied the same way in the browser and on the match server, so move timing is identical.
-export const ALIASES = { lugia: { Idle: ['Walk', 0.4], Charge: ['Walk', 0.7], Rotate: ['Swing', 1] } };
+// game, but its Idle, Charge and Rotate sheets stand on the ground with folded wings, and its Swing is
+// a full-body spin. So it hovers with its spread-wing flight (a calm, slow wing beat), charges holding
+// its wings open (the steady middle of its Shoot sheet) and slashes with its wing-beat Attack.
+// Entries: [source, speed, first frame, end frame]. Applied the same way in the browser and on the
+// match server, so move timing is identical.
+export const ALIASES = {
+  lugia: { Idle: ['Walk', 0.4], Charge: ['Shoot', 0.35, 2, 10], Rotate: ['Attack', 1], Swing: ['Attack', 1] },
+};
 
 export function applyAliases(id, anims) {
-  for (const [name, [from, speed]] of Object.entries(ALIASES[id] ?? {})) {
+  for (const [name, [from, speed, start = 0, end]] of Object.entries(ALIASES[id] ?? {})) {
     const src = anims[from];
-    if (src) anims[name] = { ...src, name, durations: src.durations.map(d => Math.max(1, Math.round(d / speed))) };
+    if (!src) continue;
+    const durations = src.durations.slice(start, end).map(d => Math.max(1, Math.round(d / speed)));
+    const shift = f => (f == null || f < start || f >= start + durations.length ? null : f - start);
+    anims[name] = {
+      ...src, name, durations, frames: durations.length, offset: (src.offset ?? 0) + start,
+      hitFrame: start ? shift(src.hitFrame) : src.hitFrame, rushFrame: start ? shift(src.rushFrame) : src.rushFrame, returnFrame: start ? shift(src.returnFrame) : src.returnFrame,
+    };
   }
 }
 

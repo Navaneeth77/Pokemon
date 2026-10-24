@@ -2,7 +2,7 @@ import { saveSummary } from './mastery.js';
 import { DamageNumber } from './effects.js';
 import { Pokemon } from './pokemon.js';
 import { HIT_REACTIONS } from './reactions.js';
-import { BOSSES, RAID_DIFFICULTY, dressBoss } from './bosses.js';
+import { BOSSES, RAID_DIFFICULTY, dressBoss, evolveRaidBoss } from './bosses.js';
 import { MOVES } from './moves.js';
 import { SPECIES } from './data/species.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -257,12 +257,14 @@ export class Matchmaker {
 
   async connectReady() {
     if (!this.url) throw new Error('No match server configured');
+    this.readyAbort?.abort();
+    const controller = this.readyAbort = new AbortController();
     const epoch = this.connectEpoch = (this.connectEpoch ?? 0) + 1;
     const until = Date.now() + WAKE_WAIT_MS;
     for (let attempt = 0; Date.now() < until; attempt++) {
       if (epoch !== this.connectEpoch) throw new Error('cancelled');
       try {
-        const res = await fetch(`${this.httpUrl}/ready`, { cache: 'no-store', signal: AbortSignal.timeout(6000) });
+        const res = await fetch(`${this.httpUrl}/ready`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6000)]) });
         if (!res.ok || !(await res.json()).ready) throw new Error('not ready');
         if (epoch !== this.connectEpoch) throw new Error('cancelled');
         await this.connect();
@@ -315,6 +317,7 @@ export class Matchmaker {
   }
 
   cancel() {
+    this.readyAbort?.abort();
     this.connectEpoch = (this.connectEpoch ?? 0) + 1;
     clearTimeout(this.retryTimer); this.retryResolve?.();
     clearTimeout(this.wakeNote);
@@ -344,6 +347,7 @@ export class Matchmaker {
 
   // Leaves whatever is going on (title menu, another mode). A running match is forfeited.
   stop() {
+    this.readyAbort?.abort();
     this.connectEpoch = (this.connectEpoch ?? 0) + 1;
     clearTimeout(this.retryTimer); this.retryResolve?.();
     clearTimeout(this.wakeNote);
@@ -406,6 +410,7 @@ export class Matchmaker {
           const prev = this.game.raidState;
           this.game.raidState = { ...m.raid, hz: m.raid.hz ?? prev?.hz ?? [], recv: performance.now() };
           const b = this.game.opponent;
+          if (b && m.raid.mg) evolveRaidBoss(b, m.raid.id, this.game.sprites);
           if (b && b.maxHp !== m.raid.maxHp) b.species = { ...b.species, hp: m.raid.maxHp };
         }
         if(m.ally) this.updateAlly(m.ally);

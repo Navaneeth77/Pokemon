@@ -127,7 +127,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.spawn(new FloatText(target.x, head - 10, 'ABSORBED!', '#9fffc8'));
     return false;
   }
-  const reaction = prepareReaction(game, target, type, move, stack, o);
+  const raidBarrier = target.boss && (game.raid?.ult || (!game.raid && game.raidState?.ul));
+  const reaction = raidBarrier ? null : prepareReaction(game, target, type, move, stack, o);
   if (reaction && !(reaction.id === 'conduct' && defTypes.includes('ground'))) dmg *= 1 + reaction.bonus;
   if (target.boss && game.raid?.vulnerable > 0) dmg *= 1.3;
   dmg *= (D.takeMult?.(game, target, attacker, move, info) ?? 1);
@@ -139,6 +140,12 @@ export function applyHit(game, attacker, target, move, o = {}) {
     dmg = Math.max(1, dmg - soak);
     if (target.shield <= 0) game.spawn(new FloatText(target.x, head - 18, 'SHIELD BROKE!', '#ff9fd0', 7));
   }
+  // A raid boss charging its ultimate hides behind a barrier that takes the hits first (bosses.js).
+  // Online the barrier is the server's; this screen only shows the hits landing on it.
+  let barrier = 0;
+  if (target.boss && game.raid?.ult) barrier = game.raid.absorb(dmg);
+  else if (target.boss && !game.raid && game.raidState?.ul) barrier = dmg;
+  dmg -= barrier;
 
   const flinch = !!(o.flinchChance && !D.noFlinch && target.action && Math.random() < o.flinchChance * (A.serene ? 2 : 1));
   // Anti-stunlock: after five hits in a row the target briefly can't be staggered and can break free.
@@ -168,7 +175,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const interrupt = !guard && !move.ultimate && (power >= 100 || move.launch) && target.action && !target.action.move.ultimate;
 
   const actualDamage = Math.min(target.hp, dmg);
-  target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
+  if (dmg > 0) target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
 
   // Launchers start an aerial combo; up to three hits keep a juggled foe up, then it drops.
   if (target.alive && !guard && !(Dfull.kbMult < 1) && !target.action?.move.ultimate) {
@@ -196,7 +203,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Ultimate charge: from damage dealt and taken (never from ultimates), capped per move use.
   if (!move.ultimate) {
     const foeMult = abilityOf(target).foeUltMult ?? 1, selfMult = A.foeUltMult ?? 1;
-    const gA = Math.min(ULT_DEAL_CAP - (stack.ultA ?? 0), dmg * ULT_DEAL * foeMult);
+    const gA = Math.min(ULT_DEAL_CAP - (stack.ultA ?? 0), (dmg + barrier) * ULT_DEAL * foeMult);
     const gT = Math.min(ULT_TAKE_CAP - (stack.ultT ?? 0), dmg * ULT_TAKE * selfMult);
     if (gA > 0) attacker.gainUlt(game, gA);
     if (gT > 0) target.gainUlt(game, gT);
@@ -204,7 +211,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
     stack.ultT = (stack.ultT ?? 0) + Math.max(0, gT);
   }
 
-  if (stack.popup && !stack.popup.dead && stack.popup.age < 0.45) stack.popup.add(dmg);
+  if (barrier > 0) game.spawn(new DamageNumber(target.x + rand(-8, 8), head - 8, barrier, { color: '#7fe8ff', size: 15 }));
+  if (dmg <= 0) { /* all of it hit the barrier */ } else if (stack.popup && !stack.popup.dead && stack.popup.age < 0.45) stack.popup.add(dmg);
   else {
     const color = crit ? '#ffe14d' : eff > 1 ? '#ffb347' : eff < 1 ? '#d7dee8' : '#ffffff';
     stack.popup = game.spawn(new DamageNumber(target.x + rand(-6, 6), head - 2, dmg, { color, crit, size: eff > 1 ? 19 : 16 }));
@@ -234,7 +242,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   Dfull.onTake?.(game, target, attacker, move, dmg, info);
 
   // Secondary effects: rolled once per move use. Moves name their own; otherwise the type default.
-  if (target.alive && !stack.statusRolled) {
+  if (dmg > 0 && target.alive && !stack.statusRolled) {
     stack.statusRolled = true;
     const serene = A.serene ? 2 : 1;
     const rolls = [];
@@ -248,7 +256,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     }
   }
 
-  if (move.debuff && target.alive && !stack.debuffed) {
+  if (dmg > 0 && move.debuff && target.alive && !stack.debuffed) {
     stack.debuffed = true;
     game.buff(target, ...move.debuff);
   }
@@ -257,7 +265,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');
   }
   if (reaction) resolveReaction(game, attacker, target, reaction, dmg, applyHit);
-  game.recordCombat?.('hit', attacker, target, { damage: actualDamage, move: move.id });
+  game.recordCombat?.('hit', attacker, target, { damage: actualDamage + barrier, move: move.id });
   if (o.hitstop) game.hitstop(o.hitstop);
   if (o.shake) game.shake(o.shake);
   if (!target.alive) game.onFaint(target, attacker, move);

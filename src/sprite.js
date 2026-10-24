@@ -91,7 +91,7 @@ export class AnimatedSprite {
   draw(ctx, x, y, dir, opts = {}) {
     const a = this.anim, s = opts.scale ?? 1;
     const w = a.fw * s, h = a.fh * s;
-    blit(ctx, a.image, this.frame * a.fw, (a.rows > 1 ? dir : 0) * a.fh, a.fw, a.fh,
+    blit(ctx, a.image, (this.frame + (a.offset ?? 0)) * a.fw, (a.rows > 1 ? dir : 0) * a.fh, a.fw, a.fh,
       Math.round(x - w / 2), Math.round(y - h / 2 + (a.yOffset ?? 0) * s), w, h, opts);
   }
 }

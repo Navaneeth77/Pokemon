@@ -135,6 +135,31 @@ export class ExpansionUI {
   }
   // Pokémon Mastery: the trainer profile, badges (choose one as your title), every species you've
   // used with its level and records, and recent matches.
+  replay(match) {
+    if (!match) return;
+    const events = (match.events ?? []).slice(0, 600);
+    const duration = Math.max(1, match.duration ?? 0, events.at(-1)?.t ?? 0);
+    const el = this.open('EVENT REPLAY', `<p>Recorded combat events · ${match.verified ? 'server verified' : 'local battle'}. This is a timeline, not deterministic battle playback. Replays never award XP.</p>
+      <button class="px-btn" data-play>PLAY</button><button class="px-btn" data-back>BACK TO MASTERY</button>
+      <label>Time <output>0.0s</output><input aria-label="Replay time" type="range" min="0" max="${duration}" step="0.1" value="0"></label>
+      <ol class="replay-events"></ol>${match.droppedEvents ? '<p>Event limit reached: the first 600 events are available.</p>' : ''}`);
+    const slider = el.querySelector('input'), output = el.querySelector('output'), list = el.querySelector('ol'), play = el.querySelector('[data-play]');
+    let playing = false, last = -1;
+    const draw = () => {
+      const t = +slider.value; output.textContent = `${t.toFixed(1)}s / ${duration}s`;
+      const shown = events.filter(e => e.t <= t).slice(-40);
+      const n = shown.at(-1)?.n ?? -1;
+      if (n === last) return; last = n;
+      list.innerHTML = shown.map(e => `<li><time>${e.t.toFixed(1)}s</time> ${e.side === match.replaySide ? 'YOU' : 'FOE'} · ${esc(SPECIES[e.actor]?.name ?? e.actor)} · ${esc(e.kind)} ${esc(MOVES[e.move]?.name ?? e.move ?? e.reaction ?? '')}${e.damage != null ? ` · ${e.damage} damage` : ''}</li>`).join('');
+      list.scrollTop = list.scrollHeight;
+    };
+    slider.oninput = draw;
+    play.onclick = () => { if (+slider.value >= duration) slider.value = 0; playing = !playing; play.textContent = playing ? 'PAUSE' : 'PLAY'; draw(); };
+    el.querySelector('[data-back]').onclick = () => this.mastery();
+    this.timer = setInterval(() => { if (!playing) return; slider.value = Math.min(duration, +slider.value + .1); draw(); if (+slider.value >= duration) { playing = false; play.textContent = 'PLAY'; } }, 100);
+    draw();
+  }
+
   mastery(selected = null) {
     const data = readMastery(), stats = profileStats(data), earned = new Set(earnedBadges(data).map(b => b.id));
     const rows = Object.entries(data.species).filter(([id]) => SPECIES[id]).sort((a, b) => b[1].xp - a[1].xp);
@@ -148,7 +173,7 @@ export class ExpansionUI {
       return `<section class="mastery-detail"><img width="64" src="${portrait(selected)}" alt=""><h3>${name(selected)} · LEVEL ${lv}</h3>
         <div class="mastery-bar"><i style="width:${pct}%"></i></div><p>${detail.xp} XP${next ? ` · ${next - detail.xp} to level ${lv + 1}` : ' · max level'}</p>
         <div class="profile-grid">${stat('Battles', detail.battles)}${stat('Wins', detail.wins)}${stat('Best streak', detail.bestStreak)}${stat('KOs', detail.kos)}${stat('Damage', Math.round(detail.damage).toLocaleString())}${stat('Taken', Math.round(detail.received).toLocaleString())}${stat('Ultimates', detail.ultimates)}${stat('Megas', detail.mega)}${stat('Reactions', detail.reactions)}${stat('Boss damage', Math.round(detail.bossDamage).toLocaleString())}${stat('Raids', detail.raids)}${stat('Drafts won', `${detail.draftWins}/${detail.drafts}`)}</div>
-        <p>Reactions discovered: ${found}</p></section>`;
+        <p>Milestones: ${MASTERY_THRESHOLDS.map((xp, i) => `<span class="mastery-milestone${detail.xp >= xp ? ' earned' : ''}">Lv ${i + 1} · ${xp} XP</span>`).join(' ')}</p><p>Reactions discovered: ${found}</p></section>`;
     })() : '';
     const badges = BADGES.map(b => `<button class="badge${earned.has(b.id) ? ' on' : ''}${data.title === b.id ? ' worn' : ''}" data-title="${b.id}" ${earned.has(b.id) ? '' : 'disabled'} title="${b.desc}"><b>${b.name}</b><small>${b.desc}</small></button>`).join('');
     const el = this.open('POKÉMON MASTERY', `<p class="exp-note">Saved in this browser only: clearing browser data or switching devices starts over. Mastery and badges never change battle stats.</p>
@@ -157,7 +182,8 @@ export class ExpansionUI {
       <h3>BADGES · ${earned.size}/${BADGES.length}</h3><p class="exp-note">Tap an earned badge to wear it as your title.</p><div class="badge-grid">${badges}</div>
       ${detailHtml}
       <h3>POKÉMON</h3><div class="exp-pool">${rows.map(([id, r]) => `<button data-species="${id}" class="mastery-level-${Math.min(3, level(r.xp))}${id === selected ? ' on' : ''}"><div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${name(id)}</b><small>Level ${level(r.xp)} · ${r.wins}W</small></div></button>`).join('') || '<p>Finish a battle to start your mastery journey.</p>'}</div>
-      <h3>RECENT MATCHES</h3>${data.matches.map(m => `<details><summary>${m.result.toUpperCase()} · ${m.mode}${m.raid ? ` · ${BOSSES[m.raid]?.name ?? ''} ${m.difficulty ?? ''}` : ''} · ${m.duration}s · ${m.verified ? 'server verified' : 'this browser'}</summary><p>${Object.entries(m.species).filter(([id]) => SPECIES[id]).map(([id, r]) => `${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('') || '<p>No matches yet.</p>'}`);
+      <h3>RECENT MATCHES</h3>${data.matches.map(m => `<details><summary>${m.result.toUpperCase()} · ${m.mode}${m.raid ? ` · ${BOSSES[m.raid]?.name ?? ''} ${m.difficulty ?? ''}` : ''} · ${m.duration}s · ${m.verified ? 'server verified' : 'this browser'}</summary>${m.events?.length ? `<button class="px-btn small" data-replay="${esc(m.id)}">EVENT REPLAY</button>` : ''}<p>${Object.entries(m.species).filter(([id]) => SPECIES[id]).map(([id, r]) => `${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('') || '<p>No matches yet.</p>'}`);
+    el.querySelectorAll('[data-replay]').forEach(b => b.onclick = () => this.replay(data.matches.find(m => m.id === b.dataset.replay)));
     el.querySelectorAll('[data-species]').forEach(b => b.onclick = () => this.mastery(b.dataset.species));
     el.querySelectorAll('[data-title]:not([disabled])').forEach(b => b.onclick = () => {
       setTitle(data.title === b.dataset.title ? null : b.dataset.title);

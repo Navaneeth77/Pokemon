@@ -1,10 +1,13 @@
+import { bossUltimateVisual } from './raid-cinematics.js';
+import { SPECIES } from './data/species.js';
+import { MOVES } from './moves.js';
 import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
-import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, debris, dustCloud, electricBurst, rand } from './effects.js';
+import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, rainbowBurst, debris, dustCloud, electricBurst, rand } from './effects.js';
 
 // Legendary raids. BossEncounter is the authority (in the browser for solo raids, on the match server
 // for co-op): it moves the boss, picks attacks, and decides which hazards hit whom. Screens only draw
@@ -28,20 +31,24 @@ export const BOSSES = {
   rayquaza: {
     name: 'Rayquaza', title: 'SOVEREIGN OF THE SKY', arena: 'mtSilver', type: 'dragon', color: '#75f5b1', rgb: [117, 245, 177], scale: 1.9,
     stages: ['SKY PATROL', 'DRAGON DANCE', 'DELTA STREAM', 'FINAL ASCENT'],
-    attacks: [['meteor', 'dive', 'lanes'], ['dive', 'meteor', 'cross', 'slam'], ['dive', 'meteor', 'ring', 'dive', 'lanes'], ['cataclysm', 'dive', 'meteor', 'cross', 'dive', 'meteor']],
-    cataclysm: 'DRACO SKYFALL', roar: 'Roar', rear: 'RearUp',
+    attacks: [['meteor', 'dive', 'lanes'], ['dive', 'meteor', 'cross', 'slam', 'ultimate'], ['dive', 'meteor', 'ultimate', 'ring', 'dive', 'lanes'], ['cataclysm', 'dive', 'meteor', 'ultimate', 'cross', 'dive', 'meteor']],
+    cataclysm: 'DRACO SKYFALL', ultimate: 'DRAGON ASCENT',
+    anims: { wind: { quake: 'RearUp', meteor: 'Roar', cataclysm: 'Roar' }, strike: { nova: 'Roar', cataclysm: 'Roar', tidal: 'Attack' } },
   },
   mewtwo: {
     name: 'Mewtwo', title: 'THE GENETIC STORM', arena: 'indigo', type: 'psychic', color: '#e2a3ff', rgb: [226, 163, 255], scale: 2.6,
     stages: ['AWAKENING', 'MIND OVER MATTER', 'PSYCHIC STORM', 'GENESIS'],
-    attacks: [['orbs', 'slam', 'rows'], ['orbs', 'ring', 'cross', 'orbs'], ['quake', 'orbs', 'cross', 'ring'], ['cataclysm', 'orbs', 'quake', 'cross', 'orbs', 'ring']],
-    cataclysm: 'PSYCHIC COLLAPSE', roar: 'Pose', rear: 'Rotate',
+    attacks: [['orbs', 'slam', 'rows'], ['orbs', 'ring', 'cross', 'orbs', 'ultimate'], ['quake', 'orbs', 'ultimate', 'cross', 'ring'], ['cataclysm', 'orbs', 'quake', 'ultimate', 'cross', 'orbs', 'ring']],
+    cataclysm: 'PSYCHIC COLLAPSE', ultimate: 'PSYSTRIKE',
+    anims: { wind: { quake: 'Pose', meteor: 'Pose', cataclysm: 'Pose' }, strike: { default: 'SpAttack', quake: 'Attack', nova: 'Pose', cataclysm: 'Pose', tidal: 'Attack' } },
   },
   lugia: {
     name: 'Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'seafoam', type: 'water', color: '#8fdbff', rgb: [143, 219, 255], scale: 1.9,
     stages: ['CALM SEAS', 'RISING TIDE', 'MAELSTROM', 'HYDRO TEMPEST'],
-    attacks: [['tidal', 'storm', 'lanes'], ['tidal', 'storm', 'aeroblast', 'rows'], ['aeroblast', 'tidal', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'aeroblast', 'tidal', 'storm']],
-    cataclysm: 'HYDRO DELUGE', roar: 'Rotate', rear: 'Strike',
+    attacks: [['tidal', 'storm', 'lanes'], ['tidal', 'storm', 'aeroblast', 'rows', 'ultimate'], ['aeroblast', 'tidal', 'ultimate', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'ultimate', 'aeroblast', 'tidal', 'storm']],
+    cataclysm: 'HYDRO DELUGE', ultimate: 'AEROBLAST',
+    // Lugia never spins: it holds its wings open to charge, fires with Shoot and beats its wings to strike.
+    anims: { wind: { default: 'Charge' }, strike: { default: 'Shoot', quake: 'Attack', tidal: 'Attack', dive: 'Attack', nova: 'Attack', cataclysm: 'Attack' } },
   },
 };
 
@@ -62,9 +69,16 @@ const ATTACKS = {
   storm: { label: 'THUNDERSTORM', hint: 'MOVE', shape: 'circle', r: 56, tele: 1.3, power: 130, at: 'each', type: 'electric', fx: 'storm', step: 0.2 },
   aeroblast: { label: 'AEROBLAST', hint: 'SIDESTEP', shape: 'line', r: 40, tele: 1.4, power: 180, at: 'line', fx: 'beam', vuln: 2 },
   cataclysm: { hint: 'FIND COVER', shape: 'cover', r: 46, tele: 2.6, power: 240, at: 'cover', count: 2, fx: 'cataclysm', vuln: 3.2 },
+  // Not a hazard: the boss channels its signature move behind a barrier (see startUlt).
+  ultimate: { fx: 'ultimate', hint: 'BREAK THE SHIELD!' },
 };
 
-export const attackLabel = (bossId, k) => (k === 'cataclysm' ? BOSSES[bossId]?.cataclysm : ATTACKS[k]?.label) ?? '';
+// The boss's ultimate: channelled for a few seconds behind a barrier worth a share of its max HP.
+// Break the barrier and the ultimate is cancelled and the boss is staggered; let it finish and it hits
+// every player for a share of their max HP, dodge or not.
+const ULT = { channel: 6.5, barrier: 0.05, stagger: 4, share: { easy: 0.4, normal: 0.55, hard: 0.7, legendary: 0.85 } };
+
+export const attackLabel = (bossId, k) => (k === 'cataclysm' || k === 'ultimate' ? BOSSES[bossId]?.[k] : ATTACKS[k]?.label) ?? '';
 export const attackHint = k => ATTACKS[k]?.hint ?? '';
 
 // Small seeded random numbers, so a boss's patterns don't depend on Math.random.
@@ -104,7 +118,7 @@ export function hazardHits(h, x, y) {
 // The boss on the field: larger, tougher to push around, and drawn bigger. Used by the encounter and,
 // online, by the screens (which receive the boss's HP from the server).
 export function dressBoss(mon, id, hp = mon.maxHp) {
-  const def = BOSSES[id], s = mon.baseSpecies, k = def.scale;
+  const def = BOSSES[id], s = SPECIES[mon.species.id] ?? mon.baseSpecies, k = def.scale;
   mon.species = {
     ...mon.species, hp, weight: 100, radius: s.radius * k, bodyZ: s.bodyZ * k, headZ: s.headZ * k,
     shadow: s.shadow.map(v => v * k), mouth: s.mouth && { ...s.mouth, z: s.mouth.z * k, fwd: s.mouth.fwd * k },
@@ -114,6 +128,17 @@ export function dressBoss(mon, id, hp = mon.maxHp) {
   mon.drawScale = k;
   mon.launch = () => false;
   return mon;
+}
+
+export function evolveRaidBoss(mon, id, sprites) {
+  const formId = { rayquaza: 'rayquazaMega', mewtwo: 'mewtwoMegaY' }[id];
+  if (!formId || mon.isMega) return false;
+  const form = SPECIES[formId], hp = mon.hp, maxHp = mon.maxHp;
+  mon.megaEvolve({ ...form, hp: maxHp }, sprites[form.sprite]);
+  dressBoss(mon, id, maxHp);
+  mon.hp = hp;
+  mon.ab = {};
+  return true;
 }
 
 export class BossEncounter {
@@ -130,7 +155,7 @@ export class BossEncounter {
     this.boss.hp = this.boss.maxHp;
     Object.assign(this, {
       time: 0, stage: 1, next: 1.2, sequence: 0, targetN: 0, hazards: [], vulnerable: 0, intro: INTRO, transition: 0,
-      hv: 0, sentHv: -1, n: 0, group: 0, dash: null, home: { x: 180, y: 205 }, rand: rng([...id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
+      hv: 0, sentHv: -1, n: 0, group: 0, dash: null, ult: null, ultN: 0, ultBroken: 0, ultFired: 0, home: { x: 180, y: 205 }, rand: rng([...id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
     });
     for (const g of games) {
       g.raid = this;
@@ -157,6 +182,7 @@ export class BossEncounter {
     this.time += dt;
     if (!b.alive) {
       this.hazards.length = 0;
+      this.ult = null;
       return;
     }
     this.vulnerable = Math.max(0, this.vulnerable - dt);
@@ -171,6 +197,9 @@ export class BossEncounter {
       if (this.intro <= 0) b.invuln = false;
       return;
     }
+    if (b.hp <= b.maxHp * 0.5 && evolveRaidBoss(b, this.id, this.games[0].sprites)) {
+      for (const g of this.games) g.opponentTeam.megaUsed = true;
+    }
     const stage = this.stageFor(b.hp / b.maxHp);
     if (stage > this.stage) {
       // A new stage: the boss roars and shrugs off damage briefly; pending attacks are called off.
@@ -182,14 +211,53 @@ export class BossEncounter {
       this.sequence = 0;
       this.next = 0.5;
       this.dash = null;
+      this.ult = null;
     }
     if (this.transition > 0) {
       this.transition -= dt;
       b.invuln = this.transition > 0;
     }
     this.resolve(active);
-    if (this.transition > 0 || this.vulnerable > 0 || (this.next -= dt) > 0) return;
+    if (this.ult && this.transition <= 0 && (this.ult.t -= dt) <= 0) this.fireUlt(active);
+    if (this.ult || this.transition > 0 || this.vulnerable > 0 || (this.next -= dt) > 0) return;
     this.launch(active);
+  }
+
+  startUlt() {
+    const t = Math.max(4, ULT.channel * this.diff.tele), barrier = Math.round(this.boss.maxHp * ULT.barrier);
+    this.ult = { t, d: t, shield: barrier, max: barrier };
+    this.ultN++;
+    this.next = 1.5;
+  }
+
+  // A hit on the boss while it channels: returns how much of it the barrier took.
+  absorb(dmg) {
+    if (!this.ult) return 0;
+    const soak = Math.min(this.ult.shield, dmg);
+    this.ult.shield -= soak;
+    if (this.ult.shield <= 0) {
+      this.ult = null;
+      this.ultBroken++;
+      this.vulnerable = ULT.stagger;
+    }
+    return soak;
+  }
+
+  fireUlt(active) {
+    if (!this.ult) return;
+    const b = this.boss, share = ULT.share[this.difficulty] ?? 0.55;
+    this.ult = null;
+    this.ultFired++;
+    this.next = 5;
+    for (const g of active) {
+      const p = g.player;
+      if (p.hidden || !p.alive) continue;
+      const before = p.hp, dmg = Math.max(1, Math.round(p.maxHp * share));
+      p.takeHit(dmg, { dirX: 0, dirY: 1, knockback: 0, stagger: 0.4, flinch: true }, g);
+      g.recordCombat?.('hit', b, p, { damage: before - p.hp, move: 'boss-ultimate' });
+      g.netSend(p, { t: 'boss-hit', damage: Math.round(before - p.hp), x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.bodyZ) });
+      if (!p.alive) g.onFaint(p, b, { id: `boss-ultimate`, name: this.def.ultimate, type: this.def.type });
+    }
   }
 
   // Glides between a few hovering spots facing the players; dives dash straight down the telegraphed line.
@@ -247,6 +315,7 @@ export class BossEncounter {
 
   launch(active) {
     const list = this.def.attacks[this.stage - 1], k = list[this.sequence++ % list.length];
+    if (k === 'ultimate') return this.startUlt();
     const alive = active.map(g => g.player).filter(p => p.alive && !p.hidden);
     if (!alive.length) {
       this.next = 0.5;
@@ -320,8 +389,9 @@ export class BossEncounter {
   view(withHazards = true) {
     const b = this.boss, r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
     const out = {
-      id: this.id, df: this.difficulty, st: this.stage, hp: Math.max(0, Math.round(b.hp)), maxHp: b.maxHp,
+      id: this.id, mg: b.isMega, df: this.difficulty, st: this.stage, hp: Math.max(0, Math.round(b.hp)), maxHp: b.maxHp,
       vu: r2(this.vulnerable), in: r2(Math.max(0, this.intro)), tr: r2(Math.max(0, this.transition)), tm: r2(this.time), hv: this.hv,
+      ul: this.ult && { t: r2(this.ult.t), d: r2(this.ult.d), sh: Math.round(this.ult.shield), shm: this.ult.max }, un: this.ultN, ub: this.ultBroken, uf: this.ultFired,
     };
     if (withHazards) {
       out.hz = this.hazards.map(h => ({
@@ -345,10 +415,12 @@ const RGB = { dragon: [140, 120, 255], psychic: [226, 120, 255], water: [90, 170
 const typeRgb = (t, fallback) => RGB[t] ?? fallback;
 
 const fxOf = h => (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx);
-// Animations for the wind-up (held until the attack lands) and for the strike itself. 'Roar' and
-// 'RearUp' map to each boss's own closest animation (see BOSSES).
-const WIND = { quake: 'RearUp', meteor: 'Roar', pillar: 'Charge', beam: 'Charge', nova: 'Charge', dive: 'Charge', psy: 'Charge', tidal: 'RearUp', storm: 'Charge', cataclysm: 'Roar' };
-const STRIKE = { quake: 'Attack', meteor: 'Shoot', pillar: 'Shoot', beam: 'Shoot', nova: 'Roar', dive: 'Attack', psy: 'SpAttack', tidal: 'Swing', storm: 'Shoot', cataclysm: 'Roar' };
+// Animations for the wind-up (held until the attack lands) and for the strike itself. Each boss can
+// override these with its own fitting animations (BOSSES[id].anims), so no boss strikes a pose that
+// makes no sense for it.
+const WIND = { default: 'Charge' };
+const STRIKE = { default: 'Shoot', quake: 'Attack', dive: 'Attack', psy: 'SpAttack', ultimate: 'Shoot' };
+const animFor = (def, kind, fx) => def.anims?.[kind]?.[fx] ?? def.anims?.[kind]?.default ?? (kind === 'wind' ? WIND : STRIKE)[fx] ?? (kind === 'wind' ? WIND : STRIKE).default;
 
 // The boss gathering power: a swelling glow at its head with spikes of light. Follows the boss.
 class BossCharge {
@@ -395,8 +467,40 @@ export class BossPresenter {
       this.view = null;
       return;
     }
+    if (this.ultimateVisual && !this.ultimateVisual.update(dt)) this.ultimateVisual = null;
     const def = BOSSES[data.id], tm = data.tm + (data.recv ? Math.min(0.25, (now - data.recv) / 1000) : 0);
-    this.view = { ...data, tm };
+    this.view = { ...data, tm, ul: data.ul && { ...data.ul, t: Math.max(0, data.ul.t - (tm - data.tm)) } };
+    if (data.ul && data.un !== this.ultN) {
+      this.ultN = data.un;
+      this.windUp({ k: 'ultimate' }, def, boss, data.ul.t, now);
+      g.showRaidUltCard(boss, MOVES[boss.species.ultimate]);
+      sfx.bossWarn();
+    }
+    if ((data.ub ?? 0) > (this.ultBroken ?? 0)) {
+      this.charge = null;
+      this.play(boss, 'Hurt', 0.8, false);
+      g.spawn(new Ring(boss.x, boss.y, { z: boss.bodyZ, r0: boss.radius, r1: boss.radius * 3, life: 0.5, color: '#7fe8ff', width: 5, layer: 'air' }));
+      sfx.clang();
+      g.shake(4, 0.3);
+    }
+    if ((data.uf ?? 0) > (this.ultFired ?? 0)) {
+      this.strike({ k: 'ultimate' }, def, boss);
+      this.ultimateVisual = bossUltimateVisual(g, boss);
+      g.showRaidUltCard(boss, MOVES[boss.species.ultimate]);
+      this.breakGround(boss.x, boss.y, def.rgb, 4);
+      g.spawn(new Ring(boss.x, boss.y, { z: boss.bodyZ, r0: 10, r1: 700, life: 0.7, color: def.color, width: 18, layer: 'air' }));
+      g.flashT = Math.max(g.flashT, 0.16);
+      sfx.explosion();
+      sfx.roar();
+      g.shake(10, 0.7);
+    }
+    this.ultBroken = data.ub ?? 0;
+    this.ultFired = data.uf ?? 0;
+    if (!data.ul && this.wasChanneling) {
+      this.charge = null;
+      if (this.chargeFx) this.chargeFx.life = 0;
+    }
+    this.wasChanneling = !!data.ul;
     this.shownHp = this.shownHp == null ? data.hp : this.shownHp + (data.hp - this.shownHp) * Math.min(1, dt * 5);
     if (data.in > 0 && !this.intro) {
       this.intro = true;
@@ -408,6 +512,13 @@ export class BossPresenter {
       this.landedIntro = true;
       this.breakGround(boss.x, boss.y, def.rgb, 4);
       sfx.quake();
+    }
+    if (data.mg && !this.megaSeen) {
+      this.megaSeen = true;
+      g.spawn(new MegaAura(boss, 1.1));
+      rainbowBurst(g, boss.x, boss.y, boss.bodyZ);
+      g.hud.callout(boss.side, boss.species.name);
+      sfx.megaBurst();
     }
     if (data.st > this.stage) {
       if (this.stage > 0) this.stageBreak(def, boss);
@@ -452,8 +563,10 @@ export class BossPresenter {
   // energy pulled in from around it (see aura). Meteors are first flung up into the sky.
   windUp(h, def, boss, left, now) {
     const fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), g = this.game;
-    this.play(boss, def, WIND[fx] ?? 'Charge', left, true);
-    g.spawn(new BossCharge(boss, left, rgb));
+    this.play(boss, animFor(def, 'wind', fx), left, true);
+    if (this.chargeFx) this.chargeFx.life = 0;
+    this.chargeFx = new BossCharge(boss, left, rgb);
+    g.spawn(this.chargeFx);
     this.charge = { until: now + left * 1000, rgb };
     if (fx === 'meteor' || fx === 'cataclysm') {
       for (let i = 0; i < Math.round(10 * Math.max(0.4, quality().particles / 1200)); i++) {
@@ -466,7 +579,7 @@ export class BossPresenter {
   // The moment the attack lands, the boss performs it.
   strike(h, def, boss) {
     const fx = fxOf(h);
-    this.play(boss, def, STRIKE[fx] ?? 'Attack', 0.75, false);
+    this.play(boss, animFor(def, 'strike', fx), 0.75, false);
     this.charge = null;
     if (fx === 'nova' || fx === 'cataclysm' || fx === 'quake') sfx.roar();
   }
@@ -479,8 +592,8 @@ export class BossPresenter {
     else if (fx === 'quake' && Math.hypot(h.x - boss.x, h.y - boss.y) > 60) this.trench({ x: boss.x, y: boss.y, x2: h.x, y2: h.y }, rgb);
   }
 
-  play(boss, def, name, hold, loop) {
-    boss.sprite.play(name === 'Roar' ? def.roar : name === 'RearUp' ? def.rear : name, { loop, force: true });
+  play(boss, name, hold, loop) {
+    boss.sprite.play(name, { loop, force: true });
     boss.animHold = hold;
   }
 
@@ -714,7 +827,7 @@ export function drawBossHud(ctx, view, presenter) {
   ctx.strokeStyle = view.st >= 4 ? '#ff6a4a' : def.color;
   ctx.lineWidth = 1;
   ctx.strokeRect(x - 3.5, y - 1.5, w + 7, 33);
-  outlinedText(ctx, `${def.name.toUpperCase()} · ${def.stages[view.st - 1]}`, x, y + 9, { size: 9, color: '#ffffff' });
+  outlinedText(ctx, `${view.mg ? 'MEGA ' : ''}${def.name.toUpperCase()} · ${def.stages[view.st - 1]}`, x, y + 9, { size: 9, color: '#ffffff' });
   outlinedText(ctx, `${RAID_DIFFICULTY[view.df]?.label ?? ''} · STAGE ${view.st}/4`, x + w, y + 9, { size: 8, color: view.st >= 4 ? '#ffb090' : '#cfe0ff', align: 'right' });
   const by = y + 14, bh = 9;
   ctx.fillStyle = '#1c2536';
@@ -730,7 +843,16 @@ export function drawBossHud(ctx, view, presenter) {
   outlinedText(ctx, `${Math.ceil(view.hp).toLocaleString()} / ${view.maxHp.toLocaleString()}`, x + w / 2, by + 8, { size: 8, color: '#ffffff', align: 'center' });
   // The warning for the attack coming in next, or the opening to strike back.
   const pending = (view.hz ?? []).filter(h => h.at > view.tm).sort((a, b) => a.at - b.at)[0];
-  if (view.vu > 0) {
+  if (view.ul) {
+    ctx.fillStyle = 'rgba(6,10,22,0.9)';
+    ctx.fillRect(x - 4, y + 34, w + 8, 44);
+    outlinedText(ctx, `${def.ultimate} · ${view.ul.t.toFixed(1)}s`, 180, y + 46, { size: 11, color: '#ffffff', align: 'center', lw: 3 });
+    ctx.fillStyle = '#203848';
+    ctx.fillRect(x, y + 51, w, 7);
+    ctx.fillStyle = '#7fe8ff';
+    ctx.fillRect(x, y + 51, w * Math.max(0, view.ul.sh / view.ul.shm), 7);
+    outlinedText(ctx, 'BREAK THE SHIELD TO STOP THE ULTIMATE!', 180, y + 71, { size: 9, color: '#7fe8ff', align: 'center', lw: 3 });
+  } else if (view.vu > 0) {
     const on = Math.floor(view.tm * 6) % 2 === 0;
     outlinedText(ctx, 'STAGGERED — STRIKE NOW!', 180, y + 46, { size: 11, color: on ? '#fff27a' : '#ffd23a', align: 'center', lw: 3 });
   } else if (pending) {
@@ -753,6 +875,28 @@ export function drawBossHud(ctx, view, presenter) {
     outlinedText(ctx, `STAGE ${view.st}`, 180, 320, { size: 30, family: 'Luckiest Guy', weight: 400, color: view.st >= 4 ? '#ff6a4a' : def.color, align: 'center', lw: 5 });
     outlinedText(ctx, def.stages[view.st - 1], 180, 342, { size: 11, color: '#ffffff', align: 'center', lw: 3 });
     if (view.st >= 4) outlinedText(ctx, `${def.name.toUpperCase()} IS ENRAGED!`, 180, 360, { size: 10, color: '#ffb090', align: 'center', lw: 3 });
+  }
+  ctx.restore();
+}
+
+// Draw over the actors so the barrier visibly encloses the boss.
+export function drawBossShield(ctx, view, boss) {
+  if (!view?.ul || !boss || boss.hidden || !boss.alive) return;
+  const frac = Math.max(0, view.ul.sh / view.ul.shm);
+  const r = Math.max(boss.radius * 1.6, boss.headZ * 0.7), y = boss.y - boss.bodyZ;
+  ctx.save();
+  ctx.translate(boss.x, y);
+  ctx.fillStyle = 'rgba(80,200,255,0.13)';
+  ctx.strokeStyle = '#7fe8ff';
+  ctx.lineWidth = 2 + frac * 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r, r * 1.15, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < Math.floor((1 - frac) * 8); i++) {
+    ctx.save(); ctx.rotate(i * 2.4);
+    ctx.beginPath(); ctx.moveTo(r * 0.85, 0); ctx.lineTo(r * 0.55, 7);
+    ctx.lineTo(r * 0.65, -8); ctx.lineTo(r * 0.3, -4); ctx.stroke(); ctx.restore();
   }
   ctx.restore();
 }

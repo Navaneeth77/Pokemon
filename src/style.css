@@ -1528,3 +1528,22 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 .draft-clock span { position: relative; font-size: 9px; line-height: 14px; color: #071325; font-weight: 700; }
 .exp-mon small.from-picked { color: #9dffb8; }
 .exp-mon small.from-received { color: #ffb090; }
+
+/* Arcade mode cards retain the keyboard order and fit narrow touch screens. */
+#title-menu { background: linear-gradient(155deg,#111c35ee,#080d1aee); border: 2px solid #839bc6; box-shadow: 6px 6px 0 #06091688; padding: 14px; color: #edf4ff; }
+#title-menu .tm-who { color: #fff; border-color: #526681; }
+.tm-group { margin: 14px 0 5px; color: #8fa6ce; font: 700 10px 'Pixelify Sans',monospace; letter-spacing: 3px; }
+#title-menu .tm-item { color: #e9f1ff; border: 1px solid #2d4262; border-left: 3px solid #6b91cc; background: #17243b; margin: 4px 0; padding: 9px 10px 9px 23px; transition: background .14s,transform .14s; }
+#title-menu .tm-item small { color: #b5c7e5; letter-spacing: .3px; }
+#title-menu .tm-item[data-i="3"] { border-left-color: #83f7b7; background: linear-gradient(90deg,#153e34,#17243b); }
+#title-menu .tm-item[data-i="4"] { border-left-color: #d4a2ff; background: linear-gradient(90deg,#352449,#17243b); }
+#title-menu .tm-item.on,#title-menu .tm-item:hover { background: #324969; transform: translateX(2px); border-color: #ffe080; }
+#title-menu .tm-item.on::before,#title-menu .tm-item:hover::before { color: #ffe080; }
+.replay-events { height: min(45dvh,350px); overflow: auto; padding: 12px 12px 12px 30px; background: #111a2b; color: #e8f2ff; font-size: 13px; }
+.replay-events li { margin: 8px 0; }
+.replay-events time { color: #84dfff; }
+.expansion-card input[type="range"] { display: block; width: 100%; margin: 16px 0; }
+.mastery-milestone { display: inline-block; padding: 4px; margin: 2px; border: 1px solid #53627c; opacity: .55; font-size: 11px; }
+.mastery-milestone.earned { opacity: 1; color: #ffe080; border-color: #bd994c; }
+@media (prefers-reduced-motion: reduce) { #title-menu .tm-item { transition: none; transform: none; } }
+@media (max-width: 420px) { #title-menu { padding: 9px; max-height: 75dvh; } #title-menu .tm-item { font-size: 15px; } #title-menu .tm-item small { font-size: 10px; } }

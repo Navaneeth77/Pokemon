@@ -1,6 +1,6 @@
 import { newSummary, recordCombat } from './mastery.js';
 import { quality, observeFrame } from './quality.js';
-import { BossPresenter, drawBossGround, drawBossHud } from './bosses.js';
+import { BossPresenter, drawBossGround, drawBossHud, drawBossShield } from './bosses.js';
 import { Arena, WORLD_W, WORLD_H } from './arena.js';
 import { Pokemon, CHARGE_MAX } from './pokemon.js';
 import { Trainer } from './trainer.js';
@@ -134,7 +134,7 @@ export class Game {
 
   // Team selection screen; the lead chosen there is used by start().
   toSelect() {
-    this.raid = null; this.raidState = null; this.raidAlly = null;
+    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = [];
     this.online = null;
     this.endPractice();
     this.paused = false;
@@ -146,7 +146,7 @@ export class Game {
 
   // Opening, trainer setup and format screens (flow.js): no battle input, battle overlays hidden.
   toMenu() {
-    this.raid = null; this.raidState = null; this.raidAlly = null;
+    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = [];
     this.online = null;
     this.paused = false;
     this.reset();
@@ -181,7 +181,7 @@ export class Game {
 
   // The player's team is whichever three Pokémon were picked on the selection screen.
   start(practice = false) {
-    this.raid = null; this.raidState = null; this.raidAlly = null;
+    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = [];
     if (!practice && this.selection.length !== this.ui.format) return;
     initAudio();
     document.activeElement?.blur?.();
@@ -231,6 +231,7 @@ export class Game {
   // Battle theme: the arena's own, or the legendary theme while a legendary or mythical Pokémon is out
   // (held for a few seconds after it leaves so switches don't flip the music back and forth).
   battleTrack(dt = 0, atStart = false) {
+    if (this.raid || this.raidState) return (this.raid?.stage ?? this.raidState?.st ?? 1) >= 4 ? 'raidRage' : 'raid';
     const legend = [this.player, this.opponent].some(m => m?.alive && (atStart || !m.hidden) && m.species.class !== 'regular');
     this.legendT = legend ? 4 : Math.max(0, this.legendT - dt);
     return this.legendT > 0 ? 'legend' : ARENA_TRACK[this.arena.theme?.id] ?? 'battle';
@@ -656,12 +657,33 @@ export class Game {
   // Every ultimate opens with a cutscene: the battle freezes, letterbox bars slide in and the camera
   // pushes in on the user powering up. Then the move plays out across the whole arena.
   startUltCutscene(user, move) {
-    if (this.raid || this.raidState) { user.action = new move.Action(move,user,this); this.hud.callout(user.side,move.name); sfx.megaCharge(); return; }
+    if (this.raid || this.raidState) {
+      const game = this;
+      this.showRaidUltCard(user, move);
+      user.sprite.play('Charge', { loop: true, force: true });
+      user.action = {
+        move, t: 0, done: false, allowMove: false,
+        update(dt) {
+          this.t += dt;
+          if (this.t >= ULT_CUT) user.action = new move.Action(move, user, game);
+        },
+        cancel() { this.done = true; },
+      };
+      this.hud.callout(user.side, move.name);
+      sfx.megaCharge();
+      return;
+    }
     this.cinematic = { kind: 'ult', mon: user, move, t: 0, ringT: 0 };
     user.sprite.play('Charge', { loop: true, force: true });
     this.hud.callout(user.side, `${move.name}!`);
     this.ui.log(`${user.species.name} unleashed ${move.name}!`, user.side);
     sfx.megaCharge();
+  }
+
+  showRaidUltCard(mon, move) {
+    this.raidCards ??= [];
+    this.raidCards = this.raidCards.filter(c => c.mon !== mon).slice(-1);
+    this.raidCards.push({ mon, move, t: 0, compact: true });
   }
 
   updateUltCutscene(dt) {
@@ -691,7 +713,7 @@ export class Game {
   // Letterbox bars plus a name card in the move's type colour.
   drawUltCard(ctx, c) {
     const T = ULT_CUT, e = c.t < 0.2 ? ease(c.t / 0.2) : c.t > T - 0.2 ? ease(Math.max(0, (T - c.t) / 0.2)) : 1;
-    const bar = 58 * e, [c1, c2] = this.ultColors(c);
+    const bar = (c.compact ? 12 : 58) * e, [c1, c2] = this.ultColors(c);
     const seed = c.move.name.split('').reduce((n,ch)=>n+ch.charCodeAt(0),0);
     ctx.save();ctx.strokeStyle=c1;ctx.globalAlpha=.32*e;ctx.lineWidth=2;
     const count=quality().particles>300?8:3;
@@ -705,7 +727,7 @@ export class Game {
     ctx.fillStyle = '#05050a';
     ctx.fillRect(-v.ox, -v.oy, v.w, bar + v.oy);
     ctx.fillRect(-v.ox, WORLD_H - bar, v.w, bar + v.h);
-    const slide = (1 - ease(Math.min(1, c.t / 0.3))) * WORLD_W, y = WORLD_H - 150;
+    const slide = (1 - ease(Math.min(1, c.t / 0.3))) * WORLD_W, y = c.compact ? 190 + (c.slot ?? 0) * 60 : WORLD_H - 150;
     ctx.globalAlpha = e;
     ctx.fillStyle = c2;
     ctx.beginPath();
@@ -727,7 +749,7 @@ export class Game {
     ctx.fillText(name, slide + WORLD_W / 2, y + 20);
     ctx.font = 'italic 700 8px "Pixelify Sans"';
     ctx.fillStyle = '#ffe9a8';
-    ctx.fillText(`${c.mon.trainer.name.toUpperCase()}'S ${c.mon.species.name.toUpperCase()} · ULTIMATE`, slide + WORLD_W / 2, y - 6);
+    ctx.fillText(`${c.mon.boss ? 'LEGENDARY BOSS' : c.mon.trainer.name.toUpperCase()} · ${c.mon.species.name.toUpperCase()}`, slide + WORLD_W / 2, y - 6);
     ctx.textAlign = 'left';
     ctx.globalAlpha = 1;
   }
@@ -872,6 +894,9 @@ export class Game {
   }
 
   spawn(effect) {
+    // Only discard decorative effects; projectiles and callbacks still determine gameplay.
+    if (this.effects.length >= (quality().particles > 500 ? 400 : 160) &&
+        ['Ring', 'Glow', 'DamageNumber', 'FloatText', 'Afterimage', 'ScreenDim'].includes(effect.constructor.name)) return effect;
     this.effects.push(effect);
     return effect;
   }
@@ -1008,6 +1033,10 @@ export class Game {
     if (this.paused) {
       this.ui.update(this, 0);
       return;
+    }
+    if (this.raidCards?.length) {
+      for (const c of this.raidCards) c.t += dt;
+      this.raidCards = this.raidCards.filter(c => c.t < ULT_CUT);
     }
     if (this.raid && !this.raid.externalClock) this.raid.tick(dt);
     // Raid boss effects follow the encounter's state (solo: right here; co-op: the server's updates).
@@ -1316,7 +1345,7 @@ export class Game {
     this.spawn(new FloatText(x, y - z - 12, r.label, r.color, 8));
     this.hitstopT = Math.max(this.hitstopT, 0.04);
     if (r.combine) this.slowT = 0.25;
-    sfx.explosion();
+    sfx.reaction(r.id);
   }
 
   clashFx(x, y, z, winner, big = false, label = null) {
@@ -1420,7 +1449,11 @@ export class Game {
     this.particles.draw(ctx, 'ground');
     const actors = d.list().sort((a, b) => a.y - b.y);
     for (const a of actors) a.drawShadow(ctx);
-    for (const a of actors) a.draw(ctx);
+    for (const a of actors) (a === this.opponent && this.bossFx?.ultimateVisual ? this.bossFx.ultimateVisual.user : a).draw(ctx);
+    if (this.bossFx?.ultimateVisual?.target.held) {
+      ctx.save(); ctx.globalAlpha = 0.5; this.bossFx.ultimateVisual.target.draw(ctx); ctx.restore();
+    }
+    drawBossShield(ctx, this.bossFx?.view, this.opponent);
     for (const e of this.effects) if (e.layer === 'air') e.draw(ctx);
     this.particles.draw(ctx, 'air');
     this.arena.drawSnow(ctx);
@@ -1458,7 +1491,11 @@ export class Game {
     this.particles.draw(ctx, 'ground');
     const actors = [this.player, this.opponent, this.red, this.gold, ...(this.raidAlly ? [this.raidAlly] : [])].sort((a, b) => a.y - b.y);
     for (const a of actors) a.drawShadow(ctx);
-    for (const a of actors) a.draw(ctx);
+    for (const a of actors) (a === this.opponent && this.bossFx?.ultimateVisual ? this.bossFx.ultimateVisual.user : a).draw(ctx);
+    if (this.bossFx?.ultimateVisual?.target.held) {
+      ctx.save(); ctx.globalAlpha = 0.5; this.bossFx.ultimateVisual.target.draw(ctx); ctx.restore();
+    }
+    drawBossShield(ctx, this.bossFx?.view, this.opponent);
     if (this.state === 'fighting') this.hud.drawTags(ctx);
     for (const e of this.effects) if (e.layer === 'air') e.draw(ctx);
     this.particles.draw(ctx, 'air');
@@ -1479,6 +1516,7 @@ export class Game {
     this.hud.draw(ctx);
     drawBossHud(ctx, this.bossFx?.view, this.bossFx);
     if (this.cinematic?.kind === 'ult') this.drawUltCard(ctx, this.cinematic);
+    this.raidCards?.forEach((c, slot) => this.drawUltCard(ctx, { ...c, slot }));
     if (this.showcase) this.showcase.draw(ctx);
     if (this.finale) this.finale.draw(ctx);
   }
@@ -1521,7 +1559,8 @@ export class Game {
       requestAnimationFrame(frame);
       // rAF timestamps can be slightly earlier than the performance.now() read before the first frame;
       // a negative step would run every timer backwards, so clamp it.
-      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
+      const frameMs = Math.max(0, now - last);
+      const dt = Math.min(0.05, frameMs / 1000);
       last = now;
       if (document.hidden) return;
       const start = performance.now();
@@ -1529,7 +1568,7 @@ export class Game {
       const updated = performance.now();
       this.render();
       if (observeFrame(performance.now()-start)) this.resize();
-      if (this.profile) { this.profile.push([dt * 1000, updated-start, performance.now()-updated]); if(this.profile.length>3600)this.profile.shift(); }
+      if (this.profile) { this.profile.push([frameMs, updated-start, performance.now()-updated]); if(this.profile.length>3600)this.profile.shift(); }
     };
     requestAnimationFrame(frame);
   }

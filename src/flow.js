@@ -141,7 +141,7 @@ export class Flow {
     const menu = $('#title-menu');
     const title = currentTitle();
     menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div>`
-      + items.map(([label, , sub], i) => `<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
+      + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
     this.menuItems = items;
     this.menuIndex = 0;

@@ -18,6 +18,16 @@ const chordNotes = (name, octave) => {
 // 8 steps (eighth notes) per bar. Lead: note, '-' holds the previous note, '.' rests.
 // Battles pick a theme by arena; a legendary or mythical Pokémon on the field brings in its own.
 const TRACKS = {
+  raid: {
+    bpm: 156, chords: ['Dm', 'A#', 'Gm', 'A', 'Dm', 'C', 'A#', 'A'], bass: 'R.ROR.RO', drums: 'kkhskhsh', wave: 'sawtooth', vol: 0.045,
+    lead: `D5 - A5 D6 F6 - E6 D6 | A#5 - F5 A#5 D6 - C6 A#5 | G5 A5 A#5 D6 G6 - F6 D6 | C#6 - E6 - A5 - C#6 -
+           D6 F6 A6 - G6 F6 E6 D6 | C6 - G5 C6 E6 - D6 C6 | A#5 D6 F6 - E6 D6 C6 A#5 | A5 - C#6 - E6 - A6 -`,
+  },
+  raidRage: {
+    bpm: 184, chords: ['Dm', 'Dm', 'A#', 'A', 'Gm', 'Dm', 'A', 'A'], bass: 'RRRORROR', drums: 'kkshkkss', wave: 'sawtooth', vol: 0.045,
+    lead: `D6 A5 D6 F6 E6 D6 A5 D6 | F6 E6 D6 A5 D6 F6 A6 - | A#5 F6 D6 F6 A#6 - A6 F6 | E6 C#6 A5 C#6 E6 - G6 E6
+           G6 D6 A#5 D6 G6 A6 A#6 - | A6 F6 D6 A5 F6 E6 D6 - | C#6 E6 A6 G6 E6 C#6 A5 - | A5 C#6 E6 A6 G6 E6 C#6 -`,
+  },
   title: {
     bpm: 132, chords: ['C', 'Am', 'F', 'G', 'C', 'Am', 'Dm', 'G'], bass: 'R.O.R.O.', drums: 'k.h.s.hh',
     lead: `C5 . E5 G5 C6 - - B5 | A5 - E5 - C5 E5 A5 G5 | F5 - A5 - C6 - A5 F5 | G5 - - D5 G5 A5 B5 -

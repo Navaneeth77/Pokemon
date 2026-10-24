@@ -601,7 +601,7 @@ export class Afterimage extends Effect {
 
   draw(ctx) {
     const { a, frame, row, x, y } = this.snap;
-    blit(ctx, a.image, frame * a.fw, row * a.fh, a.fw, a.fh,
+    blit(ctx, a.image, (frame + (a.offset ?? 0)) * a.fw, row * a.fh, a.fw, a.fh,
       Math.round(x - a.fw / 2), Math.round(y - a.fh / 2 + (a.yOffset ?? 0)), a.fw, a.fh,
       { alpha: 0.5 * (1 - this.age / this.life), flash: 0.75, flashColor: this.color });
   }
@@ -808,6 +808,7 @@ export class ScreenDim extends Effect {
   }
 
   draw(ctx) {
+    if (quality().particles <= 220) return;
     const t = this.age / this.life;
     ctx.fillStyle = `rgba(${this.rgb},${this.alpha * Math.min(1, this.age / 0.15) * (t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1)})`;
     ctx.fillRect(-1600, -1600, 3560, 3840);
