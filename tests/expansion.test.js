@@ -45,7 +45,7 @@ test('hits respect dodge and shield, consume aura once and respect freeze grace'
 import {saveSummary,readMastery,level} from '../src/mastery.js';
 import {BossEncounter, hazardHits} from '../src/bosses.js';
 test('mastery storage tolerates corruption and deduplicates result IDs',()=>{
- let value='not json';const storage={getItem:()=>value,setItem:(_k,v)=>value=v};assert.equal(readMastery(storage).version,1);
+ let value='not json';const storage={getItem:()=>value,setItem:(_k,v)=>value=v};assert.equal(readMastery(storage).version,2);
  const s={id:'match-1',result:'win',arena:'mtSilver',mode:'raid',species:{charizard:{damage:1000,hits:5,kos:1,reactions:1,discovered:['melt']}},moves:{flamethrower:2}};
  assert.equal(saveSummary(s,storage),true);assert.equal(saveSummary(s,storage),false);const data=readMastery(storage);assert.equal(data.species.charizard.battles,1);assert.equal(data.species.charizard.raids,1);assert.equal(level(100),2);
 });
@@ -85,4 +85,17 @@ test('every boss runs every stage for a minute without errors', () => {
    assert.equal(b.stage, 1 + [0.75, 0.5, 0.25].filter(t => frac <= t).length, `${id} ${difficulty} stage`);
   }
  }
+});
+test('mastery: version 1 saves migrate; profile, raid bests, types and badges', async () => {
+ const { readMastery, saveSummary, earnedBadges, setTitle, currentTitle } = await import('../src/mastery.js');
+ let value = JSON.stringify({ version: 1, species: { pikachu: { xp: 120, discovered: [], battles: 3, wins: 2 } }, matches: [{ result: 'win', species: {} }, { result: 'loss', species: {} }], processed: ['a'], arenas: {}, moves: {} });
+ const storage = { getItem: () => value, setItem: (_k, v) => (value = v) };
+ const d = readMastery(storage);
+ assert.equal(d.version, 2); assert.equal(d.species.pikachu.xp, 120); assert.equal(d.profile.battles, 2); assert.equal(d.profile.wins, 1);
+ assert.ok(saveSummary({ id: 'r1', result: 'win', mode: 'raid', raid: 'mewtwo', difficulty: 'hard', arena: 'indigo', species: { blastoise: { damage: 900, discovered: ['conduct'] } }, moves: {} }, storage));
+ assert.ok(saveSummary({ id: 'r2', result: 'win', mode: 'raid', raid: 'mewtwo', difficulty: 'easy', arena: 'indigo', species: { blastoise: { damage: 10 } }, moves: {} }, storage));
+ const after = readMastery(storage);
+ assert.equal(after.raids.mewtwo, 'hard', 'best difficulty kept'); assert.ok(after.typesWon.includes('water')); assert.equal(after.profile.bestStreak, 2);
+ const ids = earnedBadges(after).map(b => b.id); assert.ok(ids.includes('first-win') && ids.includes('raid'));
+ setTitle('raid', storage); assert.equal(currentTitle(storage), 'Raid Victor'); setTitle('mythbreaker', storage); assert.equal(currentTitle(storage), null, 'unearned titles cannot be worn');
 });

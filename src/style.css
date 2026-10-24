@@ -1493,3 +1493,22 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 @media (max-width: 560px) { .raid-bosses { grid-template-columns: 1fr; } .raid-boss { flex-direction: row; flex-wrap: wrap; justify-content: center; } .raid-opts { grid-template-columns: 1fr; } }
 .raid-party { margin: 10px auto 4px; font-size: 12px; }
 .raid-party td, .raid-party th { padding: 4px 8px; }
+
+/* Pokémon Mastery: profile, badges, species detail */
+.expansion-card h3 { margin: 18px 0 8px; font-size: 13px; letter-spacing: 2px; color: #ffe099; text-align: left; }
+.exp-note { font-size: 12px; color: #9fb4d8 !important; }
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; text-align: left; }
+.profile-grid div { padding: 7px 9px; background: #071325; border: 1px solid #2b4466; border-radius: 6px; }
+.profile-grid small { display: block; font-size: 9px; letter-spacing: 1px; color: #8fa7cc; }
+.profile-grid b { display: block; margin-top: 2px; font-size: 13px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.badge { padding: 8px; text-align: left; color: #6b7d99; font: inherit; background: #0a1322; border: 1px dashed #2b3c58; border-radius: 8px; cursor: default; }
+.badge b { display: block; font-size: 12px; }
+.badge small { display: block; margin-top: 3px; font-size: 9px; line-height: 1.35; }
+.badge.on { color: #fff; cursor: pointer; border: 2px solid #d9b46c; background: linear-gradient(180deg, #2a2412, #0a1322); }
+.badge.on small { color: #e7d6a8; }
+.badge.worn { box-shadow: 0 0 0 2px #ffe099, 0 0 18px #ffd56b88; }
+.mastery-bar { height: 8px; margin: 6px auto; width: 80%; background: #1c2536; border-radius: 4px; overflow: hidden; }
+.mastery-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffd56b, #fff3b0); }
+.exp-pool button.on { border-color: #ffe099; }
+.tm-title { display: block; font-size: 9px; letter-spacing: 1px; color: #b0853a; }

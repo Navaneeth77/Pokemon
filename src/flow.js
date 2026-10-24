@@ -1,4 +1,5 @@
 import { ExpansionUI } from './expansion-ui.js';
+import { currentTitle } from './mastery.js';
 import { Opening, GAME_TITLE } from './opening.js';
 import { AnimatedSprite } from './sprite.js';
 import { LOOKS, drawBust, backPalette, lookById } from './trainers.js';
@@ -138,7 +139,8 @@ export class Flow {
       ['TUTORIAL', () => this.startTutorial()],
     ];
     const menu = $('#title-menu');
-    menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}</span></div>`
+    const title = currentTitle();
+    menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div>`
       + items.map(([label, , sub], i) => `<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
     this.menuItems = items;

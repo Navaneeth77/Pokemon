@@ -1,4 +1,5 @@
-import { readMastery, level, MASTERY_THRESHOLDS } from './mastery.js';
+import { readMastery, level, MASTERY_THRESHOLDS, BADGES, earnedBadges, profileStats, setTitle } from './mastery.js';
+import { MOVES } from './moves.js';
 import { BOSSES, BossEncounter, RAID_DIFFICULTY } from './bosses.js';
 import { HIT_REACTIONS } from './reactions.js';
 import { SPECIES } from './data/species.js';
@@ -130,13 +131,38 @@ export class ExpansionUI {
   guide() {
     this.open('ELEMENTAL REACTIONS', `<img class="element-crest" src="/art/element-crest.png" alt="Elemental crest"><p>Land two compatible elements within 4 seconds. A reaction consumes the aura. Shields and dodges prevent priming.</p><div class="reaction-grid">${HIT_REACTIONS.map(r => `<article style="--accent:${r.color}"><b>${r.label}</b><span>${r.pair.join(' + ').toUpperCase()}</span><small>${r.cleanse ? 'Clears burn and frost' : r.status ? `Applies ${r.status}, respecting immunity` : r.ground ? 'Clears paralysis and charge' : 'Bonus damage; up to two nearby wet enemies'}</small></article>`).join('')}</div><p>Reaction cooldown: 1.5s. Freeze protection: 6s after thawing. Chains never hit allies. Ground types resist conduction.</p>`);
   }
+  // Pokémon Mastery: the trainer profile, badges (choose one as your title), every species you've
+  // used with its level and records, and recent matches.
   mastery(selected = null) {
-    const data=readMastery(), rows=Object.entries(data.species).filter(([id])=>SPECIES[id]).sort((a,b)=>b[1].xp-a[1].xp);
-    const total=rows.reduce((n,[,s])=>n+s.battles,0), recent=data.matches;
-    const detail=selected&&data.species[selected], sp=SPECIES[selected];
-    const el=this.open('POKÉMON MASTERY', `<p>Local to this browser. Clearing browser data removes mastery. Cosmetics never change combat stats.</p><p>${recent.length} recent matches · ${rows.length} Pokémon trained · ${total} species participations</p>${detail?`<section class="mastery-detail"><img width="64" src="${portrait(selected)}" alt=""><h3>${sp.name} · LEVEL ${level(detail.xp)}</h3><progress max="${MASTERY_THRESHOLDS[level(detail.xp)]??detail.xp}" value="${detail.xp}"></progress><p>${detail.xp} XP · ${detail.wins} wins / ${detail.losses} losses · best streak ${detail.bestStreak}</p><p>Damage ${Math.round(detail.damage)} · received ${Math.round(detail.received)} · KOs ${detail.kos} · faints ${detail.faints}<br>Ultimates ${detail.ultimates} · Megas ${detail.mega} · reactions ${detail.reactions}<br>Boss damage ${Math.round(detail.bossDamage)} · raids ${detail.raids} · drafts ${detail.drafts}</p><p>Discovered: ${detail.discovered.join(', ')||'None yet'}</p><p>Title: ${level(detail.xp)>=5?'ELEMENTAL ACE':level(detail.xp)>=2?'RISING STAR':'ROOKIE'} · next title at levels 2 and 5</p></section>`:''}<div class="exp-pool">${rows.map(([id,r])=>`<button data-species="${id}" class="mastery-level-${Math.min(3,level(r.xp))}"><div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${SPECIES[id].name}</b><small>Level ${level(r.xp)} · ${r.xp} XP</small></div></button>`).join('')||'<p>Complete a battle to start your mastery journey.</p>'}</div><h3>RECENT MATCHES</h3>${recent.map(m=>`<details><summary>${m.result.toUpperCase()} · ${m.mode} · ${m.duration}s · ${m.verified?'server verified':'local battle'}</summary><p>${Object.entries(m.species).filter(([id])=>SPECIES[id]).map(([id,r])=>`${SPECIES[id].name}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('')}`);
-    el.querySelectorAll('[data-species]').forEach(b=>b.onclick=()=>this.mastery(b.dataset.species));
+    const data = readMastery(), stats = profileStats(data), earned = new Set(earnedBadges(data).map(b => b.id));
+    const rows = Object.entries(data.species).filter(([id]) => SPECIES[id]).sort((a, b) => b[1].xp - a[1].xp);
+    const name = id => (id && SPECIES[id] ? SPECIES[id].name : '—');
+    const stat = (label, value) => `<div><small>${label}</small><b>${value}</b></div>`;
+    const detail = selected && data.species[selected];
+    const detailHtml = detail ? (() => {
+      const lv = level(detail.xp), next = MASTERY_THRESHOLDS[lv], prev = MASTERY_THRESHOLDS[lv - 1] ?? 0;
+      const pct = next ? Math.round(((detail.xp - prev) / (next - prev)) * 100) : 100;
+      const found = detail.discovered.map(id => HIT_REACTIONS.find(r => r.id === id)?.label ?? id).join(', ') || 'None yet';
+      return `<section class="mastery-detail"><img width="64" src="${portrait(selected)}" alt=""><h3>${name(selected)} · LEVEL ${lv}</h3>
+        <div class="mastery-bar"><i style="width:${pct}%"></i></div><p>${detail.xp} XP${next ? ` · ${next - detail.xp} to level ${lv + 1}` : ' · max level'}</p>
+        <div class="profile-grid">${stat('Battles', detail.battles)}${stat('Wins', detail.wins)}${stat('Best streak', detail.bestStreak)}${stat('KOs', detail.kos)}${stat('Damage', Math.round(detail.damage).toLocaleString())}${stat('Taken', Math.round(detail.received).toLocaleString())}${stat('Ultimates', detail.ultimates)}${stat('Megas', detail.mega)}${stat('Reactions', detail.reactions)}${stat('Boss damage', Math.round(detail.bossDamage).toLocaleString())}${stat('Raids', detail.raids)}${stat('Drafts won', `${detail.draftWins}/${detail.drafts}`)}</div>
+        <p>Reactions discovered: ${found}</p></section>`;
+    })() : '';
+    const badges = BADGES.map(b => `<button class="badge${earned.has(b.id) ? ' on' : ''}${data.title === b.id ? ' worn' : ''}" data-title="${b.id}" ${earned.has(b.id) ? '' : 'disabled'} title="${b.desc}"><b>${b.name}</b><small>${b.desc}</small></button>`).join('');
+    const el = this.open('POKÉMON MASTERY', `<p class="exp-note">Saved in this browser only: clearing browser data or switching devices starts over. Mastery and badges never change battle stats.</p>
+      <h3>TRAINER PROFILE</h3>
+      <div class="profile-grid">${stat('Battles', stats.battles)}${stat('Win rate', `${stats.rate}%`)}${stat('Wins', stats.wins)}${stat('Best streak', stats.bestStreak)}${stat('Favourite', name(stats.favorite))}${stat('Top mastery', name(stats.top))}${stat('Favourite arena', stats.arena ?? '—')}${stat('Reactions', stats.reactions)}${stat('Boss damage', Math.round(stats.bossDamage).toLocaleString())}${stat('Top moves', stats.moves.map(id => MOVES[id]?.name ?? id).join(', ') || '—')}</div>
+      <h3>BADGES · ${earned.size}/${BADGES.length}</h3><p class="exp-note">Tap an earned badge to wear it as your title.</p><div class="badge-grid">${badges}</div>
+      ${detailHtml}
+      <h3>POKÉMON</h3><div class="exp-pool">${rows.map(([id, r]) => `<button data-species="${id}" class="mastery-level-${Math.min(3, level(r.xp))}${id === selected ? ' on' : ''}"><div class="exp-mon"><img src="${portrait(id)}" alt=""><b>${name(id)}</b><small>Level ${level(r.xp)} · ${r.wins}W</small></div></button>`).join('') || '<p>Finish a battle to start your mastery journey.</p>'}</div>
+      <h3>RECENT MATCHES</h3>${data.matches.map(m => `<details><summary>${m.result.toUpperCase()} · ${m.mode}${m.raid ? ` · ${BOSSES[m.raid]?.name ?? ''} ${m.difficulty ?? ''}` : ''} · ${m.duration}s · ${m.verified ? 'server verified' : 'this browser'}</summary><p>${Object.entries(m.species).filter(([id]) => SPECIES[id]).map(([id, r]) => `${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('') || '<p>No matches yet.</p>'}`);
+    el.querySelectorAll('[data-species]').forEach(b => b.onclick = () => this.mastery(b.dataset.species));
+    el.querySelectorAll('[data-title]:not([disabled])').forEach(b => b.onclick = () => {
+      setTitle(data.title === b.dataset.title ? null : b.dataset.title);
+      this.mastery(selected);
+    });
   }
+
   settings() {
     const el = this.open('EFFECTS QUALITY', `<p>Essential attack warnings and status indicators stay visible at every quality level.</p><div class="exp-options">${Object.entries(QUALITY).map(([k, v]) => `<button class="px-btn ${qualityName() === k ? 'primary' : ''}" data-quality="${k}">${v.label}</button>`).join('')}</div>`);
     el.querySelectorAll('[data-quality]').forEach(b => b.onclick = () => { setQuality(b.dataset.quality); this.flow.game.resize(); this.settings(); });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { USED } from '../src/assets.js';
+import { USED, applyAliases } from '../src/assets.js';
 
 // Animation timing for every sprite sheet (frame counts, durations, hit frames), read from the same
 // AnimData.xml files the browser loads. Images are never decoded on the server. The rules match
@@ -28,6 +28,7 @@ function loadSet(dir) {
     anims[d.name] = { ...d, image: null, frames: d.durations.length, rows: 8 };
   }
   for (const d of wanted) if (d.copyOf && anims[d.copyOf]) anims[d.name] = { ...anims[d.copyOf], name: d.name };
+  applyAliases(path.basename(dir), anims);
   return { anims, portrait: null };
 }
 

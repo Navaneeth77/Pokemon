@@ -5,6 +5,19 @@ export const TICK = 1 / 60;
 // Only the animations the game plays are loaded (plus the sheets they are copies of).
 export const USED = new Set(['Idle', 'Walk', 'Attack', 'Strike', 'Shoot', 'SpAttack', 'Swing', 'Charge', 'Hurt', 'Faint', 'Hop', 'RearUp', 'Rotate', 'Double', 'Roar', 'Launch', 'Pose']);
 
+// Sheets whose own animation doesn't fit how the Pokémon appears here. Lugia always flies in this
+// game, but its Idle, Charge and Rotate sheets stand on the ground with folded wings: those use its
+// spread-wing flight instead (slowed to a calm wing beat while hovering) and its spinning flight.
+// Applied the same way in the browser and on the match server, so move timing is identical.
+export const ALIASES = { lugia: { Idle: ['Walk', 0.4], Charge: ['Walk', 0.7], Rotate: ['Swing', 1] } };
+
+export function applyAliases(id, anims) {
+  for (const [name, [from, speed]] of Object.entries(ALIASES[id] ?? {})) {
+    const src = anims[from];
+    if (src) anims[name] = { ...src, name, durations: src.durations.map(d => Math.max(1, Math.round(d / speed))) };
+  }
+}
+
 const imageCache = new Map();
 export function loadImage(src) {
   if(imageCache.has(src))return imageCache.get(src);
@@ -57,6 +70,7 @@ async function loadSpriteSet(id) {
   for (const d of wanted) {
     if (d.copyOf && anims[d.copyOf]) anims[d.name] = { ...anims[d.copyOf], name: d.name };
   }
+  applyAliases(id, anims);
   return { anims, portrait: await loadImage(`${base}/portrait.png`) };
 }
 
