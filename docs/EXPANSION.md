@@ -45,11 +45,11 @@ PERFORMANCE.md separates measurements from deployment/device limits.
   essential warnings. Actual headless matches skip arena textures, snow, ground decoration, HUD and
   cosmetic effect lifetimes while retaining projectiles, callbacks and gameplay timers.
 - Repeatable browser/Node/network profiling scripts, server diagnostic timings, one-week art/sprite
-  cache headers and current documentation. No dependency, account system or monetization added.
+  cache headers and current documentation. No dependency or real-money feature was added. The Trainer Guild economy (see Review notes) is an in-game, cosmetic-only wallet with no purchases for real money.
 
 ## Verification
 
-The focused/full test history is retained in the task. `npm test` passes all 38 tests; `npm run build` succeeds and `git diff --check` is clean.
+The focused/full test history is retained in the task. `npm test` passes all 68 tests; `npm run build` succeeds and `git diff --check` is clean.
 The build retains a large-chunk warning (about 620 KB uncompressed / 202 KB gzip). No lint script is
 defined. Exact measurements are recorded in PERFORMANCE.md. Coverage includes all roster ultimate action completion, raid shield
 break/expiry, half-HP Mega state, skyward Dragon Ascent, immunity/switch/faint/chain behavior, mastery
@@ -117,3 +117,34 @@ No new environment variable or secret is required. Preserve `VITE_MATCH_SERVER_U
 See README.md for the full variable table and deployment commands. Local multiplayer: start the
 server and Vite, use `?pid=a` and `?pid=b`, choose the same raid boss/team size (public partner or
 Create/Join Room), or matching draft mode/format/ranking/pool; finish picks and confirm both teams.
+
+## Review notes (Claude, 25 Oct 2026)
+
+Reviewed Codex's additions (13 commits, 182 files) with a focus on server load and online lag. Build
+and all 68 tests pass.
+
+**Fixed**
+- **Wallet requests froze every live battle.** `server/economy-store.js` copied the whole player table
+  and rewrote the whole wallet file synchronously (with `fsync`) on *every* request, including the one
+  made when any player connects. Measured with 3,000 wallets: about 28 ms per request (a tick is 33 ms),
+  now 0.0 ms. Wallets now change in memory and are saved one at a time: an append-only journal line,
+  or, when Upstash Redis is configured, a background `HSET` of the changed wallet (`WALLET_KEY`,
+  default `chaos-arena:wallets`). Unchanged wallets are not written at all.
+- **Wallets are lost on a Render redeploy** when only the local file is available, because Render's disk
+  is temporary. With Upstash configured they now survive restarts (the Redis path was written
+  carefully but **not tested against a live Upstash**; only the file path is covered by tests).
+- **Wallet rate limit was shared by all players on Render.** It used the socket address, which behind a
+  proxy is the proxy itself. It now uses the last `X-Forwarded-For` entry.
+
+**Ping.** Measured on this machine: the server adds about 1 ms to a ping, both idle and with two
+matches running. `TCP_NODELAY` is on and message compression is off. So the roughly 100 ms you see to
+the Singapore server (measured earlier: p50 101 ms, p90 169 ms, p99 242 ms from India) is network
+distance, which no code change reduces. The one fix is a server nearer to the players:
+`deploy/setup-india-vps.sh` sets one up on any fresh Ubuntu VPS in India (Bangalore or Mumbai) with
+HTTPS, then you point `VITE_MATCH_SERVER_URL` at it. The script passes a syntax check but has **not
+been run on a real server**. Typical Indian-ISP latency to an in-country server is expected to be a
+fraction of 100 ms, but that is an estimate until it is measured.
+
+**Still open**
+- A hosted Upstash check of the wallet Redis path (above).
+- `docs/PERFORMANCE.md` figures were not re-run after the wallet change.

@@ -109,6 +109,38 @@ try {
   }
 }
 
+// Wallets (Trainer Guild) follow the same rule as the leaderboard: in Upstash Redis when it's set up, so
+// they survive Render restarts and redeploys, otherwise in the journal file. Only the changed wallet is
+// written, in the background; a failed write is retried and never blocks a battle.
+if (REDIS) {
+  const WALLET_KEY = process.env.WALLET_KEY || 'chaos-arena:wallets', pending = new Map();
+  let timer = null;
+  const flush = async () => {
+    timer = null;
+    const batch = [...pending];
+    pending.clear();
+    if (!batch.length) return;
+    try {
+      await redis(['HSET', WALLET_KEY, ...batch.flatMap(([pid, r]) => [pid, JSON.stringify(r)])]);
+    } catch (err) {
+      console.error('could not save wallets to Redis:', err.message);
+      for (const [pid, r] of batch) if (!pending.has(pid)) pending.set(pid, r);
+      timer = setTimeout(flush, 10_000);
+    }
+  };
+  try {
+    const flat = (await redis(['HGETALL', WALLET_KEY])) ?? [];
+    economy.load(Array.from({ length: flat.length >> 1 }, (_, i) => { try { return [flat[2 * i], JSON.parse(flat[2 * i + 1])]; } catch { return []; } }));
+    economy.sink = (pid, record) => {
+      pending.set(pid, record);
+      timer ??= setTimeout(flush, 1500);
+    };
+  } catch (err) {
+    economy.error = 'Economy storage could not be loaded. Existing data was preserved.';
+    console.error('could not load wallets from Redis:', err.message);
+  }
+}
+
 // Results are written a moment after a match ends (only the two players who changed).
 const dirty = new Set();
 let saveTimer = null;
@@ -698,7 +730,9 @@ const server = http.createServer((req, res) => {
     res.setHeader('cache-control','no-store');
     if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-methods':'POST','access-control-allow-headers':'content-type'}).end();return;}
     if(req.method!=='POST'){res.writeHead(405).end();return;}
-    const ip=req.socket.remoteAddress,now=Date.now(),rate=economyRate.get(ip)??{at:now,n:0};
+    // Behind Render's proxy every request arrives from the proxy; the player's address is the last
+    // entry the proxy added to X-Forwarded-For. Without this, one limit would be shared by everyone.
+    const ip=String(req.headers['x-forwarded-for']??'').split(',').pop().trim()||req.socket.remoteAddress,now=Date.now(),rate=economyRate.get(ip)??{at:now,n:0};
     if(now-rate.at>10000){rate.at=now;rate.n=0;}rate.n++;economyRate.set(ip,rate);
     if(economyRate.size>2000)for(const [key,v]of economyRate)if(now-v.at>10000)economyRate.delete(key);
     if(rate.n>40){res.writeHead(429).end(JSON.stringify({error:'Please wait a moment before trying again.'}));return;}
