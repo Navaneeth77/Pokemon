@@ -6,7 +6,7 @@ import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
-import { Slipstream, PressureWave, ElementColumn, RaidAreaBurst } from './legendary-effects.js';
+import { Slipstream, PressureWave, ElementColumn, RaidAreaBurst, NovaGather } from './legendary-effects.js';
 import { drawRaidSigil, drawRaidGroundAura, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
@@ -32,21 +32,21 @@ const HOMES = [[180, 205], [110, 240], [250, 240], [180, 275], [128, 185], [232,
 
 export const BOSSES = {
   rayquaza: {
-    name: 'Dark Rayquaza', title: 'SOVEREIGN OF THE SKY', arena: 'mtSilver', type: 'dragon', color: '#75f5b1', rgb: [117, 245, 177], scale: 1.9,
+    name: 'Dark Rayquaza', title: 'SOVEREIGN OF THE SKY', arena: 'skyPillar', type: 'dragon', color: '#75f5b1', rgb: [117, 245, 177], scale: 1.9,
     stages: ['SKY PATROL', 'DRAGON DANCE', 'DELTA STREAM', 'FINAL ASCENT'],
     attacks: [['meteor', 'dive', 'dragonBeam'], ['dive', 'meteor', 'dragonBeam', 'slam', 'ultimate'], ['dive', 'meteor', 'ultimate', 'ring', 'dive', 'lanes'], ['cataclysm', 'dive', 'meteor', 'ultimate', 'dragonBeam', 'dive', 'meteor']],
-    cataclysm: 'DRACO SKYFALL', ultimate: 'DRAGON ASCENT', ultImpact: [1.38, 1.53], ultDuration: 3,
+    cataclysm: 'DRACO SKYFALL', nova: 'TEMPEST VORTEX', ultimate: 'DRAGON ASCENT', ultImpact: [1.38, 1.53], ultDuration: 3,
     anims: { wind: { quake: 'RearUp', meteor: 'Roar', cataclysm: 'Roar' }, strike: { nova: 'Roar', cataclysm: 'Roar', tidal: 'Attack' } },
   },
   mewtwo: {
-    name: 'Armored Mewtwo', title: 'THE GENETIC STORM', arena: 'indigo', type: 'psychic', color: '#e2a3ff', rgb: [226, 163, 255], scale: 2.6,
+    name: 'Armored Mewtwo', title: 'THE GENETIC STORM', arena: 'rocketLab', type: 'psychic', color: '#e2a3ff', rgb: [226, 163, 255], scale: 2.6,
     stages: ['AWAKENING', 'MIND OVER MATTER', 'PSYCHIC STORM', 'GENESIS'],
     attacks: [['orbs', 'slam', 'rows'], ['orbs', 'ring', 'cross', 'orbs', 'ultimate'], ['quake', 'orbs', 'ultimate', 'cross', 'ring'], ['cataclysm', 'orbs', 'quake', 'ultimate', 'cross', 'orbs', 'ring']],
     cataclysm: 'PSYCHIC COLLAPSE', ultimate: 'PSYSTRIKE', ultImpact: [3.2, 3.2], ultDuration: 4.3,
     anims: { wind: { quake: 'Pose', meteor: 'Pose', cataclysm: 'Pose' }, strike: { default: 'SpAttack', quake: 'Attack', nova: 'Pose', cataclysm: 'Pose', tidal: 'Attack' } },
   },
   lugia: {
-    name: 'Shadow Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'seafoam', type: 'water', color: SHADOW_LUGIA.color, rgb: SHADOW_LUGIA.rgb, scale: 1.9,
+    name: 'Shadow Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'shadowCitadel', type: 'water', color: SHADOW_LUGIA.color, rgb: SHADOW_LUGIA.rgb, scale: 1.9,
     stages: ['CALM SEAS', 'RISING TIDE', 'MAELSTROM', 'HYDRO TEMPEST'],
     attacks: [['tidal', 'storm', 'waterPulse', 'lanes'], ['tidal', 'storm', 'aeroblast', 'waterPulse', 'rows', 'ultimate'], ['aeroblast', 'waterPulse', 'tidal', 'ultimate', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'waterPulse', 'ultimate', 'aeroblast', 'tidal', 'storm']],
     cataclysm: 'HYDRO DELUGE', ultimate: 'AEROBLAST', ultImpact: [1.3, 1.3], ultDuration: 2.1,
@@ -83,7 +83,7 @@ const ATTACKS = {
 // every player for a share of their max HP, dodge or not.
 const ULT = { channel: 6.5, barrier: 0.05, stagger: 4, share: { easy: 0.4, normal: 0.55, hard: 0.7, legendary: 0.85 } };
 
-export const attackLabel = (bossId, k) => (k === 'cataclysm' || k === 'ultimate' ? BOSSES[bossId]?.[k] : ATTACKS[k]?.label) ?? '';
+export const attackLabel = (bossId, k) => (k === 'ring' ? BOSSES[bossId]?.nova ?? ATTACKS.ring.label : k === 'cataclysm' || k === 'ultimate' ? BOSSES[bossId]?.[k] : ATTACKS[k]?.label) ?? '';
 export const attackHint = k => ATTACKS[k]?.hint ?? '';
 
 // Small seeded random numbers, so a boss's patterns don't depend on Math.random.
@@ -643,6 +643,7 @@ export class BossPresenter {
     this.chargeFx = new BossCharge(boss, left, rgb, fx);
     g.spawn(this.chargeFx);
     this.charge = { until: now + left * 1000, rgb };
+    if(fx==='nova')g.spawn(new NovaGather(boss,h,rgb,left));
     if (boss.boss === 'lugia' && fx === 'cataclysm') {
       const targets = cataclysmSpots(h).slice(0,3);
       for (const p of targets) g.spawn(new StormCloud(p.x,Math.max(130,p.y-140),left+.35,SHADOW_LUGIA));
@@ -721,23 +722,13 @@ export class BossPresenter {
         break;
       case 'nova':
         g.spawn(new RaidAreaBurst(boss.boss,h,rgb));
-        g.spawn(new ScreenDim(.85,.28,boss.boss==='lugia'?SHADOW_LUGIA.dim:'7,10,22'));
-        if (boss.boss !== 'mewtwo') {
-          const water=boss.boss==='lugia';
-          g.spawn(new PressureWave(h.x,h.y,380,water?'water':'air',0,water?SHADOW_LUGIA:null));
-          for(let i=0;i<6;i++) { const a=i*Math.PI/3,x=h.x+Math.cos(a)*150,y=h.y+Math.sin(a)*120;
-            if(water) shadowSplash(g,x,y); else this.breakGround(x,y,rgb,1);
-          }
-          sfx.explosion();g.shake(8,.45);break;
+        g.spawn(new ScreenDim(1.15,.24,boss.boss==='lugia'?SHADOW_LUGIA.dim:'7,10,22'));
+        for(let i=0;i<5;i++){
+          const a=i*Math.PI*2/5,x=h.x+Math.cos(a)*(h.r0+60),y=h.y+Math.sin(a)*(h.r0+60);
+          g.marks.fracture(x,y,18);
         }
-        g.spawn(new Ring(h.x, h.y, { r0: h.r0, r1: 380, life: 0.6, color, width: 7 }));
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2;
-          this.breakGround(h.x + Math.cos(a) * 150, h.y + Math.sin(a) * 120, rgb, 1);
-        }
-        g.flashT = Math.max(g.flashT, 0.1);
-        sfx.explosion();
-        g.shake(8, 0.45);
+        if(boss.boss==='rayquaza')sfx.whoosh();
+        sfx.explosion();g.shake(8,.45);
         break;
       case 'dive':
         g.spawn(new EnergyAura(boss, 0.55, true));
@@ -881,8 +872,10 @@ export function drawBossGround(ctx, view, boss) {
     const flash = landed ? 1 + left / 0.35 : 0;
     const blink = !landed && left < 0.45 && Math.floor(left * 14) % 2 === 0;
     ctx.save();
-    ctx.fillStyle = landed ? `rgba(255,255,255,${0.75 * flash})` : `rgba(255,${blink ? 40 : 70},50,${0.16 + 0.22 * p})`;
-    ctx.strokeStyle = landed ? `rgba(255,255,255,${flash})` : blink ? '#ffffff' : '#ffd36a';
+    ctx.beginPath();ctx.rect(BOUNDS.minX-10,BOUNDS.minY-10,BOUNDS.maxX-BOUNDS.minX+20,BOUNDS.maxY-BOUNDS.minY+20);ctx.clip();
+    const broad=h.s==='ring'||h.s==='cover';
+    ctx.fillStyle = landed ? `rgba(255,255,255,${(broad?.08:.75) * flash})` : `rgba(255,${blink ? 40 : 70},50,${0.16 + 0.22 * p})`;
+    ctx.strokeStyle = landed ? `rgba(255,255,255,${flash*(broad?.25:1)})` : blink ? '#ffffff' : '#ffd36a';
     ctx.lineWidth = 2;
     shapePath(ctx, h, 1);
     ctx.fill('evenodd');
@@ -915,6 +908,7 @@ function shapePath(ctx, h, k) {
   if (h.s === 'circle') ctx.arc(h.x, h.y, h.r * k, 0, Math.PI * 2);
   else if (h.s === 'ring') {
     ctx.arc(h.x, h.y, Math.max(h.r0 + 1, h.r * k), 0, Math.PI * 2);
+    ctx.moveTo(h.x+h.r0,h.y);
     ctx.arc(h.x, h.y, h.r0, 0, Math.PI * 2, true);
   } else if (h.s === 'lane') ctx.rect(h.x - h.r * k, Y0, h.r * 2 * k, Y1 - Y0);
   else if (h.s === 'row') ctx.rect(X0, h.y - h.r * k, X1 - X0, h.r * 2 * k);

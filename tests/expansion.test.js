@@ -447,3 +447,38 @@ test('all bosses release a sustained visible Nova and cataclysm with their exact
   burst.draw(g.ctx);assert.equal(burst.update(2),false);
  }
 });
+
+import { ARENAS, arenaById } from '../src/arena.js';
+import { RAID_TRACKS } from '../src/music.js';
+test('each raid has its own environment and music while regular arena choices stay unchanged',()=>{
+ assert.deepEqual(ARENAS.map(a=>a.id),['mtSilver','viridian','cinnabar','seafoam','indigo']);
+ const environments=new Set(),tracks=new Set();
+ for(const id of ['rayquaza','mewtwo','lugia']){
+  const g=battle();g.opponentSelection=[id];g.arenaId=BOSSES[id].arena;g.start();g.showcase=null;g.state='fighting';
+  const raid=new BossEncounter([g],id),environment=arenaById(BOSSES[id].arena);
+  assert.ok(environment.raid);assert.equal(g.arena.theme.id,environment.id);environments.add(environment.id);
+  assert.equal(g.battleTrack(),RAID_TRACKS[id][0]);tracks.add(g.battleTrack());
+  raid.stage=4;assert.equal(g.battleTrack(),RAID_TRACKS[id][1]);tracks.add(g.battleTrack());
+  g.raid=null;g.raidState={id,st:4};assert.equal(g.battleTrack(),RAID_TRACKS[id][1],'co-op follows the same boss music');
+ }
+ assert.equal(environments.size,3);assert.equal(tracks.size,6);
+});
+
+test('Mewtwo raid throws draw one target and one shadow through capture and return',()=>{
+ const g=battle();g.opponentSelection=['mewtwo'];g.start();g.showcase=null;g.state='fighting';
+ for(const m of [g.player,g.opponent]){m.hidden=false;m.appear=0;}
+ const raid=new BossEncounter([g],'mewtwo');raid.intro=0;
+ const visual=bossUltimateVisual(g,raid.boss),player=g.player,hp=player.hp;
+ g.bossFx={ultimateVisual:visual};let liveDraw=0,copyDraw=0,liveShadow=0,copyShadow=0,heldFrames=0,returnFrames=0;
+ player.draw=()=>liveDraw++;player.drawShadow=()=>liveShadow++;
+ visual.target.draw=()=>copyDraw++;visual.target.drawShadow=()=>copyShadow++;
+ for(let i=0;i<270;i++){
+  player.x=120+i%30;player.y=500;
+  visual.update(1/60);liveDraw=copyDraw=liveShadow=copyShadow=0;
+  g.render();assert.equal(liveDraw+copyDraw,1);assert.equal(liveShadow+copyShadow,1);
+  if(visual.target.held){heldFrames++;assert.equal(g.presentedActor(player),visual.target);assert.equal(liveDraw,0);}
+  if(visual.returnT>0){returnFrames++;assert.equal(copyDraw,1);}
+ }
+ assert.ok(heldFrames>50);assert.ok(returnFrames>5);assert.equal(g.presentedActor(player),player);
+ assert.equal(player.hp,hp);assert.equal(player.held,false);assert.equal(player.zOverride,null);
+});

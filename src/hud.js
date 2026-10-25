@@ -258,8 +258,9 @@ export class Hud {
       if (!tags.length) continue;
       ctx.font = '700 4.5px "Pixelify Sans"';
       const widths = tags.map(([l]) => Math.ceil(ctx.measureText(l).width) + 5);
-      let x = mon.x - (widths.reduce((a, b) => a + b, 0) + (tags.length - 1)) / 2;
-      const y = mon.y - mon.headZ - (mon.charging ? 22 : 10);
+      const actor=this.game.presentedActor(mon);
+      let x = actor.x - (widths.reduce((a, b) => a + b, 0) + (tags.length - 1)) / 2;
+      const y = actor.y - actor.headZ - (mon.charging ? 22 : 10);
       tags.forEach(([label, color], i) => {
         roundRect(ctx, x, y - 6, widths[i], 6.5, 3, color, '#12151c', 0.6);
         outlinedText(ctx, label, x + widths[i] / 2, y - 1.4, { size: 4.5, align: 'center', lw: 1 });

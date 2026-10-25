@@ -28,13 +28,13 @@ import {
   ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash,
 } from './effects.js';
 import { initAudio, sfx } from './audio.js';
-import { music, ARENA_TRACK } from './music.js';
+import { music, ARENA_TRACK, RAID_TRACKS } from './music.js';
 
 export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','RaidBurst','RaidAreaBurst']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','RaidBurst','RaidAreaBurst','NovaGather']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -241,7 +241,10 @@ export class Game {
   // Battle theme: the arena's own, or the legendary theme while a legendary or mythical Pokémon is out
   // (held for a few seconds after it leaves so switches don't flip the music back and forth).
   battleTrack(dt = 0, atStart = false) {
-    if (this.raid || this.raidState) return (this.raid?.stage ?? this.raidState?.st ?? 1) >= 4 ? 'raidRage' : 'raid';
+    if (this.raid || this.raidState) {
+      const id=this.raid?.id??this.raidState.id,final=(this.raid?.stage??this.raidState.st??1)>=4;
+      return RAID_TRACKS[id]?.[final?1:0]??(final?'raidRage':'raid');
+    }
     const legend = [this.player, this.opponent].some(m => m?.alive && (atStart || !m.hidden) && m.species.class !== 'regular');
     this.legendT = legend ? 4 : Math.max(0, this.legendT - dt);
     return this.legendT > 0 ? 'legend' : ARENA_TRACK[this.arena.theme?.id] ?? 'battle';
@@ -1447,6 +1450,14 @@ export class Game {
     return { x: r.left + (v.ox + x) * sc, y: r.top + (v.oy + y) * sc, scale: sc };
   }
 
+  presentedActor(mon) {
+    const visual=this.bossFx?.ultimateVisual;
+    if(!visual)return mon;
+    if(mon===this.opponent)return visual.user;
+    if(mon===visual.liveTarget&&visual.showingTarget)return visual.target;
+    return mon;
+  }
+
   renderCutscene() {
     const { ctx, k } = this, d = this.director, v = this.view;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1469,12 +1480,9 @@ export class Game {
     d.drawGround(ctx);
     for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
     this.particles.draw(ctx, 'ground');
-    const actors = d.list().sort((a, b) => a.y - b.y);
+    const actors = d.list().map(a=>this.presentedActor(a)).sort((a,b)=>a.y-b.y);
     for (const a of actors) a.drawShadow(ctx);
-    for (const a of actors) (a === this.opponent && this.bossFx?.ultimateVisual ? this.bossFx.ultimateVisual.user : a).draw(ctx);
-    if (this.bossFx?.ultimateVisual?.target.held) {
-      ctx.save(); ctx.globalAlpha = 0.5; this.bossFx.ultimateVisual.target.draw(ctx); ctx.restore();
-    }
+    for(const a of actors)a.draw(ctx);
     drawBossShield(ctx, this.bossFx?.view, this.opponent);
     for (const e of this.effects) if (e.layer === 'air') e.draw(ctx);
     this.particles.draw(ctx, 'air');
@@ -1511,12 +1519,9 @@ export class Game {
     for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
     drawBossGround(ctx, this.bossFx?.view, this.opponent);
     this.particles.draw(ctx, 'ground');
-    const actors = [this.player, this.opponent, this.red, this.gold, ...(this.raidAlly ? [this.raidAlly] : [])].sort((a, b) => a.y - b.y);
+    const actors = [this.player,this.opponent,this.red,this.gold,...(this.raidAlly?[this.raidAlly]:[])].map(a=>this.presentedActor(a)).sort((a,b)=>a.y-b.y);
     for (const a of actors) a.drawShadow(ctx);
-    for (const a of actors) (a === this.opponent && this.bossFx?.ultimateVisual ? this.bossFx.ultimateVisual.user : a).draw(ctx);
-    if (this.bossFx?.ultimateVisual?.target.held) {
-      ctx.save(); ctx.globalAlpha = 0.5; this.bossFx.ultimateVisual.target.draw(ctx); ctx.restore();
-    }
+    for(const a of actors)a.draw(ctx);
     drawBossShield(ctx, this.bossFx?.view, this.opponent);
     if (this.state === 'fighting') this.hud.drawTags(ctx);
     for (const e of this.effects) if (e.layer === 'air') e.draw(ctx);

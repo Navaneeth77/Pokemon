@@ -18,6 +18,22 @@ const chordNotes = (name, octave) => {
 // 8 steps (eighth notes) per bar. Lead: note, '-' holds the previous note, '.' rests.
 // Battles pick a theme by arena; a legendary or mythical Pokémon on the field brings in its own.
 const TRACKS = {
+  // Original boss motifs: ascending sky fanfare, restrained lab pulse, dark ocean lament.
+  rayquazaRaid: {
+    bpm:158,chords:['Em','C','Am','B','Em','G','C','B'],bass:'R.ORR.O.',drums:'k.hhskhh',wave:'triangle',vol:.13,
+    lead:`E5 B5 E6 - G6 F#6 E6 B5 | G5 C6 E6 G6 E6 - D6 C6 | A5 E6 A6 - G6 E6 D6 C6 | F#5 B5 D#6 F#6 D#6 - B5 -
+          E6 - G6 B6 A6 G6 F#6 E6 | D6 B5 G5 B5 D6 G6 A6 B6 | G6 E6 C6 E6 G6 - E6 D6 | D#6 F#6 B6 A6 F#6 D#6 B5 -`,
+  },
+  mewtwoRaid: {
+    bpm:140,chords:['C#m','A','F#m','G#','C#m','D','F#m','G#'],bass:'R..RR..O',drums:'k..sh.hs',wave:'square',vol:.055,
+    lead:`C#5 . G#5 . D6 C#6 . G#5 | E5 - A5 . C#6 C6 B5 . | F#5 . C#6 . A5 G#5 F#5 . | G#5 . C6 D#6 D6 C6 G#5 .
+          C#6 - G#5 E5 D6 C#6 . . | D5 A5 D6 . F#6 F6 E6 . | C#6 A5 F#5 . G#5 A5 C#6 - | C6 D#6 G#6 . F#6 D#6 C6 -`,
+  },
+  lugiaRaid: {
+    bpm:126,chords:['Dm','A#','Gm','A','Dm','F','Gm','A'],bass:'R...O.R.',drums:'k.h.s.h.',wave:'triangle',vol:.14,
+    lead:`D5 - A5 - F6 E6 D6 - | F5 - A#5 D6 F6 - E6 D6 | G5 - D6 - A#5 A5 G5 - | E5 A5 C#6 E6 D6 C#6 A5 -
+          D6 - F6 - E6 D6 A5 - | C6 A5 F5 A5 C6 - D6 C6 | A#5 - G5 D6 A#5 A5 G5 - | A5 C#6 E6 - D6 C#6 A5 -`,
+  },
   raid: {
     bpm: 156, chords: ['Dm', 'A#', 'Gm', 'A', 'Dm', 'C', 'A#', 'A'], bass: 'R.ROR.RO', drums: 'kkhskhsh', wave: 'sawtooth', vol: 0.045,
     lead: `D5 - A5 D6 F6 - E6 D6 | A#5 - F5 A#5 D6 - C6 A#5 | G5 A5 A#5 D6 G6 - F6 D6 | C#6 - E6 - A5 - C#6 -
@@ -74,6 +90,11 @@ const TRACKS = {
            B6 - A6 F#6 D6 - F#6 B6 | A6 - G6 D6 B5 - D6 G6 | F#6 - E6 C#6 A#5 - C#6 E6 | F#6 - - - A#5 B5 C#6 E6`,
   },
 };
+
+export const RAID_TRACKS = {
+  rayquaza:['rayquazaRaid','rayquazaRage'],mewtwo:['mewtwoRaid','mewtwoRage'],lugia:['lugiaRaid','lugiaRage'],
+};
+for(const [base,rage] of Object.values(RAID_TRACKS))TRACKS[rage]={...TRACKS[base],bpm:TRACKS[base].bpm+24,bass:'RRRORROR',drums:'kkshkhss'};
 
 // Battle theme for each arena (arena.js ids).
 export const ARENA_TRACK = { mtSilver: 'battle', viridian: 'forest', cinnabar: 'volcano', seafoam: 'sea', indigo: 'league' };

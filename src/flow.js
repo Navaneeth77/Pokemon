@@ -133,9 +133,8 @@ export class Flow {
       ['DRAFT BATTLES', () => this.expansion.drafts(), 'Snake · Blind trade · Online'],
       ['POKÉMON MASTERY', () => this.expansion.mastery(), 'Records · Levels · Match history'],
       ['ELEMENTAL GUIDE', () => this.expansion.guide()],
-      ['EFFECTS QUALITY', () => this.expansion.settings()],
       ['MY TEAMS', () => this.showTeams(), 'Build & save your teams'],
-      ['EDIT TRAINER', () => this.showTrainer()],
+      ['SETTINGS', () => this.expansion.settings(), 'Trainer · Effects · Audio · Display'],
       ['TUTORIAL', () => this.startTutorial()],
     ];
     const menu = $('#title-menu');
@@ -173,12 +172,13 @@ export class Flow {
   }
 
   // ── Trainer setup ──
-  showTrainer() {
+  showTrainer(from = null) {
+    this.trainerFrom=from;
     music.play('menu');
     const win = $('#trainer-screen .px-window');
     this.pick = Math.max(0, LOOKS.findIndex(l => l.id === this.save.look));
     win.innerHTML = `
-      <h2>TRAINER SETUP</h2>
+      <h2>${from==='settings'?'EDIT TRAINER':'TRAINER SETUP'}</h2>
       <div class="ts-body">
         <div class="ts-preview"><canvas width="24" height="24"></canvas><div class="ts-name"></div></div>
         <div class="ts-side">
@@ -189,7 +189,7 @@ export class Flow {
         </div>
       </div>
       <div class="ts-msg"></div>
-      <button class="px-btn primary ts-confirm">CONFIRM TRAINER ▶</button>`;
+      <button class="px-btn primary ts-confirm">${from==='settings'?'SAVE TRAINER':'CONFIRM TRAINER ▶'}</button>${from==='settings'?'<button class="px-btn ts-back">◀ SETTINGS</button>':''}`;
     win.querySelectorAll('.ts-pick').forEach((b, i) => {
       b.querySelector('canvas').getContext('2d').drawImage(drawBust(LOOKS[i]), 0, 0);
       b.addEventListener('click', () => {
@@ -205,9 +205,14 @@ export class Flow {
     });
     input.addEventListener('focus', () => setTimeout(() => win.querySelector('.ts-confirm').scrollIntoView({ block: 'nearest' }), 300));
     win.querySelector('.ts-confirm').addEventListener('click', () => this.confirmTrainer());
+    win.querySelector('.ts-back')?.addEventListener('click',()=>this.backToSettings());
     this.show('#trainer-screen');
     this.renderTrainer();
     if (!isTouchDevice()) input.focus();
+  }
+
+  backToSettings() {
+    this.trainerFrom=null;this.showTitleMenu();this.expansion.settings();
   }
 
   renderTrainer() {
@@ -233,6 +238,7 @@ export class Flow {
     this.save.look = LOOKS[this.pick].id;
     this.persist();
     this.applyTrainer(this.save.name, LOOKS[this.pick]);
+    if(this.trainerFrom==='settings'){this.backToSettings();return;}
     if (this.pendingRoom) this.joinRoom(this.pendingRoom);
     else if (!this.save.tutorialDone) this.startTutorial();
     else this.showFormat();
@@ -901,7 +907,7 @@ export class Flow {
       this.togglePause(true);
       return;
     }
-    if (e.target.tagName === 'INPUT' && e.code !== 'Enter') return;
+    if (e.target.tagName === 'INPUT' && e.code !== 'Enter' && !(s==='trainer' && this.trainerFrom==='settings' && e.code==='Escape')) return;
     if (s === 'opening') {
       if (['Enter', 'Space'].includes(e.code) || !this.opening.ready) {
         e.preventDefault();
@@ -926,6 +932,7 @@ export class Flow {
         e.preventDefault();
         this.pick = (this.pick + step + LOOKS.length) % LOOKS.length;
         this.renderTrainer();
+      } else if(e.code==='Escape' && this.trainerFrom==='settings'){e.preventDefault();this.backToSettings();
       } else if (e.code === 'Enter') {
         e.preventDefault();
         this.confirmTrainer();
@@ -1001,6 +1008,7 @@ export class Flow {
     $('#pause-menu').addEventListener('click', e => {
       const a = e.target.closest('[data-p]')?.dataset.p;
       if (a === 'resume') this.togglePause(false);
+      else if(a==='settings')this.expansion.settings();
       else if (a === 'menu') {
         if (this.online.inBattle) this.leaveOnline();
         else this.toTitle(); // online matchmaking: leaving forfeits the match

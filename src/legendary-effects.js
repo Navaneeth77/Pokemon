@@ -112,55 +112,112 @@ export class ElementColumn {
   }
 }
 
-// The hazard's actual footprint, sustained through the release. The safe center
-// (or cataclysm shelters) is cut out of the storm, never painted over by the blast.
+// Gathering energy rises along the future safe boundary; the actor stays anchored.
+export class NovaGather {
+  constructor(boss,hazard,rgb,life){Object.assign(this,{boss,hazard,rgb,life,age:0,layer:'air'});}
+  update(dt){this.age+=dt;return this.age<this.life&&this.boss.alive;}
+  draw(ctx){
+    const h=this.hazard,p=Math.min(1,this.age/this.life),r=h.r0??60,rgb=this.rgb.join(',');
+    ctx.save();ctx.lineCap='round';
+    for(let i=0;i<16;i++){
+      const a=i*Math.PI/8+this.age*.25,x=h.x+Math.cos(a)*r,y=h.y+Math.sin(a)*r;
+      const phase=(this.age*1.2+i/16)%1,lift=phase*(16+36*p);
+      ctx.globalAlpha=Math.sin(phase*Math.PI)*p*.7;ctx.strokeStyle=`rgb(${rgb})`;ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.quadraticCurveTo(x+Math.cos(a+.5)*9,y-lift*.5,x+Math.cos(a)*3,y-lift);ctx.stroke();
+      ctx.strokeStyle='#ecf5ff';ctx.lineWidth=.6;ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// Broken streams of mist spiral around the calm eye; no creatures, emblems or
+// closed glowing rings. The staggered streaks keep turning as the gale expands.
+function windVortex(ctx,h,inner,r,age,opacity){
+  const streams=quality().particles>500?8:4;
+  for(let arm=0;arm<streams;arm++){
+    const phase=arm/streams*Math.PI*2-age*2.8,points=[];
+    for(let i=0;i<=32;i++){
+      const t=i/32,a=phase+t*2.5,rr=inner+9+(r-inner)*t;
+      const ripple=Math.sin(t*17+age*9+arm)*3;
+      points.push({x:h.x+Math.cos(a)*(rr+ripple),y:h.y+Math.sin(a)*(rr+ripple),t});
+    }
+    for(const [width,color,alpha] of [[15,'#a8c8c3',.055],[5,'#d6e8e3',.18],[1,'#f0f8f4',.65]]){
+      ctx.strokeStyle=color;
+      for(let i=1;i<points.length;i++){
+        const a=points[i-1],b=points[i],taper=Math.sin(b.t*Math.PI);
+        ctx.globalAlpha=opacity*alpha*taper;ctx.lineWidth=width*(.2+.8*taper);
+        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      }
+    }
+    // Short displaced air filaments travel with each spiral instead of outlining a shape.
+    for(let j=0;j<3;j++){
+      const i=5+((Math.floor(age*24)+arm*5+j*8)%23),a=points[i],b=points[Math.min(32,i+3)];
+      ctx.globalAlpha=opacity*.4;ctx.strokeStyle='#e3f0ec';ctx.lineWidth=.65;
+      ctx.beginPath();ctx.moveTo(a.x+4,a.y-5);ctx.quadraticCurveTo((a.x+b.x)/2+6,(a.y+b.y)/2-7,b.x+3,b.y-4);ctx.stroke();
+    }
+  }
+}
+
+// Coherent travelling pressure shells with a bright core, translucent wake and
+// ballistic spray/debris. All layers are clipped out of the hazard's safe spaces.
 export class RaidAreaBurst {
   constructor(id,hazard,rgb) {
-    Object.assign(this,{id,hazard:{...hazard,safe:hazard.safe?.map(p=>[...p])},rgb,age:0,life:1.15,layer:'air'});
+    Object.assign(this,{id,hazard:{...hazard,safe:hazard.safe?.map(p=>[...p])},rgb,age:0,life:1.55,layer:'air'});
+    const inner=hazard.s==='ring'?hazard.r0:20,outer=hazard.s==='ring'?hazard.r:520;
+    this.fragments=Array.from({length:quality().particles>500?84:36},(_,i)=>({
+      a:i*2.399963,r:inner+12+((i*73.17)%(outer-inner-18)),v:40+(i%7)*12,vz:80+(i%5)*21,size:1.3+i%3,seed:i,
+    }));
   }
   update(dt){this.age+=dt;return this.age<this.life;}
   draw(ctx){
-    const h=this.hazard,p=this.age/this.life,fade=Math.min(1,this.age/.06,(1-p)*3);
+    const h=this.hazard,p=this.age/this.life,fade=Math.min(1,this.age/.035,(1-p)*3);
     const inner=h.s==='ring'?h.r0:20,outer=h.s==='ring'?h.r:520;
     const water=this.id==='lugia',psy=this.id==='mewtwo',rgb=this.rgb.join(',');
-    const core=water?'#edceff':psy?'#f8dcff':'#dcfff1';
-    ctx.save();
-    ctx.beginPath();
-    if(h.s==='ring') {ctx.arc(h.x,h.y,h.r,0,Math.PI*2);ctx.moveTo(h.x+h.r0,h.y);ctx.arc(h.x,h.y,h.r0,0,Math.PI*2,true);}
+    const core=water?'#f1dfff':psy?'#fbe7ff':'#e4fff5';
+    ctx.save();ctx.beginPath();
+    if(h.s==='ring'){ctx.arc(h.x,h.y,h.r,0,Math.PI*2);ctx.moveTo(h.x+h.r0,h.y);ctx.arc(h.x,h.y,h.r0,0,Math.PI*2,true);}
     else {ctx.rect(0,100,360,540);for(const [x,y,r] of h.safe??[]){ctx.moveTo(x+r,y);ctx.arc(x,y,r,0,Math.PI*2,true);}}
-    ctx.clip('evenodd');
-    const haze=ctx.createRadialGradient(h.x,h.y,inner,h.x,h.y,outer);
-    haze.addColorStop(0,`rgba(${rgb},.04)`);haze.addColorStop(.5,`rgba(${rgb},.25)`);haze.addColorStop(1,`rgba(${rgb},.08)`);
+    ctx.clip('evenodd');ctx.lineCap='round';
+    const progress=Math.min(1,this.age/.72),front=inner+(outer-inner)*(1-(1-progress)**1.5);
+    const haze=ctx.createRadialGradient(h.x,h.y,inner,h.x,h.y,Math.max(inner+1,front));
+    const mist=this.id==='rayquaza'?'169,199,191':rgb;
+    haze.addColorStop(0,`rgba(${mist},0)`);haze.addColorStop(.6,`rgba(${mist},.04)`);haze.addColorStop(1,`rgba(${mist},.16)`);
     ctx.globalAlpha=fade;ctx.fillStyle=haze;ctx.fillRect(0,100,360,540);
-    ctx.lineCap='round';
-    // Several moving pressure fronts, not a single one-frame floor ring.
-    for(let i=0;i<4;i++){
-      const t=(p*1.4+i/4)%1,r=inner+t*(outer-inner);
-      ctx.globalAlpha=fade*Math.sin(t*Math.PI)*.85;
-      for(const [w,color] of [[13,`rgba(${rgb},.22)`],[4,core]]){
-        ctx.strokeStyle=color;ctx.lineWidth=w;ctx.beginPath();
-        for(let side=0;side<3;side++){
-          const a=side*Math.PI*2/3+this.age*(psy?-1.4:.6);
-          ctx.moveTo(h.x+Math.cos(a)*r,h.y+Math.sin(a)*r);ctx.arc(h.x,h.y,r,a,a+1.5);
-        }
-        ctx.stroke();
+    const segments=quality().particles>500?96:40;
+    for(const [delay,strength] of [[0,1],[.16,.52]]){
+      const age=this.age-delay;if(age<0||age>1.12)continue;
+      const q=Math.min(1,age/.72),r=inner+(outer-inner)*(1-(1-q)**1.5),opacity=Math.min(1,age/.045)*(1-Math.max(0,age-.65)/.47)*strength;
+      if(this.id==='rayquaza'){if(delay===0)windVortex(ctx,h,inner,r,age,opacity);continue;}
+      const width=water?22:psy?15:26;
+      const band=ctx.createRadialGradient(h.x,h.y,Math.max(inner,r-width),h.x,h.y,r+width*.4);
+      band.addColorStop(0,`rgba(${rgb},0)`);band.addColorStop(.58,`rgba(${rgb},.18)`);band.addColorStop(.84,`rgba(${rgb},.65)`);band.addColorStop(1,`rgba(${rgb},0)`);
+      ctx.globalAlpha=opacity;ctx.fillStyle=band;ctx.beginPath();ctx.arc(h.x,h.y,r+width*.4,0,Math.PI*2);ctx.fill();
+      // The same core / body / glow separation as Dragon Pulse, with turbulent edges.
+      for(const [line,color,alpha] of [[8,`rgb(${rgb})`,.2],[3,core,.7],[.9,'#ffffff',.9]]){
+        ctx.lineWidth=line;ctx.strokeStyle=color;ctx.globalAlpha=opacity*alpha;ctx.beginPath();
+        for(let i=0;i<=segments;i++){
+          const a=i/segments*Math.PI*2,noise=Math.sin(a*11-age*16)*3+Math.sin(a*23+age*13)*1.5;
+          const x=h.x+Math.cos(a)*(r+noise),y=h.y+Math.sin(a)*(r+noise)-(water?Math.sin(a*8+age*8)*3:0);
+          if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+        }ctx.stroke();
       }
     }
-    // Airborne gusts, shadow spray or telekinetic shards fill the unsafe field.
-    const count=quality().particles>500?54:24;
-    for(let i=0;i<count;i++){
-      const x=(i*97.31)%360,y=120+(i*71.67)%500,t=(p*1.8+i*.137)%1;
-      const lift=Math.sin(t*Math.PI)*(psy?60:25),length=18+(i%4)*7;
-      ctx.globalAlpha=fade*Math.sin(t*Math.PI)*.7;ctx.strokeStyle=core;ctx.lineWidth=water?2:1.5;
-      ctx.beginPath();ctx.moveTo(x-length*.5,y-lift);
-      ctx.bezierCurveTo(x-length*.2,y-lift-13,x+length*.3,y-lift+7,x+length*.5,y-lift-8);ctx.stroke();
+    for(const f of this.fragments){
+      const start=(f.r-inner)/(outer-inner)*.52,t=this.age-start;if(t<0||t>.9)continue;
+      const a=f.a+(psy?t*.7:0),r=f.r+f.v*t,z=Math.max(0,f.vz*t-125*t*t),x=h.x+Math.cos(a)*r,y=h.y+Math.sin(a)*r-z;
+      ctx.globalAlpha=fade*Math.min(1,t*12)*(1-t/.9);
       if(psy){
-        ctx.fillStyle=`rgb(${rgb})`;ctx.beginPath();ctx.moveTo(x,y-lift-12);ctx.lineTo(x+3,y-lift);ctx.lineTo(x-2,y-lift+5);ctx.closePath();ctx.fill();
-      } else if(water){ctx.fillStyle=core;ctx.fillRect(x,y-lift-15,1.5,5);}
+        ctx.save();ctx.translate(x,y);ctx.rotate(t*3+f.seed);ctx.fillStyle='#514762';ctx.strokeStyle=core;ctx.lineWidth=.6;
+        ctx.beginPath();ctx.moveTo(-f.size*2,0);ctx.lineTo(-f.size,-f.size*2);ctx.lineTo(f.size*1.5,-f.size);ctx.lineTo(f.size*2,f.size);ctx.lineTo(0,f.size*1.6);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+      }else{
+        const length=water?5+f.size*2:14+f.size*6,dx=Math.cos(a)*length,dy=Math.sin(a)*length*.5;
+        ctx.strokeStyle=`rgba(${rgb},.5)`;ctx.lineWidth=water?f.size:2;ctx.beginPath();ctx.moveTo(x-dx,y-dy+7);ctx.quadraticCurveTo(x-dx*.5,y-dy*.5-4,x,y);ctx.stroke();
+        ctx.strokeStyle=core;ctx.lineWidth=water?1: .7;ctx.beginPath();ctx.moveTo(x-dx*.5,y-dy*.5);ctx.lineTo(x,y);ctx.stroke();
+        if(water){ctx.fillStyle=core;ctx.fillRect(x,y,1.5,2.5);}
+      }
     }
     ctx.restore();
-    // Keep the exact safe boundary legible after the warning overlay disappears.
-    ctx.save();ctx.globalAlpha=fade*.85;ctx.strokeStyle='#aaffd1';ctx.lineWidth=2;
+    ctx.save();ctx.globalAlpha=fade*.8;ctx.strokeStyle='#aaffd1';ctx.lineWidth=2;
     for(const [x,y,r] of h.s==='ring'?[[h.x,h.y,h.r0]]:h.safe??[]){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();}
     ctx.restore();
   }

@@ -5,6 +5,8 @@ import { BOSSES, BossEncounter, RAID_DIFFICULTY } from './bosses.js';
 import { HIT_REACTIONS } from './reactions.js';
 import { SPECIES, ROSTER } from './data/species.js';
 import { QUALITY, setQuality, qualityName } from './quality.js';
+import { music } from './music.js';
+import { initAudio, isMuted, setMuted } from './audio.js';
 import { preloadRaidArt } from './raid-art.js';
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
@@ -197,8 +199,23 @@ export class ExpansionUI {
   }
 
   settings() {
-    const el = this.open('EFFECTS QUALITY', `<p>Essential attack warnings and status indicators stay visible at every quality level.</p><div class="exp-options">${Object.entries(QUALITY).map(([k, v]) => `<button class="px-btn ${qualityName() === k ? 'primary' : ''}" data-quality="${k}">${v.label}</button>`).join('')}</div>`);
-    el.querySelectorAll('[data-quality]').forEach(b => b.onclick = () => { setQuality(b.dataset.quality); this.flow.game.resize(); this.settings(); });
+    const battle=this.flow.pauseOpen;
+    const el=this.open('SETTINGS', `
+      ${battle?'':`<section class="settings-section"><h3>TRAINER</h3><div class="settings-row"><div><b>${esc(this.flow.save.name??'TRAINER')}</b><p>Name and trainer appearance</p></div><button class="px-btn" data-edit-trainer>EDIT TRAINER</button></div></section>`}
+      <section class="settings-section"><h3>EFFECT QUALITY</h3><p>Choose the amount of particles and visual detail. Attack warnings and safe areas remain visible at every level.</p><div class="settings-quality">${Object.entries(QUALITY).map(([k,v])=>`<button class="px-btn ${qualityName()===k?'primary':''}" data-quality="${k}" aria-pressed="${qualityName()===k}">${v.label}</button>`).join('')}</div></section>
+      <section class="settings-section"><h3>AUDIO</h3><div class="settings-row"><button class="px-btn" data-music>♪ MUSIC: ${music.enabled?'ON':'OFF'}</button><button class="px-btn" data-sfx>SFX: ${isMuted()?'OFF':'ON'}</button></div><label class="settings-volume">MUSIC VOLUME <output>${Math.round(music.volume*100)}%</output><input aria-label="Music volume" type="range" min="0" max="100" data-volume value="${Math.round(music.volume*100)}"></label></section>
+      <section class="settings-section"><h3>DISPLAY</h3><button class="px-btn" data-fs>FULLSCREEN</button></section>`);
+    el.classList.add('settings-overlay');
+    el.querySelector('[data-edit-trainer]')?.addEventListener('click',()=>{this.close(false);this.flow.showTrainer('settings');});
+    el.querySelectorAll('[data-quality]').forEach(b=>b.onclick=()=>{
+      setQuality(b.dataset.quality);this.flow.game.resize();
+      el.querySelectorAll('[data-quality]').forEach(o=>{const active=qualityName()===o.dataset.quality;o.classList.toggle('primary',active);o.setAttribute('aria-pressed',String(active));});
+    });
+    el.querySelector('[data-music]').onclick=()=>{initAudio();music.setEnabled(!music.enabled);};
+    el.querySelector('[data-sfx]').onclick=()=>{setMuted(!isMuted());this.flow.syncAudioUi();};
+    el.querySelector('[data-volume]').oninput=e=>{initAudio();music.setVolume(+e.target.value/100);el.querySelector('output').textContent=e.target.value+'%';};
+    el.querySelector('[data-fs]').onclick=()=>this.flow.toggleFullscreen();
+    this.flow.syncFullscreen();
   }
   drafts() {
     const el = this.open('DRAFT BATTLES', `<p>Online · server-controlled choices</p><label>QUEUE <select data-ranked><option value="no">UNRANKED</option><option value="yes">RANKED · affects your rating</option></select></label><label>POOL <select data-roster><option value="regular">REGULAR POKÉMON</option><option value="all">FULL LEGAL ROSTER</option></select></label><div class="exp-options"><button class="px-btn primary" data-mode="snake" data-size="3">SNAKE · 3 VS 3</button><button class="px-btn primary" data-mode="snake" data-size="6">SNAKE · 6 VS 6</button><button class="px-btn" data-mode="trade" data-size="6">BLIND TRADE · 6 VS 6</button></div><div class="draft-previews"><article><b>SHARED POOL</b><div><img src="${portrait('charizard')}" alt="Charizard"><img src="${portrait('pikachu')}" alt="Pikachu"><img src="${portrait('blastoise')}" alt="Blastoise"></div><span>A → B → B → A</span><small>Every pick removes a Pokémon from the common pool.</small></article><article><b>BLIND TRADE</b><div><img src="${portrait('sceptile')}" alt="Sceptile"><span>⇄</span><img src="${portrait('lucario')}" alt="Lucario"></div><span>KEEP ONE · SEND ONE</span><small>Three private rounds; simultaneous reveals.</small></article></div><p class="exp-status" role="status"></p>`);

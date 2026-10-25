@@ -1,4 +1,6 @@
 import { GroundFX } from './groundfx.js';
+import { RAID_ARENAS, paintRaidFloor, drawRaidBackdrop, drawRaidAtmosphere } from './raid-environments.js';
+export { RAID_ARENAS } from './raid-environments.js';
 
 export const WORLD_W = 360;
 export const WORLD_H = 640;
@@ -41,7 +43,7 @@ export const ARENAS = [
     outer: 'crowd', ambient: { kind: 'confetti', n: 36, colors: ['#ffd84a', '#ff6a4d', '#5aa6f0', '#8ad84f'] },
   },
 ];
-export const arenaById = id => ARENAS.find(a => a.id === id) ?? ARENAS[0];
+export const arenaById = id => [...ARENAS,...RAID_ARENAS].find(a => a.id === id) ?? ARENAS[0];
 
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
@@ -213,9 +215,8 @@ export function paintArena(t) {
   const c = makeCanvas(WORLD_W, WORLD_H), g = c.getContext('2d');
   if (t.ground === 'court') paintCourt(g);
   else paintNoise(g, WORLD_W, WORLD_H, t.ground, LEDGE_Y);
-  paintExtras(g, t);
-  paintFieldLines(g, t.lines);
-  paintEdges(g, t);
+  if(t.raid)paintRaidFloor(g,t);
+  else {paintExtras(g,t);paintFieldLines(g,t.lines);paintEdges(g,t);}
   groundCache.set(t.id, c);
   return c;
 }
@@ -269,12 +270,12 @@ export class Arena {
   }
 
   makeFlake(anywhere) {
-    const kind = this.theme.ambient.kind, up = kind === 'ember';
+    const kind = this.theme.ambient.kind, up = kind === 'ember' || kind === 'mote';
     return {
       x: rand(-20, WORLD_W + 40),
       y: anywhere ? rand(0, WORLD_H) : up ? WORLD_H + 4 : -4,
-      vy: up ? -rand(20, 50) : kind === 'leaf' ? rand(12, 24) : kind === 'sparkle' ? 0 : rand(16, 38),
-      vx: kind === 'leaf' ? rand(8, 20) : rand(-9, -3),
+      vy: kind==='rain'?rand(160,240):kind==='wind'?rand(4,10):up ? -rand(20, 50) : kind === 'leaf' ? rand(12, 24) : kind === 'sparkle' ? 0 : rand(16, 38),
+      vx: kind==='rain'?-40:kind==='wind'?rand(35,65):kind === 'leaf' ? rand(8, 20) : rand(-9, -3),
       s: Math.random() < 0.25 ? 2 : 1,
       a: rand(0.55, 0.95),
       ph: rand(0, 6.28),
@@ -303,6 +304,7 @@ export class Arena {
     this.pattern ??= ctx.createPattern(this.outer, 'repeat');
     ctx.fillStyle = this.pattern;
     ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
+    if(this.theme.raid)drawRaidBackdrop(ctx,this.theme,this.t);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(-4, -4, WORLD_W + 8, WORLD_H + 8);
   }
@@ -310,6 +312,7 @@ export class Arena {
   drawGround(ctx) {
     ctx.drawImage(this.ground, 0, 0);
     this.marks.draw(ctx);
+    if(this.theme.raid)drawRaidAtmosphere(ctx,this.theme,this.t);
   }
 
   drawSnow(ctx) {
@@ -317,7 +320,8 @@ export class Arena {
     for (const f of this.flakes) {
       ctx.globalAlpha = kind === 'sparkle' ? Math.max(0, Math.sin(this.t * 3 + f.ph)) * f.a : f.a;
       ctx.fillStyle = f.c;
-      if (kind === 'leaf' || kind === 'confetti') ctx.fillRect(Math.round(f.x), Math.round(f.y), 2, Math.sin(this.t * 4 + f.ph) > 0 ? 1 : 2);
+      if(kind==='rain'||kind==='wind'){ctx.strokeStyle=f.c;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(f.x+(kind==='rain'?-2:9),f.y+(kind==='rain'?10:-1));ctx.stroke();}
+      else if (kind === 'leaf' || kind === 'confetti') ctx.fillRect(Math.round(f.x), Math.round(f.y), 2, Math.sin(this.t * 4 + f.ph) > 0 ? 1 : 2);
       else ctx.fillRect(Math.round(f.x), Math.round(f.y), f.s, f.s);
     }
     ctx.globalAlpha = 1;

@@ -21,7 +21,7 @@ Open http://localhost:5173. For two local players use separate browsers, or two 
 - **Draft Battles:** shared-pool snake draft (3v3/6v6), or simultaneous blind trade (6v6). The server validates picks, handles timeouts and reveals, and starts the battle after confirmation. Choose ranked or unranked queues, plus regular-only or full legal roster pools. Ranked drafts use the existing Elo rules.
 - **Pokémon Mastery:** searchable species levels, side-by-side comparisons, entered/completed records, best results, discovered reactions, trainer profile, 14 badges and wearable titles. Mastery unlocks equippable trainer frames, victory poses and send-out effects. Cosmetic rewards never increase combat stats.
 - **Match history:** summaries and bounded event replay timelines. These show recorded events with play/pause and scrubbing; they do not recreate the battle simulation. Old matches without recorded events retain their summaries.
-- **My Teams, Edit Trainer, Tutorial, Elemental Guide and Effects Quality** remain accessible from the title menu. The existing story campaign modules remain in the codebase.
+- **My Teams, Tutorial and Elemental Guide** remain accessible from the title menu. **Settings** groups Edit Trainer, Effects Quality, audio and display controls, and is also available from the pause menu. The existing story campaign modules remain in the codebase.
 
 ### Raid rules
 
@@ -34,6 +34,8 @@ From stage two, bosses periodically channel their ultimate behind a shield worth
 Bosses hold their position, altitude and facing while casting. Beams attach to their mouths. Rayquaza uses wind/meteor effects and Lugia uses mist/spray. Each has one SpriteCook disc beneath it; their mouths, meteors and dive trails do not repeat that disc. Mewtwo retains its psychic sigil. Dark wisps and impact effects keep the battlefield readable. Ultimate damage lands on the signature action's impact; movement attacks such as Dragon Ascent keep their flight/dive.
 
 Rayquaza and Lugia share layered cast, trail and impact effects across their raid patterns and playable moves. Meteors have molten rock cores, movement leaves a short slipstream, storm lightning starts at its cloud, and water waves/columns break into foam and spray. Dragon Pulse retains its travelling rings; Aeroblast uses the same layered mouth beam. Nova and cataclysm releases sustain moving pressure fronts, airborne gusts/spray or psychic shards after the warning fades. Their safe center or shelters remain visibly clear. Ultimate impacts also send pressure fronts across the floor. Visual effects do not decide damage or safe zones.
+
+Each boss has its own raid environment and original synthesized battle theme, with a faster final-stage arrangement: Rayquaza fights above the clouds at Sky Pillar, Armored Mewtwo in a containment laboratory, and Shadow Lugia at a storm-lashed island fortress. These are lore-inspired designs; regular arena selections stay unchanged. Rayquaza's **Tempest Vortex** uses spiraling wind and mist around a calm safe eye, without dragon silhouettes. Mewtwo's cinematic throw renders one opponent and one shadow through capture, launch and return, while the server retains authority over combat.
 
 Lugia also uses **Water Pulse**: Dragon Pulse's layered beam and travelling rings, water-blue for the fourth regular move slot and purple for the Shadow Lugia raid boss. Thunderstorm forms seven cloud clusters and seven staggered bolts on High/Balanced (four on Performance); extra visual bolts remain inside the warning circle and add no hidden damage.
 
