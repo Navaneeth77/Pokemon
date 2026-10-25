@@ -5,10 +5,11 @@ import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
+import { Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
 import { drawRaidSigil, drawRaidGroundAura, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
-import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, rainbowBurst, debris, dustCloud, electricBurst, waterSplash, rand } from './effects.js';
+import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, StormCloud, rainbowBurst, debris, dustCloud, electricBurst, waterSplash, rand } from './effects.js';
 
 // Legendary raids. BossEncounter is the authority (in the browser for solo raids, on the match server
 // for co-op): it moves the boss, picks attacks, and decides which hazards hit whom. Screens only draw
@@ -455,6 +456,8 @@ const RGB = { dragon: [117, 245, 177], psychic: [226, 120, 255], water: [90, 170
 const typeRgb = (t, fallback) => RGB[t] ?? fallback;
 
 const fxOf = h => (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx);
+const cataclysmSpots = h => Array.from({length:9},(_,i)=>({x:70+i%3*110,y:170+Math.floor(i/3)*150}))
+  .filter(p=>!h.safe.some(([x,y,r])=>Math.hypot(p.x-x,p.y-y)<r+20));
 // Animations for the wind-up (held until the attack lands) and for the strike itself. Each boss can
 // override these with its own fitting animations (BOSSES[id].anims), so no boss strikes a pose that
 // makes no sense for it.
@@ -475,20 +478,20 @@ class BossCharge {
 
   draw(ctx) {
     const b = this.boss, k = Math.min(1, (this.age / this.life) * 1.15), [R, G, B] = this.rgb;
-    if ((b.boss === 'rayquaza' && this.kind !== 'beam') || b.boss === 'lugia') {
+    if ((b.boss === 'rayquaza' || b.boss === 'lugia') && this.kind !== 'beam') {
       drawNaturalCharge(ctx, b, this.age, k, this.kind === 'beam' || this.kind === 'ultimate');
       return;
     }
     const { x, y } = bossMouth(b), r = b.radius * (0.5 + 0.9 * k) * (1 + 0.08 * Math.sin(this.age * 30));
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, `rgba(10,5,20,${0.95 * k})`);
-    grad.addColorStop(0.45, `rgba(63,20,100,${0.8 * k})`);
+    grad.addColorStop(0.45, `rgba(${b.boss === 'lugia' ? '20,65,100' : '63,20,100'},${0.8 * k})`);
     grad.addColorStop(0.72, `rgba(${R},${G},${B},${0.6 * k})`);
     grad.addColorStop(1, `rgba(${R},${G},${B},0)`);
     ctx.fillStyle = grad;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
     drawRaidSigil(ctx, b.boss, x, y, Math.min(70, r * 1.65), this.age * 2, .2 + .45 * k);
-    ctx.strokeStyle = `rgba(196,150,255,${0.65 * k})`;
+    ctx.strokeStyle = `rgba(${b.boss === 'lugia' ? '185,233,255' : '196,150,255'},${0.65 * k})`;
     ctx.lineWidth = 1.5;
     for (let i = 0; i < 6; i++) {
       const a = this.age * 3 + (i * Math.PI) / 3, r0 = r * 0.35, r1 = r * (0.9 + 0.25 * Math.sin(this.age * 12 + i));
@@ -587,6 +590,11 @@ export class BossPresenter {
       if ((h.k === 'meteor' || (h.k === 'cataclysm' && data.id === 'rayquaza')) && left < 0.85 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
         if (h.s === 'circle') g.spawn(new Falling(h.x, h.y, Math.max(0.15, left), data.id === 'rayquaza' ? 'raid-meteor' : 'draco', () => {}, def.rgb));
+        else if (h.s === 'cover') for (const p of cataclysmSpots(h)) g.spawn(new Falling(p.x,p.y,Math.max(.15,left),'raid-meteor',()=>{},def.rgb));
+      }
+      if (h.k === 'cataclysm' && data.id === 'lugia' && left < .65 && !this.falling.has(h.id)) {
+        this.falling.add(h.id);
+        g.spawn(new TidalWave(100,620,Math.max(.2,left+.18),[70,150,235],true));
       }
       if (h.k === 'tidal' && left < 0.55 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
@@ -618,6 +626,10 @@ export class BossPresenter {
     this.chargeFx = new BossCharge(boss, left, rgb, fx);
     g.spawn(this.chargeFx);
     this.charge = { until: now + left * 1000, rgb };
+    if (boss.boss === 'lugia' && (fx === 'storm' || fx === 'cataclysm')) {
+      const targets = fx === 'storm' ? [h] : cataclysmSpots(h).slice(0,3);
+      for (const p of targets) g.spawn(new StormCloud(p.x,Math.max(130,p.y-140),left+.35));
+    }
     if (fx === 'meteor' || fx === 'cataclysm') {
       for (let i = 0; i < Math.round(10 * Math.max(0.4, quality().particles / 1200)); i++) {
         g.particles.spawn({ x: boss.x + rand(-12, 12), y: boss.y, z: boss.headZ * 0.8, vx: rand(-30, 30), vz: rand(380, 520), life: 0.7, size: rand(3, 5), sizeEnd: 1, colors: ['#ffffff', `rgb(${rgb.join(',')})`] });
@@ -638,7 +650,7 @@ export class BossPresenter {
   // slam a fault line torn through the floor between them.
   throwAt(h, def, boss) {
     const g = this.game, fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`;
-    if (fx === 'psy' || fx === 'storm' || fx === 'pillar') g.spawn(new LegendaryBeam(boss, h.x, h.s === 'lane' ? Math.min(BOUNDS.maxY, boss.y + 160) : h.y, color, fx === 'pillar' ? 14 : 9, .42));
+    if (fx === 'psy' || (boss.boss === 'mewtwo' && (fx === 'storm' || fx === 'pillar'))) g.spawn(new LegendaryBeam(boss, h.x, h.s === 'lane' ? Math.min(BOUNDS.maxY, boss.y + 160) : h.y, color, fx === 'pillar' ? 14 : 9, .42));
     else if (fx === 'quake' && Math.hypot(h.x - boss.x, h.y - boss.y) > 60) this.trench({ x: boss.x, y: boss.y, x2: h.x, y2: h.y }, rgb);
   }
 
@@ -664,23 +676,41 @@ export class BossPresenter {
         g.shake(5, 0.3);
         break;
       case 'pillar':
-        for (const y of [190, 310, 430, 550]) g.spawn(new Pillar(h.x, y, 0.55, rgb, 300));
-        for (const y of [200, 350, 500]) g.marks.energy(h.x, y, h.r, rgb);
+        if (boss.boss === 'mewtwo') {
+          for (const y of [190,310,430,550]) g.spawn(new Pillar(h.x,y,.55,rgb,300));
+          for (const y of [200,350,500]) g.marks.energy(h.x,y,h.r,rgb);
+        } else for (const y of [230,400,570]) {
+          g.spawn(new ElementColumn(h.x,y,Math.min(240,y-150),h.r*1.3,boss.boss==='lugia'));
+          g.spawn(new PressureWave(h.x,y,h.r*1.5,boss.boss==='lugia'?'water':'air'));
+          if (boss.boss==='lugia') waterSplash(g,h.x,y); else g.marks.fracture(h.x,y,22);
+        }
         sfx.beamFire();
         g.shake(3, 0.2);
         break;
       case 'beam':
-        if (h.s !== 'line') g.spawn(new LegendaryBeam(boss, h.x, h.y, color, h.r, .5));
+        if (h.s !== 'line') g.spawn(new LegendaryBeam(boss, h.x, h.y, color, h.r, .5, boss.boss==='lugia'));
         if (h.s === 'row' || h.s === 'cross') g.spawn(new BeamLine(BOUNDS.minX - 30, h.y, BOUNDS.maxX + 30, h.y, 0.4, color, h.r * 1.4));
+        if (h.s === 'row' && boss.boss === 'lugia') {
+          g.spawn(new BeamLine(BOUNDS.minX-30,h.y,BOUNDS.maxX+30,h.y,.4,'#bfefff',h.r*.65));
+          g.spawn(new BeamLine(BOUNDS.minX-30,h.y,BOUNDS.maxX+30,h.y,.35,'#ffffff',h.r*.18));
+        }
         if (h.s === 'cross') g.spawn(new BeamLine(h.x, BOUNDS.minY - 30, h.x, BOUNDS.maxY + 30, 0.4, color, h.r * 1.4));
         if (h.s === 'line') {
-          g.spawn(new LegendaryBeam(boss, h.x2, h.y2, color, h.r * 1.5, .6, h.k === 'dragonBeam'));
+          g.spawn(new LegendaryBeam(boss, h.x2, h.y2, color, h.r * 1.5, .6, h.k === 'dragonBeam' || boss.boss==='lugia'));
           this.trench(h, rgb);
         }
         sfx.beamFire();
         g.shake(4, 0.25);
         break;
       case 'nova':
+        if (boss.boss !== 'mewtwo') {
+          const water=boss.boss==='lugia';
+          g.spawn(new PressureWave(h.x,h.y,380,water?'water':'air'));
+          for(let i=0;i<6;i++) { const a=i*Math.PI/3,x=h.x+Math.cos(a)*150,y=h.y+Math.sin(a)*120;
+            if(water) waterSplash(g,x,y); else this.breakGround(x,y,rgb,1);
+          }
+          sfx.explosion();g.shake(8,.45);break;
+        }
         g.spawn(new Ring(h.x, h.y, { r0: h.r0, r1: 380, life: 0.6, color, width: 7 }));
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2;
@@ -692,6 +722,8 @@ export class BossPresenter {
         break;
       case 'dive':
         g.spawn(new EnergyAura(boss, 0.55, true));
+        g.spawn(new Slipstream(boss,.55,'#baffdd',boss.radius*1.3));
+        g.spawn(new PressureWave(h.x2,h.y2,100,'rock'));
         this.trench(h, rgb);
         this.breakGround(h.x2, h.y2, rgb, 2);
         sfx.quake();
@@ -710,18 +742,21 @@ export class BossPresenter {
         g.shake(3, 0.25);
         break;
       case 'storm':
-        g.spawn(new Lightning(h.x + rand(-20, 20), h.y - 320, h.x, h.y, 0.35, { width: 3, branches: 4 }));
+        g.spawn(new Lightning(h.x + rand(-12, 12), boss.boss==='lugia'?Math.max(130,h.y-140):h.y-320, h.x, h.y, 0.35, { width: 3, branches: 4 }));
         electricBurst(g, h.x, h.y, 2, 14);
         g.marks.scorch(h.x, h.y, h.r * 0.6);
+        if (boss.boss==='lugia') { waterSplash(g,h.x,h.y);g.spawn(new PressureWave(h.x,h.y,h.r*1.4,'water')); }
         sfx.thunder();
         g.shake(4, 0.25);
         break;
       case 'cataclysm':
-        g.spawn(new ScreenDim(1.4, 0.45, '20,6,6'));
+        g.spawn(new ScreenDim(1.4, 0.45, boss.boss==='lugia'?'6,15,30':'20,6,6'));
         g.flashT = Math.max(g.flashT, 0.16);
-        for (let i = 0; i < 9; i++) {
-          const x = 70 + (i % 3) * 110 + rand(-30, 30), y = 170 + Math.floor(i / 3) * 150 + rand(-40, 40);
-          if (!h.safe.some(([sx, sy, sr]) => Math.hypot(x - sx, y - sy) < sr + 20)) this.breakGround(x, y, rgb, 1, 60);
+        for (const {x,y} of cataclysmSpots(h)) {
+          if(boss.boss==='lugia') {
+            waterSplash(g,x,y);g.marks.wet(x,y,45);g.spawn(new ElementColumn(x,y,Math.min(180,y-150),42,true));
+            g.spawn(new PressureWave(x,y,70,'water'));
+          } else this.breakGround(x, y, rgb, 1, 60);
         }
         sfx.explosion();
         sfx.roar();
@@ -737,6 +772,7 @@ export class BossPresenter {
     debris(g, x, y, Math.round(22 * q * n), 170);
     dustCloud(g, x, y, Math.round(10 * q * n), 5);
     g.spawn(new Ring(x, y, { r0: 8, r1: r * 1.3, life: 0.45, color: `rgb(${rgb.join(',')})`, width: 4 }));
+    if (g.opponent.boss==='rayquaza') g.spawn(new PressureWave(x,y,r*1.45,'rock'));
   }
 
   // A line attack carves a trench of cracks across the floor.

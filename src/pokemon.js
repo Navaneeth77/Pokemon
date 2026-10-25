@@ -2,6 +2,7 @@ import { AnimatedSprite, dirFromVector } from './sprite.js';
 import { BOUNDS } from './arena.js';
 import { Afterimage, FloatText } from './effects.js';
 import { abilityOf } from './data/abilities.js';
+import { skyLegend } from './legendary-effects.js';
 import { tickStatus, statusSpeed, tickBuffs, buffMult } from './status.js';
 
 const RECALL_TIME = 0.4;
@@ -217,7 +218,7 @@ export class Pokemon {
       return;
     }
     // A legendary's held cast pose also holds its altitude on online clients.
-    if (this.boss && this.animHold > 0) return;
+    if ((this.boss && this.animHold > 0) || (skyLegend(this) && this.action && !this.action.allowMove)) return;
     const fly = this.species.fly;
     if (!fly) {
       this.z = 0;

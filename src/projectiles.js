@@ -1,6 +1,7 @@
 import { applyHit } from './combat.js';
 import { rand, Ring, Glow, iceShatter, leafBurst } from './effects.js';
 import { BOUNDS } from './arena.js';
+import { skyLegend, PressureWave } from './legendary-effects.js';
 
 class Projectile {
   constructor(game, user, move, x, y, z, angle, speed, maxDist, radius) {
@@ -71,6 +72,7 @@ export class AirBlade extends Projectile {
       });
     }
     this.game.spawn(new Ring(this.x, this.y, { z, r0: 3, r1: 18, life: 0.22, color: '#dff7ff', width: 2, layer: 'air' }));
+    if(skyLegend(this.user))this.game.spawn(new PressureWave(this.x,this.y,32,'air',z));
     if (hit) applyHit(this.game, this.user, this.target, this.move, this.hitOpts({ knockback: 110, stagger: 0.25, flinchChance: 0.3 }));
   }
 
@@ -82,6 +84,7 @@ export class AirBlade extends Projectile {
       ctx.save();
       ctx.translate(this.x - Math.cos(this.angle) * i * 7, this.y - Math.sin(this.angle) * i * 7 - z);
       ctx.rotate(this.angle);
+      if(skyLegend(this.user))ctx.scale(1.4,1.4);
       ctx.globalAlpha = i === 0 ? 1 : 0.35 / i;
       ctx.beginPath();
       ctx.arc(-7, 0, 11, -1.15, 1.15);

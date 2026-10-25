@@ -30,6 +30,11 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 - Re-entering a raid clears the prior BossPresenter and cancels its detached ultimate; reused hazard
   IDs and ultimate counters now trigger the entrance, charge and attack animations again.
   Rayquaza/Lugia's move-name overlay leaves their faces visible; Mewtwo's presentation is unchanged.
+- Rayquaza/Lugia's complete raid rotations and four playable moves each use attached cast energy,
+  layered pulse beams, bounded trails and physical impact fronts. Rayquaza has molten meteor cores,
+  slipstreams, pressure pillars and matching Skyfall landing points; Lugia has rolling foam, cloud-origin
+  lightning and water columns that break into spray. Both base and Mega Dragon Ascent retain their
+  skyward flight and gain movement trails. Ground discs remain confined to the caster's floor aura.
 - Abortable readiness/retries, legacy-health compatibility, welcome gating, feature negotiation,
   bounded co-op rejoin, coalesced wake requests and unchanged protocol 2.
 - Bounded decorative/event/stamp caches; hidden-page/menu render reduction; quality modes preserve
@@ -96,7 +101,7 @@ preview UI does not persist results. These diagnostic pages are not production a
 | Area | Files |
 |---|---|
 | Shared combat and forms | `src/reactions.js`, `src/elemental.js`, `src/combat.js`, `src/data/mega-stats.js` |
-| Boss authority and visuals | `src/bosses.js`, `src/raid-art.js`, `src/raid-cinematics.js` |
+| Boss authority and visuals | `src/bosses.js`, `src/raid-art.js`, `src/legendary-effects.js`, `src/raid-cinematics.js` |
 | Real online raids and drafts | `server/raids.js`, `server/drafts.js`, `src/draft-rules.js`, `src/matchmaking.js` |
 | Presentation and integration | `src/cinema.js`, `src/final-hit-replay.js`, `src/moves.js`, `src/game.js`, `src/flow.js` |
 | Progression and results | `src/mastery.js`, `src/results.js`, `src/expansion-ui.js` |

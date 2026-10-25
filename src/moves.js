@@ -1,6 +1,7 @@
 import { animDuration } from './assets.js';
 import { dirFromVector } from './sprite.js';
 import { LegendaryBeam } from './raid-art.js';
+import { skyLegend, CastEnergy, Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
 import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -98,7 +99,8 @@ class MoveAction {
 
   mouth() {
     const m = this.user.species.mouth;
-    return { ...this.front(m.fwd), z: m.z + this.user.z };
+    const raisedBeak=skyLegend(this.user)&&(this.user.boss??this.user.species.id)==='lugia';
+    return { ...this.front(m.fwd), z: (raisedBeak?this.user.species.headZ+4*(this.user.drawScale??1):m.z) + (skyLegend(this.user)?this.user.lift:this.user.z) };
   }
 
   // Contact moves from the ground can't reach a foe juggled high above; flyers and aerial moves can.
@@ -170,12 +172,18 @@ class Stream extends MoveAction {
     const a = this.anim('Shoot', s);
     this.user.sprite.pauseAt = a.hitFrame ?? 2;
     const fire = this.t + this.timeTo(a, a.hitFrame, s);
+    if(skyLegend(this.user)) this.game.spawn(new CastEnergy(this.user,fire-this.t,true));
     this.at(fire, () => {
       this.firing = true;
       this.sound = c.sound(c.duration + 0.05);
       if (c.core) {
         const m = this.mouth(), p = this.front(c.reach);
         this.core = this.game.spawn(new Beam(m.x, m.y - m.z, p.x, p.y - 8, c.duration, { width: 7, colors: c.core }));
+      }
+      if(skyLegend(this.user)) {
+        const u=this.user,p=this.front(c.reach);
+        this.jet=this.game.spawn(new LegendaryBeam(u,p.x,p.y-8,'#85d6f6',c.width*1.4,c.duration,true));
+        this.game.spawn(new PressureWave(p.x,p.y,40,'water'));
       }
     });
     this.at(fire + c.duration, () => {
@@ -207,6 +215,7 @@ class Stream extends MoveAction {
       const p = this.front(c.reach);
       this.core.set(m.x, m.y - m.z, p.x, p.y - 8);
     }
+    if(this.jet){const p=this.front(c.reach);this.jet.x=p.x;this.jet.y=p.y-8;}
     this.markT -= dt;
     if (this.markT <= 0) {
       this.markT = 0.09;
@@ -232,6 +241,7 @@ class Stream extends MoveAction {
     this.user.sprite.pauseAt = null;
     this.sound?.stop();
     if (this.core) this.core.dead = true;
+    if(this.jet)this.jet.dead=true;
   }
 }
 
@@ -338,6 +348,7 @@ class Melee extends MoveAction {
   start() {
     const c = this.move.melee, s = c.speed ?? 0.85, a = this.anim(c.anim, s);
     const hit = this.timeTo(a, a.hitFrame ?? 3, s);
+    if(skyLegend(this.user)) this.game.spawn(new CastEnergy(this.user,Math.max(.1,hit)));
     const rush = Math.min(hit * 0.6, this.timeTo(a, a.rushFrame ?? 1, s));
     this.at(rush, () => {
       this.retarget();
@@ -356,9 +367,14 @@ class Melee extends MoveAction {
     const c = this.move.melee;
     this.retarget(0.6);
     SWING_FX[c.fx](this.game, this.user, this.aim, i, this.move);
+    if(skyLegend(this.user)) {
+      const p=this.front(this.user.radius+18);
+      for(let j=0;j<3;j++) this.game.spawn(new SlashArc(p.x,p.y,this.user.bodyZ,this.aim+(i%2?-.6:.6),{radius:25+j*5,spread:1.6,colors:['#50ae8b','#d6ffdf','#ffffff'],width:5-j,life:.24,mirror:i%2===1}));
+    }
     if (!this.inReach(this.move.reach)) return;
     const landed = this.hit({ knockback: h.knockback, stagger: h.stagger ?? 0.28, hitstop: h.hitstop ?? 0.04, critChance: c.critChance });
     if (landed) CONNECT_FX[c.fx]?.(this.game, this.target, this.move);
+    if(landed&&skyLegend(this.user))this.game.spawn(new PressureWave(this.target.x,this.target.y,38,'air',this.target.bodyZ));
   }
 }
 
@@ -390,6 +406,7 @@ class Dash extends MoveAction {
     this.ghostT = 0;
     this.sure = !!c.sure && this.user.distTo(this.target) <= this.move.range;
     this.user.sprite.play('Charge', { loop: true, force: true });
+    if(skyLegend(this.user))this.game.spawn(new CastEnergy(this.user,c.windup));
     this.at(c.windup, () => this.pass());
   }
 
@@ -407,6 +424,7 @@ class Dash extends MoveAction {
     this.anim('Attack', 2);
     sfx.dash();
     this.game.spawn(new BeamLine(this.from.x, this.from.y - u.bodyZ, this.to.x, this.to.y - u.bodyZ, 0.3, c.color, c.width ?? 3));
+    if(skyLegend(u))this.game.spawn(new Slipstream(u,c.dur+.2,'#bcffe5',u.radius*1.6));
   }
 
   tick(dt) {
@@ -419,7 +437,7 @@ class Dash extends MoveAction {
     this.ghostT -= dt;
     if (this.ghostT <= 0) {
       this.ghostT = 0.025;
-      this.game.spawn(new Afterimage(u, 0.22, c.ghost));
+      if(!skyLegend(u))this.game.spawn(new Afterimage(u, 0.22, c.ghost));
     }
     if (!this.struck && this.canReachAir() && (u.distTo(t) <= u.radius + t.radius + 8 || (this.sure && k >= 1))) {
       this.struck = true;
@@ -446,6 +464,7 @@ class Dash extends MoveAction {
     windBurst(g, t.x, t.y, z, 14, [c.color, '#ffffff']);
     if (c.burst) (DASH_BURST[c.burst] ?? ((gg, tt) => typeBurst(gg, tt, this.move.type)))(g, t);
     g.spawn(new Ring(t.x, t.y, { z, r0: 4, r1: 22, life: 0.25, color: c.color, width: 3, layer: 'air' }));
+    if(skyLegend(this.user))g.spawn(new PressureWave(t.x,t.y,45,'air',z));
     this.hit({ dirX: Math.cos(this.aim), dirY: Math.sin(this.aim), knockback: c.knockback, stagger: 0.28, hitstop: 0.04 });
   }
 
@@ -472,6 +491,7 @@ class Shot extends MoveAction {
     this.charging = false;
     const c = this.move.shot, s = c.speed ?? 0.85, a = this.anim(c.anim ?? 'Shoot', s);
     const hit = this.t + this.timeTo(a, a.hitFrame ?? 2, s);
+    if(skyLegend(this.user))this.game.spawn(new CastEnergy(this.user,Math.max(.1,hit-this.t),true));
     const spread = c.spread ?? [0];
     spread.forEach((off, i) => this.at(hit + i * (c.stagger ?? 0), () => this.fire(off, i)));
     const last = hit + (spread.length - 1) * (c.stagger ?? 0);
@@ -495,9 +515,10 @@ class Shot extends MoveAction {
     this.retarget();
     const c = this.move.shot, m = this.mouth(), ang = this.aim + off;
     const style = c.styles ? c.styles[i % c.styles.length] : c.style;
-    this.game.spawn(style
+    const projectile=this.game.spawn(style
       ? new Orb(this.game, this.user, this.move, m.x, m.y, m.z, ang, style, i)
       : new AirBlade(this.game, this.user, this.move, m.x, m.y, m.z, ang));
+    if(skyLegend(this.user))this.game.spawn(new Slipstream(projectile,this.move.range/(projectile.speed||300)+.15,style?'#dab8ff':'#b8f0ff',style?14:20));
     sfx[c.sound]();
     this.allowMove = true;
   }
@@ -511,6 +532,7 @@ class BeamAttack extends MoveAction {
     this.charging = true;
     this.tele = this.game.spawn(new Telegraph(u.x, u.y, this.aim, this.move.range, c.width + this.target.radius, c.teleColor));
     this.chargeSound = c.big ? sfx.beamCharge(c.charge) : sfx.zap(c.charge);
+    if(skyLegend(u))this.game.spawn(new CastEnergy(u,c.charge,true));
     this.at(c.charge, () => this.fire());
   }
 
@@ -541,9 +563,10 @@ class BeamAttack extends MoveAction {
     const a = this.anim('Shoot', 1);
     u.sprite.pauseAt = a.hitFrame ?? 2;
     const m = this.mouth(), end = this.front(this.move.range);
-    g.spawn(new Beam(m.x, m.y - m.z, end.x, end.y - 10, c.duration, { width: c.visualWidth, colors: c.colors }));
+    if(skyLegend(u))g.spawn(new LegendaryBeam(u,end.x,end.y-10,u.species.id.startsWith('rayquaza')?'#75f5b1':'#a5dcff',c.visualWidth*1.5,c.duration,true));
+    else g.spawn(new Beam(m.x, m.y - m.z, end.x, end.y - 10, c.duration, { width: c.visualWidth, colors: c.colors }));
     sfx[c.sound]();
-    if (c.rings) {
+    if (c.rings && !skyLegend(u)) {
       // Pulse rings travelling down the beam.
       for (let i = 1; i <= 4; i++) {
         const d = (this.move.range * i) / 5, p = this.front(d), z = m.z + (10 - m.z) * (d / this.move.range);
@@ -800,7 +823,8 @@ class DragonAscent extends MoveAction {
     const u = this.user, g = this.game;
     this.phase = 'rise';
     this.riseT = 0;
-    g.spawn(new Pillar(u.x, u.y, 0.5, this.mega ? [255, 240, 150] : [120, 255, 160], this.mega ? 420 : 260));
+    g.spawn(new ElementColumn(u.x,u.y,this.mega?420:260,this.mega?44:32));
+    g.spawn(new Slipstream(u,.65,'#bdffdf',u.radius*1.5));
     g.spawn(new Ring(u.x, u.y, { r0: 6, r1: this.mega ? 90 : 60, life: 0.4, color: '#c8ffe0', width: 4 }));
     dustCloud(g, u.x, u.y, 18, 6);
     windBurst(g, u.x, u.y, 2, this.mega ? 32 : 20, ['#ffffff', '#c8ffe0']);
@@ -862,8 +886,6 @@ class DragonAscent extends MoveAction {
       u.x = this.from.x + (this.spot.x - this.from.x) * e;
       u.y = this.from.y + (this.spot.y - this.from.y) * e;
       u.zOverride = H * (1 - e);
-      this.ghost = !this.ghost;
-      if (this.ghost) g.spawn(new Afterimage(u, 0.3, this.mega ? '#fff6b0' : '#9fffc4'));
       for (let i = 0; i < (this.mega ? 7 : 4); i++) {
         g.particles.spawn({
           x: u.x + rand(-6, 6), y: u.y + rand(-4, 4), z: u.bodyZ + rand(-10, 10), vx: rand(-20, 20), vy: rand(-20, 20), vz: rand(30, 90),
@@ -897,6 +919,7 @@ class DragonAscent extends MoveAction {
     this.anim('Attack', 1.2);
     u.phasing = true;
     g.spawn(new EnergyAura(u, 0.22, true));
+    g.spawn(new Slipstream(u,.45,this.mega?'#fff3bb':'#baffdd',u.radius*1.7));
     if (this.mega) {
       const sy = u.y - u.z - u.species.bodyZ;
       g.spawn(new RainbowStreak(u.x, sy, this.spot.x, this.spot.y - 8, 0.5));
@@ -908,6 +931,7 @@ class DragonAscent extends MoveAction {
     const u = this.user, g = this.game, { x, y } = this.spot, mega = this.mega;
     const R = this.move.radius * (mega ? 1.35 : 1);
     g.spawn(new UltimateImpact(x,y,12,mega?100:80));
+    g.spawn(new PressureWave(x,y,mega?170:130,'rock'));
     this.phase = 'burn';
     this.burnEnd = this.t + (mega ? 1.4 : 0.9);
     u.zOverride = null;
@@ -1812,7 +1836,8 @@ const BEATS = {
 
   charge(a, g, u, t, o, P) {
     let left = o.dur ?? 0.5;
-    g.spawn(new Glow(u.x, u.y, u.bodyZ, 44, P.rgb, left, true));
+    if(skyLegend(u))g.spawn(new CastEnergy(u,left,true));
+    else g.spawn(new Glow(u.x, u.y, u.bodyZ, 44, P.rgb, left, true));
     a.ticks.push(dt => {
       if ((left -= dt) > 0) a.converge(90, dt, P.c, 34);
     });
@@ -1824,13 +1849,13 @@ const BEATS = {
     const ang = u.aimAt(t), w = o.width ?? 28, m = a.mouth(), off = o.off ?? 0;
     const nx = -Math.sin(ang) * off, ny = Math.cos(ang) * off;
     a.anim('Shoot', 1);
-    if (u.boss === 'lugia') g.spawn(new LegendaryBeam(u, u.x + Math.cos(ang) * 720, u.y + Math.sin(ang) * 720 - 10, '#9ed8f5', w * 1.5, o.dur ?? .6));
+    if (skyLegend(u)) g.spawn(new LegendaryBeam(u, u.x + Math.cos(ang) * 720, u.y + Math.sin(ang) * 720 - 10, '#9ed8f5', w * 1.5, o.dur ?? .6,true));
     else g.spawn(new Beam(m.x + nx, m.y - m.z + ny, u.x + Math.cos(ang) * 720 + nx, u.y + Math.sin(ang) * 720 + ny - 10, o.dur ?? 0.6,
       { width: w, colors: [P.c[2], P.c[1], '#ffffff'] }));
     for (let d = 40; d < 700; d += 22) {
       const x = u.x + Math.cos(ang) * d, y = u.y + Math.sin(ang) * d;
       if (x < 0 || x > 360 || y < 60 || y > 640) break;
-      if (u.boss !== 'lugia') {
+      if (!skyLegend(u)) {
         P.mark(g, x + rand(-6, 6), y + rand(-6, 6), rand(6, 10));
         if (d % 88 < 22) g.spawn(new Ring(x, y, { z: 10, r0: 4, r1: w * 0.9, life: 0.35, color: P.c[0], width: 3, layer: 'air' }));
       }
@@ -2090,9 +2115,12 @@ const BEATS = {
 
   nova(a, g, u, t, o, P) {
     a.anim('Shoot', 1);
-    g.spawn(new Pillar(u.x, u.y, 0.6, P.rgb, 460));
-    g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 480, life: 0.6, color: P.c[0], width: 8 }));
-    g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 340, life: 0.5, color: P.c[1], width: 5 }));
+    if(skyLegend(u))g.spawn(new PressureWave(u.x,u.y,480,'air'));
+    else {
+      g.spawn(new Pillar(u.x, u.y, 0.6, P.rgb, 460));
+      g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 480, life: 0.6, color: P.c[0], width: 8 }));
+      g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 340, life: 0.5, color: P.c[1], width: 5 }));
+    }
     windBurst(g, u.x, u.y, u.bodyZ, 50, P.c);
     P.mark(g, u.x, u.y, 46);
     a.boom(9);

@@ -44,7 +44,7 @@ test('hits respect dodge and shield, consume aura once and respect freeze grace'
 });
 
 import {saveSummary,readMastery,level} from '../src/mastery.js';
-import {BossEncounter, BossPresenter, hazardHits} from '../src/bosses.js';
+import {BOSSES, BossEncounter, BossPresenter, hazardHits} from '../src/bosses.js';
 test('mastery storage tolerates corruption and deduplicates result IDs',()=>{
  let value='not json';const storage={getItem:()=>value,setItem:(_k,v)=>value=v};assert.equal(readMastery(storage).version,2);
  const s={id:'match-1',result:'win',arena:'mtSilver',mode:'raid',species:{charizard:{damage:1000,hits:5,kos:1,reactions:1,discovered:['melt']}},moves:{flamethrower:2}};
@@ -183,6 +183,37 @@ test('legendary beam originates at its scaled airborne mouth and expires without
  const hp = g.player.hp, beam = new LegendaryBeam(b.boss, 180, 500, '#75f5b1');
  assert.equal(beam.update(.2), true); beam.draw(g.ctx); assert.equal(beam.update(.4), false);
  assert.equal(g.player.hp, hp);
+});
+
+test('every Rayquaza/Lugia raid pattern and playable move renders through release and cleanup', () => {
+ for(const id of ['rayquaza','lugia']) {
+  const patterns=new Set();
+  BOSSES[id].attacks.forEach((list,stage)=>list.forEach((kind,sequence)=>{
+   if(patterns.has(kind))return;patterns.add(kind);
+   const g=battle(),raid=new BossEncounter([g],id);g.practice=true;
+   raid.intro=0;raid.stage=stage+1;raid.sequence=sequence;raid.boss.y=raid.home.y;raid.boss.invuln=false;
+   raid.launch([g]);raid.next=999;if(raid.ult)raid.ult.t=.2;
+   for(let i=0;i<360;i++){g.update(1/60);g.render();}
+   assert.ok(g.effects.length<50,`${id}/${kind} releases bounded effects`);
+  }));
+  for(const moveId of SPECIES[id].moves){
+   const g=battle();g.selection=[id,'pikachu','charizard'];g.start();g.showcase=null;g.state='fighting';g.practice=true;g.ai.update=noop;
+   g.player.hidden=false;g.opponent.hidden=false;g.player.x=180;g.player.y=300;g.opponent.x=180;g.opponent.y=400;
+   const move=MOVES[moveId],action=new move.Action(move,g.player,g);g.player.action=action;
+   for(let i=0;i<240;i++){g.update(1/60);g.render();}
+   assert.equal(action.done,true,`${id}/${moveId} completes`);
+   assert.ok(g.effects.length<30,`${id}/${moveId} does not leak effects`);
+  }
+ }
+});
+
+import { Slipstream } from '../src/legendary-effects.js';
+test('slipstreams survive a stopped actor, remain bounded and expire without moving it',()=>{
+ const actor={x:180,y:300,bodyZ:40},trail=new Slipstream(actor,1);
+ for(let i=0;i<20;i++)trail.update(.02);
+ actor.y+=80;assert.equal(trail.update(.02),true);
+ assert.ok(trail.points.length<=12);assert.equal(actor.y,380);
+ assert.equal(trail.update(1),false);
 });
 
 test('Lugia aliases use valid cropped charge frames and wing beats', () => {

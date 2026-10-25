@@ -33,6 +33,8 @@ From stage two, bosses periodically channel their ultimate behind a shield worth
 
 Bosses hold their position, altitude and facing while casting. Beams attach to their mouths. Rayquaza uses wind/meteor effects and Lugia uses mist/spray. Each has one SpriteCook disc beneath it; their mouths, meteors and dive trails do not repeat that disc. Mewtwo retains its psychic sigil. Dark wisps and impact effects keep the battlefield readable. Ultimate damage lands on the signature action's impact; movement attacks such as Dragon Ascent keep their flight/dive.
 
+Rayquaza and Lugia share layered cast, trail and impact effects across their raid patterns and playable moves. Meteors have molten rock cores, movement leaves a short slipstream, storm lightning starts at its cloud, and water waves/columns break into foam and spray. Dragon Pulse retains its travelling rings; Aeroblast uses the same layered mouth beam. Nova and ultimate impacts send pressure fronts across the floor. Visual effects do not decide damage or safe zones.
+
 ### Elemental reactions and Mega stats
 
 Compatible hits within four seconds can trigger Flash Freeze, Conduction, Wildfire, Melt, Steam, Grounded or Fanned Flames. Shields and dodges prevent priming. Reactions consume their aura, have a 1.5-second guard and bounded chains; chains do not hit allies or recursively trigger more reactions. Freeze retains the six-second thaw guard. Ground types resist conduction. The in-game guide lists combinations.

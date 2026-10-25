@@ -4,7 +4,7 @@ import {preloadImpactSprite} from '../src/effects.js';
 import {loadSpecies} from '../src/assets.js';
 import {spritesFor} from '../src/data/species.js';
 import {Game,prepareSprites} from '../src/game.js';
-import {BossEncounter} from '../src/bosses.js';
+import {BOSSES,BossEncounter} from '../src/bosses.js';
 import {preloadRaidArt} from '../src/raid-art.js';
 import {MOVES} from '../src/moves.js';
 import {applyHit} from '../src/combat.js';
@@ -17,6 +17,7 @@ const assetMs=performance.now()-started,ui=new Proxy({format:3},{get:(t,k)=>t[k]
 let current=null,last=performance.now();
 const results=[],originalQuality=qualityName();
 const preview = new URLSearchParams(location.search).get('preview');
+const playable = new URLSearchParams(location.search).has('playable');
 let previewPaused = false;
 const soakSeconds=Math.min(300,Math.max(0,Number(new URLSearchParams(location.search).get('soak'))||0));
 const scenarios=[['3v3',3,'balanced'],['6v6',6,'balanced'],['ultimates',3,'high'],['reactions',3,'high'],['raid-high',3,'high'],['raid-performance',3,'performance']];
@@ -31,9 +32,9 @@ function setup([name,format,quality]){
 const q=(a,p)=>a.slice().sort((x,y)=>x-y)[Math.min(a.length-1,Math.floor(a.length*p))]??0;
 function frame(now){
  requestAnimationFrame(frame);const elapsed=now-last;last=now;
- if(preview && game.raid) {
+ if(preview && (game.raid || playable)) {
   if(!previewPaused){game.player.hp=game.player.maxHp;game.update(Math.min(.05,Math.max(0,elapsed/1000)));}
-  game.render();status.textContent=` ${preview} · ${game.raid.ult ? 'CHANNELING' : game.raid.ultRelease ? 'ULTIMATE' : 'ATTACK'} · ${game.raid.time.toFixed(1)}s`;return;
+  game.render();status.textContent=` ${preview} · ${game.raid?.ult ? 'CHANNELING' : game.raid?.ultRelease ? 'ULTIMATE' : 'ATTACK'} · ${(game.raid?.time??game.time).toFixed(1)}s`;return;
  }
  if(!current||document.hidden)return;
  if(game.state!=='fighting'){game.showcase=null;game.finale=null;game.state='fighting';}
@@ -62,10 +63,13 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
  current=setup(['3v3',3,'high']);previewPaused=true;
  let raid,round=0;
  function restart(){
-  game.opponentSelection=[preview];game.start();game.showcase=null;game.state='fighting';game.practice=true;game.timers=[];
+  game.selection=playable?[preview,'pikachu','charizard']:ids.slice(0,3);
+  game.opponentSelection=playable?['mewtwo','gengar','blastoise']:[preview];game.start();game.showcase=null;game.state='fighting';game.practice=true;game.timers=[];
+  game.arena.setTheme(BOSSES[preview].arena);
   for(const m of [game.player,game.opponent]){m.hidden=false;m.appear=0;}game.gold.hidden=true;
-  raid=new BossEncounter([game],preview);raid.intro=0;raid.boss.x=180;raid.boss.y=raid.home.y;raid.next=999;
-  document.querySelector('h1').textContent=`Legendary VFX · raid ${++round}`;
+  if(playable){raid=null;game.ai.update=noop;game.player.x=180;game.player.y=300;game.opponent.x=180;game.opponent.y=470;}
+  else {raid=new BossEncounter([game],preview);raid.intro=0;raid.boss.x=180;raid.boss.y=raid.home.y;raid.next=999;}
+  document.querySelector('h1').textContent=`Legendary VFX · ${playable?'playable':'raid'} ${++round}`;
  }
  function cast(stage,sequence){raid.ult=null;raid.ultRelease=null;raid.transition=0;raid.vulnerable=0;raid.hazards=[];raid.stage=stage;raid.sequence=sequence;raid.launch([game]);raid.next=999;}
  const step=frames=>{for(let i=0;i<frames;i++)game.update(1/60);};
@@ -75,10 +79,12 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
  controls.style.cssText='position:fixed;right:4px;bottom:4px;z-index:6';
  controls.onclick=()=>{const panel=document.querySelector('aside');panel.hidden=!panel.hidden;controls.textContent=panel.hidden?'SHOW CONTROLS':'HIDE CONTROLS';};
  document.body.append(controls);
- button.textContent='CAST ULTIMATE';button.onclick=()=>{if(raid.ultRelease)return;raid.startUlt();if(raid.ult)raid.ult.t=.8;};
+ button.textContent='CAST ULTIMATE';button.onclick=()=>{if(playable){game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);return;}if(raid.ultRelease)return;raid.startUlt();if(raid.ult)raid.ult.t=.8;};
  const opening=preview==='rayquaza'?'CAST METEORS':preview==='lugia'?'CAST TIDAL':'CAST ORBS';
  const followup=preview==='rayquaza'?'CAST DASH':preview==='lugia'?'CAST STORM':'CAST SLAM';
- for(const [label,run] of [['CAST BEAM',()=>cast(2,2)],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['RESTART RAID',restart],['HALF HP',()=>{raid.boss.hp=raid.boss.maxHp*.5;}],['FINAL HIT',()=>{raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.5s',()=>step(30)],['STEP 0.1s',()=>step(6)]]){
+ const attacks=playable?game.player.species.moves.map(id=>[`PLAY ${MOVES[id].name.toUpperCase()}`,()=>{game.opponent.y=game.player.y+(MOVES[id].ai==='melee'?70:170);game.player.cancelAction();game.player.busy=0;game.player.cooldowns[id]=0;game.useMove(game.player,id);}])
+ :[['CAST BEAM',()=>cast(2,2)],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['CAST PILLARS',()=>cast(preview==='rayquaza'?3:1,preview==='rayquaza'?5:2)],['CAST NOVA',()=>cast(3,preview==='rayquaza'?3:4)],['CAST CATACLYSM',()=>cast(4,0)],...(preview==='rayquaza'?[['CAST SLAM',()=>cast(2,3)]]:preview==='lugia'?[['CAST ROWS',()=>cast(2,3)]]:[])];
+ for(const [label,run] of [...attacks,['RESTART RAID',restart],['HALF HP',()=>{if(raid)raid.boss.hp=raid.boss.maxHp*.5;else game.megaEvolve(game.player);}],['FINAL HIT',()=>{if(!raid)return;raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.5s',()=>step(30)],['STEP 0.1s',()=>step(6)]]){
   const b=document.createElement('button');b.textContent=label;b.onclick=run;button.after(b);
  }
 }

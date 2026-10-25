@@ -971,23 +971,24 @@ export class Falling extends Effect {
       ctx.moveTo(x, y);
       ctx.lineTo(x - this.dx * 0.5, y - tail);
       ctx.stroke();
-      if (large) {
-        ctx.strokeStyle = '#fff2be'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - this.dx * .22, y - 40); ctx.stroke();
-        ctx.fillStyle = '#56353f'; ctx.beginPath();
-        for (let i = 0; i < 7; i++) {
-          const a = i * Math.PI * 2 / 7 + this.age * 4, rr = i % 2 ? 8 : 11;
-          if (i) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-          else ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-        }
-        ctx.closePath(); ctx.fill();
-      }
       const r = ctx.createRadialGradient(x, y, 0, x, y, radius);
       r.addColorStop(0, '#fff4d0');
       r.addColorStop(0.5, 'rgba(255,140,60,0.9)');
       r.addColorStop(1, 'rgba(160,60,255,0)');
       ctx.fillStyle = r;
       ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      if (large) {
+        ctx.strokeStyle = '#fff2be'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - this.dx * .22, y - 48); ctx.stroke();
+        ctx.fillStyle = '#58333b'; ctx.strokeStyle='#ffbd67';ctx.lineWidth=1.5;ctx.beginPath();
+        for (let i = 0; i < 7; i++) {
+          const a = i * Math.PI * 2 / 7 + this.age * 4, rr = i % 2 ? 6 : 9;
+          if (i) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          else ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        ctx.closePath(); ctx.fill();ctx.stroke();
+        ctx.strokeStyle='#fff2bc';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x-6,y-2);ctx.lineTo(x,y+2);ctx.lineTo(x+4,y-4);ctx.stroke();
+      }
     } else {
       ctx.fillStyle = '#7a7266';
       ctx.beginPath();
@@ -1077,6 +1078,31 @@ export class TidalWave extends Effect {
 
   draw(ctx) {
     const y = this.y, dir = Math.sign(this.y1 - this.y0) || 1, t = this.age / this.life;
+    if (this.foam) {
+      const fade=Math.min(1,t*10,(1-t)*7),crest=x=>y-dir*(12+Math.sin(x*.045+this.age*9)*9+Math.sin(x*.14-this.age*13)*3);
+      ctx.save();ctx.globalAlpha=fade;
+      const body=ctx.createLinearGradient(0,y,0,y-dir*95);
+      body.addColorStop(0,'rgba(184,237,255,.95)');body.addColorStop(.2,`rgba(${this.rgb},.85)`);body.addColorStop(.65,'rgba(27,95,163,.5)');body.addColorStop(1,'rgba(25,70,145,0)');
+      ctx.fillStyle=body;ctx.beginPath();ctx.moveTo(0,y-dir*95);ctx.lineTo(360,y-dir*95);
+      for(let x=360;x>=0;x-=6)ctx.lineTo(x,crest(x));ctx.closePath();ctx.fill();
+      // A rolling lip with a shaded underside, a bright ridge and fragmented foam.
+      for(const [width,color,offset] of [[10,'#247eae',3],[6,'#84d6ed',0]]){
+        ctx.lineWidth=width;ctx.strokeStyle=color;ctx.beginPath();
+        for(let x=0;x<=360;x+=6){const cy=crest(x)+dir*offset;if(x)ctx.lineTo(x,cy);else ctx.moveTo(x,cy);}ctx.stroke();
+      }
+      const step=quality().particles>500?18:36;
+      for(let x=0;x<360;x+=step){
+        const cy=crest(x),phase=(this.age*2.5+x*.013)%1,lift=Math.sin(phase*Math.PI)*28;
+        ctx.globalAlpha=fade*(1-phase)*.8;ctx.fillStyle='#e7faff';
+        ctx.fillRect(x+phase*8,cy-dir*(9+lift),2,4);
+        ctx.globalAlpha=fade*.95;ctx.strokeStyle='#f1fcff';ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(x,cy-dir*2);ctx.quadraticCurveTo(x+5,crest(x+5)-dir*6,x+9+Math.sin(x)*3,crest(x+9)-dir*2);ctx.stroke();
+        ctx.globalAlpha=fade*.45;ctx.strokeStyle='#b6e9f6';ctx.lineWidth=1;
+        const eddy=10+Math.sin(x*.37)**2*25;
+        ctx.beginPath();ctx.moveTo(x+2,cy-dir*eddy);ctx.quadraticCurveTo(x+8,cy-dir*(eddy+5),x+13,cy-dir*eddy);ctx.stroke();
+      }
+      ctx.restore();return;
+    }
     ctx.globalAlpha = t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
     const g = ctx.createLinearGradient(0, y, 0, y - dir * 70);
     g.addColorStop(0, `rgba(${this.rgb},0.85)`);
@@ -1087,25 +1113,11 @@ export class TidalWave extends Effect {
     ctx.lineWidth = 4;
     ctx.beginPath();
     for (let x = 0; x <= 360; x += 8) {
-      const chop = this.foam ? Math.sin(x * .21 - this.age * 11) * 2 : 0;
-      const wy = y - dir * (6 + Math.sin(x * 0.08 + this.age * 18) * 4 + chop);
+      const wy = y - dir * (6 + Math.sin(x * 0.08 + this.age * 18) * 4);
       if (x) ctx.lineTo(x, wy);
       else ctx.moveTo(x, wy);
     }
     ctx.stroke();
-    if (this.foam) {
-      const alpha = ctx.globalAlpha, step = quality().particles > 500 ? 12 : 24;
-      // Broken foam patches and spray, rather than parallel ornamental wave lines.
-      ctx.globalAlpha = alpha * .85; ctx.fillStyle = '#e4f8ff';
-      for (let x = 0; x < 360; x += step) {
-        const wave = Math.sin(x * .16 + this.age * 18), crest = y - dir * (7 + wave * 4);
-        ctx.fillRect(x, crest, 5 + wave * 2, 3);
-        ctx.globalAlpha = alpha * .4;
-        ctx.fillRect(x + 3, crest - dir * (6 + Math.sin(x * .31) * 4), 8 + wave * 3, 2);
-        ctx.globalAlpha = alpha * .85;
-        ctx.fillRect(x + 5, crest - dir * (12 + 9 * Math.sin(x * .3 + this.age * 9)), 2, 3);
-      }
-    }
     ctx.globalAlpha = 1;
   }
 }

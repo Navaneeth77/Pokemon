@@ -12,7 +12,7 @@ export function bossMouth(boss, toward) {
   const angle = toward ? Math.atan2(toward.y - boss.y, toward.x - boss.x) : Math.PI / 2 - boss.dir * Math.PI / 4;
   const mouth = boss.species.mouth ?? { fwd: boss.radius * .4, z: boss.species.headZ * .75 };
   // Lugia's Shoot sheet holds its beak above its chest; its ordinary move origin sits too low.
-  const height = boss.boss === 'lugia' ? boss.species.headZ + 4 * (boss.drawScale ?? 1) : mouth.z;
+  const height = (boss.boss ?? boss.species.megaOf ?? boss.species.id) === 'lugia' ? boss.species.headZ + 4 * (boss.drawScale ?? 1) : mouth.z;
   return { x: boss.x + Math.cos(angle) * mouth.fwd, y: boss.y + Math.sin(angle) * mouth.fwd - height - boss.lift };
 }
 
@@ -34,8 +34,12 @@ export function drawRaidGroundAura(ctx, id, x, y, size, time, alpha = 1, tilt = 
 
 // Open gusts and spray gather around the body without a flat portal sprite.
 export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, alpha = 1) {
-  const ray = boss.boss === 'rayquaza', point = focused ? bossMouth(boss) : { x: boss.x, y: boss.y - boss.bodyZ };
+  const ray = (boss.boss ?? boss.species.megaOf ?? boss.species.id) === 'rayquaza', point = focused ? bossMouth(boss) : { x: boss.x, y: boss.y - boss.bodyZ };
   ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 1;
+  const radius=focused?12+power*12:boss.radius*1.5,glow=ctx.createRadialGradient(point.x,point.y,0,point.x,point.y,radius);
+  glow.addColorStop(0,`rgba(${ray?'155,255,209':'191,235,255'},${power*.4*alpha})`);
+  glow.addColorStop(.45,`rgba(${ray?'48,130,102':'43,97,160'},${power*.18*alpha})`);
+  glow.addColorStop(1,'rgba(40,80,120,0)');ctx.fillStyle=glow;ctx.fillRect(point.x-radius,point.y-radius,radius*2,radius*2);
   const count = quality().particles > 500 ? 8 : 4;
   for (let i = 0; i < count; i++) {
     const t = (age * 1.6 + i / count) % 1, side = i % 2 ? 1 : -1;
@@ -64,7 +68,7 @@ export class LegendaryBeam {
   constructor(boss, x, y, color, width = 20, life = .55, pulse = false) {
     Object.assign(this, { boss, x, y, color, width, life, pulse, age: 0, layer: 'air' });
   }
-  update(dt) { this.age += dt; return this.age < this.life && this.boss.alive && !this.boss.hidden; }
+  update(dt) { this.age += dt; return !this.dead && this.age < this.life && this.boss.alive && !this.boss.hidden; }
   draw(ctx) {
     const p = this.age / this.life, origin = bossMouth(this.boss, this), reveal = Math.min(1, this.age / .06);
     const x = origin.x + (this.x - origin.x) * reveal, y = origin.y + (this.y - origin.y) * reveal;

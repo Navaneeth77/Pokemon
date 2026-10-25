@@ -80,6 +80,8 @@ proof of artistic quality, internet reliability, or universal device performance
   mouth-attached beams. Their SpriteCook discs appear only beneath each boss; casts hold position,
   altitude and facing while released movement attacks retain their choreography.
   A second consecutive raid now resets presenter state, with first/second-run coverage for all bosses.
+  Rayquaza/Lugia's full raid rotations and playable moves have layered cast/trail/impact effects, with
+  every pattern rendered through release/cleanup in regression coverage and inspected visually.
 - Boss defeat variations, finishing hit emphasis, a brief skippable final-hit visual capture,
   varied/equippable victory poses, survivor/stat/XP
   results, rematch paths, health/ultimate/Mega/status/switch/dodge indicators and online ping/jitter cues.
