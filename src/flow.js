@@ -92,6 +92,7 @@ export class Flow {
 
   show(id) {
     for (const s of ['#trainer-screen', '#format-screen', '#arena-screen', '#online-screen', '#story-screen', '#teams-screen', '#title-menu']) $(s).classList.toggle('hidden', s !== id);
+    this.opening.backdrop = id === '#title-menu';
     this.screen = { '#trainer-screen': 'trainer', '#format-screen': 'format', '#arena-screen': 'arena', '#online-screen': 'online', '#story-screen': 'story', '#teams-screen': 'teams', '#title-menu': 'title' }[id] ?? this.screen;
   }
 
@@ -147,8 +148,15 @@ export class Flow {
     ];
     const menu = $('#title-menu');
     const title = this.economy?.loadout().title?.name??currentTitle();
-    menu.innerHTML = `<div class="tm-top"><div class="tm-brand"><b>POKÉMON</b><span>CHAOS ARENA · MAIN MENU</span></div><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div></div><div class="tm-grid">`
-      + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('') + '</div>';
+    const row = i => {
+      const [label, , sub] = items[i];
+      return `<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
+    };
+    const groups = [['BATTLE', [0, 1, 2]], ['EXPANSION', [3, 4]], ['TRAINER GUILD', [5, 6, 7]], ['TRAINER & TOOLS', [8, 9, 10, 11, 12]]];
+    menu.innerHTML = `<header class="tm-logo"><b>${GAME_TITLE.top}</b><span>${GAME_TITLE.bottom}</span><small>${GAME_TITLE.tag}</small></header>`
+      + `<div class="px-window tm-bar"><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div></div>`
+      + `<div class="tm-grid">${groups.map(([name, ids]) => `<section class="px-window tm-sec"><h3 class="tm-group">${name}</h3>${ids.map(row).join('')}</section>`).join('')}</div>`;
+    menu.scrollTop = 0;
     const frame = this.economy?.loadout().frame??cosmeticLoadout().frame;
     if (frame) menu.querySelector('canvas').style.border = `2px solid ${frame.color}`;
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);

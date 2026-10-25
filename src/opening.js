@@ -118,7 +118,7 @@ export class Opening {
       }
     });
     // Pokémon: silhouettes slide in, then a flash reveals them.
-    for (const m of this.mons) {
+    for (const m of this.backdrop ? [] : this.mons) {
       const k = ease(Math.min(1, Math.max(0, (t - T.mons - m.delay) / 0.9)));
       if (k <= 0) continue;
       const x = Math.floor(W * (m.from + (m.x - m.from) * k));
@@ -145,6 +145,7 @@ export class Opening {
       const y = (s.y * H + t * s.s) % H, x = (s.x * W + Math.sin(t + s.w) * 3 + W) % W;
       ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
     }
+    if (this.backdrop) return; // the main menu page keeps the sky, moon, mountains and snow only
     if (t > T.flash && t < T.flash + 0.25) {
       ctx.fillStyle = `rgba(255,255,255,${1 - (t - T.flash) / 0.25})`;
       ctx.fillRect(0, 0, W, H);

@@ -149,7 +149,17 @@ fraction of 100 ms, but that is an estimate until it is measured.
 - A hosted Upstash check of the wallet Redis path (above).
 - `docs/PERFORMANCE.md` figures were not re-run after the wallet change.
 
-**Main menu (25 Oct).** The menu was a panel floating over the title art. It is now its own full page
-(`#title-menu`: header with the trainer and coins, grouped cards, three columns on desktop, one on
-phones) and the arrow keys follow the grid (`Flow.menuNeighbour`). Checked in the preview browser at
-phone and desktop width; the menu items and their order are unchanged.
+**Main menu (25 Oct).** The menu was a panel floating over the title art. It is now a page of its own
+(`.title-menu`, scrollable) drawn over the start screen's own night sky: `Opening.backdrop` (set by
+`Flow.show`) draws just the sky, stars, moon, mountains and snow. The logo is the same Luckiest Guy logo in
+HTML so it scrolls with the page, and each group is a cream `px-window` with the red ▶ cursor, the
+game's own widgets (an earlier dark-navy version with glows was wrong and was replaced). Two columns on
+desktop, one on phones; the corner buttons have their own 52 px strip. The arrow keys follow the grid
+(`Flow.menuNeighbour`).
+
+Tested in headless Chrome at 390×844 (touch) and 1280×800 with real input: mouse wheel to the end and
+back, a touch swipe, arrow keys keeping the selected item on screen, clicking Elemental Guide and Bot
+Battles and returning, the start page still showing its logo scene, and no console errors (15/15). An
+earlier scrolling bug (`bottom: auto` made the box as tall as its content, so nothing could scroll) was
+found and fixed that way. The preview pane's own screenshots lagged behind scrolling, so use real
+input plus DOM measurements, not that pane's screenshots, to check scrolling.
