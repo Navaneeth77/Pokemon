@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Chaos Arena match server on a VPS in India (fresh Ubuntu 22.04 / 24.04). Run as root:
+# Chaos Arena match server on a VPS in India (fresh Ubuntu 22.04 / 24.04; x86 or Arm, e.g. Oracle Cloud's
+# free Ampere A1 in Mumbai or Hyderabad, or a paid Bangalore droplet). Run as root:
 #
 #   ORIGIN=https://pokemon-gules-delta.vercel.app BRANCH=master bash setup-india-vps.sh
 #
@@ -63,6 +64,15 @@ UNIT
 
 printf '%s {\n\treverse_proxy 127.0.0.1:8787\n}\n' "$HOST" > /etc/caddy/Caddyfile
 command -v ufw >/dev/null && ufw status | grep -q active && ufw allow 80,443/tcp || true
+# Oracle Cloud's Ubuntu images reject everything but SSH in iptables: open the web ports before that rule.
+if command -v iptables >/dev/null && iptables -S INPUT 2>/dev/null | grep -q -- '-j REJECT'; then
+  for port in 80 443; do
+    iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null && continue
+    n=$(iptables -L INPUT --line-numbers -n | awk '/REJECT/{print $1; exit}')
+    iptables -I INPUT "$n" -p tcp --dport "$port" -j ACCEPT
+  done
+  command -v netfilter-persistent >/dev/null && netfilter-persistent save || true
+fi
 systemctl daemon-reload
 systemctl enable --now chaos-arena
 systemctl restart caddy
