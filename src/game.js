@@ -6,6 +6,7 @@ import { Pokemon, CHARGE_MAX } from './pokemon.js';
 import { Trainer } from './trainer.js';
 import { Team } from './team.js';
 import { SPECIES, DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
+import { bossSpritesFor } from './data/skins.js';
 import { reactionBetween } from './reactions.js';
 import { abilityOf, typesOf } from './data/abilities.js';
 import { applyStatus, addBuff, benchStatus } from './status.js';
@@ -33,7 +34,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','RaidBurst']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','RaidBurst','RaidAreaBurst']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -176,8 +177,8 @@ export class Game {
     this.practice = false;
   }
 
-  async ensureSprites(ids) {
-    const need = spritesFor(ids).filter(k => !this.sprites[k]);
+  async ensureSprites(ids, bossId) {
+    const need = [...new Set([...spritesFor(ids), ...bossSpritesFor(bossId)])].filter(k => !this.sprites[k]);
     if (!need.length) return;
     Object.assign(this.sprites, await loadSpecies(need));
     prepareSprites(this.sprites, need);

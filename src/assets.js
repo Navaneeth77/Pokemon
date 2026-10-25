@@ -16,7 +16,7 @@ export const ALIASES = {
 };
 
 export function applyAliases(id, anims) {
-  for (const [name, [from, speed, start = 0, end]] of Object.entries(ALIASES[id] ?? {})) {
+  for (const [name, [from, speed, start = 0, end]] of Object.entries(ALIASES[id==='lugia-shadow'?'lugia':id] ?? {})) {
     const src = anims[from];
     if (!src) continue;
     const durations = src.durations.slice(start, end).map(d => Math.max(1, Math.round(d / speed)));

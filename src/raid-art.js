@@ -1,10 +1,11 @@
 import { loadImage } from './assets.js';
 import { quality } from './quality.js';
+import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
 
 const images = new Map(), pending = new Map();
 export function preloadRaidArt(id) {
   if (!['rayquaza', 'mewtwo', 'lugia'].includes(id)) return Promise.resolve();
-  if (!pending.has(id)) pending.set(id, loadImage(`/art/raid-${id}.png`).then(image => images.set(id, image)).catch(() => { pending.delete(id); }));
+  if (!pending.has(id)) pending.set(id, loadImage(`/art/raid-${id==='lugia'?'lugia-shadow':id}.png`).then(image => images.set(id, image)).catch(() => { pending.delete(id); }));
   return pending.get(id);
 }
 
@@ -34,29 +35,29 @@ export function drawRaidGroundAura(ctx, id, x, y, size, time, alpha = 1, tilt = 
 
 // Open gusts and spray gather around the body without a flat portal sprite.
 export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, alpha = 1) {
-  const ray = (boss.boss ?? boss.species.megaOf ?? boss.species.id) === 'rayquaza', point = focused ? bossMouth(boss) : { x: boss.x, y: boss.y - boss.bodyZ };
+  const shadow = isShadowLugia(boss), ray = (boss.boss ?? boss.species.megaOf ?? boss.species.id) === 'rayquaza', point = focused ? bossMouth(boss) : { x: boss.x, y: boss.y - boss.bodyZ };
   ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 1;
   const radius=focused?12+power*12:boss.radius*1.5,glow=ctx.createRadialGradient(point.x,point.y,0,point.x,point.y,radius);
-  glow.addColorStop(0,`rgba(${ray?'155,255,209':'191,235,255'},${power*.4*alpha})`);
-  glow.addColorStop(.45,`rgba(${ray?'48,130,102':'43,97,160'},${power*.18*alpha})`);
+  glow.addColorStop(0,`rgba(${ray?'155,255,209':shadow?'221,185,255':'191,235,255'},${power*.4*alpha})`);
+  glow.addColorStop(.45,`rgba(${ray?'48,130,102':shadow?'102,43,160':'43,97,160'},${power*.18*alpha})`);
   glow.addColorStop(1,'rgba(40,80,120,0)');ctx.fillStyle=glow;ctx.fillRect(point.x-radius,point.y-radius,radius*2,radius*2);
   const count = quality().particles > 500 ? 8 : 4;
   for (let i = 0; i < count; i++) {
     const t = (age * 1.6 + i / count) % 1, side = i % 2 ? 1 : -1;
     const x = point.x + side * (8 + (1 - t) * boss.radius * 1.4), y = point.y + 34 - t * 76;
     ctx.globalAlpha = alpha * (.15 + .4 * power) * Math.sin(t * Math.PI);
-    ctx.strokeStyle = ray ? '#c6d5d0' : '#c3e8f4';
+    ctx.strokeStyle = ray ? '#c6d5d0' : shadow ? SHADOW_LUGIA.mist : '#c3e8f4';
     ctx.beginPath(); ctx.moveTo(x + side * 9, y + 14);
     ctx.quadraticCurveTo(x - side * 7, y + 4, x - side * 11, y - 22); ctx.stroke();
     if (!ray) {
-      ctx.fillStyle = '#d3efff';
+      ctx.fillStyle = shadow ? SHADOW_LUGIA.mist : '#d3efff';
       ctx.fillRect(x - side * 11, y - 24, 1.5, 3 + power * 3);
     }
   }
   if (focused) {
     const r = 5 + 9 * power, glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, r);
-    glow.addColorStop(0, `rgba(230,248,255,${alpha * .7})`);
-    glow.addColorStop(.3, `rgba(${ray ? '120,224,177' : '135,203,240'},${alpha * .32})`);
+    glow.addColorStop(0, `rgba(${shadow?'242,220,255':'230,248,255'},${alpha * .7})`);
+    glow.addColorStop(.3, `rgba(${ray ? '120,224,177' : shadow ? SHADOW_LUGIA.rgb.join(',') : '135,203,240'},${alpha * .32})`);
     glow.addColorStop(1, 'rgba(160,220,245,0)');
     ctx.globalAlpha = 1; ctx.fillStyle = glow; ctx.fillRect(point.x-r, point.y-r, r*2, r*2);
   }
@@ -66,6 +67,7 @@ export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, al
 // A short, attached beam: the source follows the mouth instead of the floor or a stale position.
 export class LegendaryBeam {
   constructor(boss, x, y, color, width = 20, life = .55, pulse = false) {
+    if(isShadowLugia(boss))color=SHADOW_LUGIA.color;
     Object.assign(this, { boss, x, y, color, width, life, pulse, age: 0, layer: 'air' });
   }
   update(dt) { this.age += dt; return !this.dead && this.age < this.life && this.boss.alive && !this.boss.hidden; }
@@ -75,7 +77,7 @@ export class LegendaryBeam {
     const width = this.width * Math.min(1, this.age / .045) * Math.min(1, (1 - p) * 5);
     ctx.save(); const fade = Math.min(1, (1 - p) * 4);
     const id=this.boss.boss??this.boss.species.megaOf??this.boss.species.id;
-    const core = id === 'rayquaza' ? '#d0ffe4' : id === 'lugia' ? '#c7efff' : '#e6caff';
+    const core = id === 'rayquaza' ? '#d0ffe4' : id === 'lugia' ? (isShadowLugia(this.boss) ? SHADOW_LUGIA.core : '#c7efff') : '#e6caff';
     const dx = x - origin.x, dy = y - origin.y, distance = Math.hypot(dx, dy) || 1, nx = -dy / distance, ny = dx / distance;
     for (const [scale, color, alpha] of [[1.18, '#38214f', .35], [1, this.color, .8], [.55, core, .95], [.22, '#ffffff', 1]]) {
       const mouthWidth = Math.min(10, width * .22) * scale, endWidth = width * .5 * scale;

@@ -109,7 +109,7 @@ export class ExpansionUI {
         this.mm.send({ t: 'raid-queue', ...setup, format: ui.format, team: ui.selection, lead: ui.lead, mega: ui.megaPick });
         return;
       }
-      await Promise.all([g.ensureSprites([...ui.selection, setup.boss]), preloadRaidArt(setup.boss)]);
+      await Promise.all([g.ensureSprites([...ui.selection, setup.boss], setup.boss), preloadRaidArt(setup.boss)]);
       Object.assign(g, { selection: [...ui.selection], lead: ui.lead, megaPicks: { ...ui.megaPick }, opponentSelection: [setup.boss], arenaId: BOSSES[setup.boss].arena, online: null, story: null });
       ui.raidSetup = null;
       this.lastRaid = setup;

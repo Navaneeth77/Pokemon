@@ -1,11 +1,12 @@
 import { bossUltimateVisual } from './raid-cinematics.js';
 import { SPECIES } from './data/species.js';
+import { LEGENDARY_SKINS, SKIN_NAMES, SHADOW_LUGIA } from './data/skins.js';
 import { MOVES } from './moves.js';
 import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
-import { Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
+import { Slipstream, PressureWave, ElementColumn, RaidAreaBurst } from './legendary-effects.js';
 import { drawRaidSigil, drawRaidGroundAura, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
@@ -31,21 +32,21 @@ const HOMES = [[180, 205], [110, 240], [250, 240], [180, 275], [128, 185], [232,
 
 export const BOSSES = {
   rayquaza: {
-    name: 'Rayquaza', title: 'SOVEREIGN OF THE SKY', arena: 'mtSilver', type: 'dragon', color: '#75f5b1', rgb: [117, 245, 177], scale: 1.9,
+    name: 'Dark Rayquaza', title: 'SOVEREIGN OF THE SKY', arena: 'mtSilver', type: 'dragon', color: '#75f5b1', rgb: [117, 245, 177], scale: 1.9,
     stages: ['SKY PATROL', 'DRAGON DANCE', 'DELTA STREAM', 'FINAL ASCENT'],
     attacks: [['meteor', 'dive', 'dragonBeam'], ['dive', 'meteor', 'dragonBeam', 'slam', 'ultimate'], ['dive', 'meteor', 'ultimate', 'ring', 'dive', 'lanes'], ['cataclysm', 'dive', 'meteor', 'ultimate', 'dragonBeam', 'dive', 'meteor']],
     cataclysm: 'DRACO SKYFALL', ultimate: 'DRAGON ASCENT', ultImpact: [1.38, 1.53], ultDuration: 3,
     anims: { wind: { quake: 'RearUp', meteor: 'Roar', cataclysm: 'Roar' }, strike: { nova: 'Roar', cataclysm: 'Roar', tidal: 'Attack' } },
   },
   mewtwo: {
-    name: 'Mewtwo', title: 'THE GENETIC STORM', arena: 'indigo', type: 'psychic', color: '#e2a3ff', rgb: [226, 163, 255], scale: 2.6,
+    name: 'Armored Mewtwo', title: 'THE GENETIC STORM', arena: 'indigo', type: 'psychic', color: '#e2a3ff', rgb: [226, 163, 255], scale: 2.6,
     stages: ['AWAKENING', 'MIND OVER MATTER', 'PSYCHIC STORM', 'GENESIS'],
     attacks: [['orbs', 'slam', 'rows'], ['orbs', 'ring', 'cross', 'orbs', 'ultimate'], ['quake', 'orbs', 'ultimate', 'cross', 'ring'], ['cataclysm', 'orbs', 'quake', 'ultimate', 'cross', 'orbs', 'ring']],
     cataclysm: 'PSYCHIC COLLAPSE', ultimate: 'PSYSTRIKE', ultImpact: [3.2, 3.2], ultDuration: 4.3,
     anims: { wind: { quake: 'Pose', meteor: 'Pose', cataclysm: 'Pose' }, strike: { default: 'SpAttack', quake: 'Attack', nova: 'Pose', cataclysm: 'Pose', tidal: 'Attack' } },
   },
   lugia: {
-    name: 'Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'seafoam', type: 'water', color: '#8fdbff', rgb: [143, 219, 255], scale: 1.9,
+    name: 'Shadow Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'seafoam', type: 'water', color: SHADOW_LUGIA.color, rgb: SHADOW_LUGIA.rgb, scale: 1.9,
     stages: ['CALM SEAS', 'RISING TIDE', 'MAELSTROM', 'HYDRO TEMPEST'],
     attacks: [['tidal', 'storm', 'waterPulse', 'lanes'], ['tidal', 'storm', 'aeroblast', 'waterPulse', 'rows', 'ultimate'], ['aeroblast', 'waterPulse', 'tidal', 'ultimate', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'waterPulse', 'ultimate', 'aeroblast', 'tidal', 'storm']],
     cataclysm: 'HYDRO DELUGE', ultimate: 'AEROBLAST', ultImpact: [1.3, 1.3], ultDuration: 2.1,
@@ -121,13 +122,20 @@ export function hazardHits(h, x, y) {
 
 // The boss on the field: larger, tougher to push around, and drawn bigger. Used by the encounter and,
 // online, by the screens (which receive the boss's HP from the server).
-export function dressBoss(mon, id, hp = mon.maxHp) {
+export function dressBoss(mon, id, hp = mon.maxHp, sprites = {}) {
   const def = BOSSES[id], s = SPECIES[mon.species.id] ?? mon.baseSpecies, k = def.scale;
   mon.species = {
     ...mon.species, hp, weight: 100, radius: s.radius * k, bodyZ: s.bodyZ * k, headZ: s.headZ * k,
     shadow: s.shadow.map(v => v * k), mouth: s.mouth && { ...s.mouth, z: s.mouth.z * k, fwd: s.mouth.fwd * k },
     fly: s.fly && { ...s.fly, height: s.fly.height * k },
   };
+  const skin = LEGENDARY_SKINS[s.sprite];
+  if (skin && sprites[skin]) {
+    mon.species.sprite = skin;
+    mon.species.name = SKIN_NAMES[s.id] ?? def.name;
+    mon.setSheet(sprites[skin]);
+    mon.portrait = sprites[skin].portrait;
+  }
   mon.boss = id;
   mon.drawScale = k;
   mon.launch = () => false;
@@ -139,7 +147,7 @@ export function evolveRaidBoss(mon, id, sprites) {
   if (!formId || mon.isMega) return false;
   const form = SPECIES[formId], hp = mon.hp, maxHp = mon.maxHp;
   mon.megaEvolve({ ...form, hp: maxHp }, sprites[form.sprite]);
-  dressBoss(mon, id, maxHp);
+  dressBoss(mon, id, maxHp, sprites);
   mon.hp = hp;
   mon.ab = {};
   return true;
@@ -155,7 +163,7 @@ export class BossEncounter {
     this.boss = games[0].opponent;
     // Tougher with more Pokémon on the players' side, but not linearly (co-op shouldn't drag on).
     const total = games.reduce((n, g) => n + g.playerTeam.members.length, 0);
-    dressBoss(this.boss, id, Math.round(this.boss.maxHp * (4.5 + total * 0.6) * this.diff.hp));
+    dressBoss(this.boss, id, Math.round(this.boss.maxHp * (4.5 + total * 0.6) * this.diff.hp), games[0].sprites);
     this.boss.hp = this.boss.maxHp;
     Object.assign(this, {
       time: 0, stage: 1, next: 1.2, sequence: 0, targetN: 0, hazards: [], vulnerable: 0, intro: INTRO, transition: 0,
@@ -454,13 +462,14 @@ export class BossEncounter {
 // ── On screen ──
 
 const RGB = { dragon: [117, 245, 177], psychic: [226, 120, 255], water: [90, 170, 255], electric: [255, 230, 90], fire: [255, 140, 60] };
-const typeRgb = (t, fallback) => RGB[t] ?? fallback;
+const typeRgb = (t, fallback, shadow = false) => shadow ? SHADOW_LUGIA.rgb : RGB[t] ?? fallback;
+const shadowSplash = (g,x,y) => waterSplash(g,x,y,SHADOW_LUGIA.colors);
 
 const fxOf = h => (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx);
 const cataclysmSpots = h => Array.from({length:9},(_,i)=>({x:70+i%3*110,y:170+Math.floor(i/3)*150}))
   .filter(p=>!h.safe.some(([x,y,r])=>Math.hypot(p.x-x,p.y-y)<r+20));
 const stormClouds = h => {
-  const count=quality().particles>500?5:3;
+  const count=quality().particles>500?7:4;
   return Array.from({length:count},(_,i)=>({x:clampX(h.x+(i-(count-1)/2)*28),y:Math.max(130,h.y-140)-(i%2)*14}));
 };
 // Animations for the wind-up (held until the attack lands) and for the strike itself. Each boss can
@@ -490,13 +499,13 @@ class BossCharge {
     const { x, y } = bossMouth(b), r = b.radius * (0.5 + 0.9 * k) * (1 + 0.08 * Math.sin(this.age * 30));
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, `rgba(10,5,20,${0.95 * k})`);
-    grad.addColorStop(0.45, `rgba(${b.boss === 'lugia' ? '20,65,100' : '63,20,100'},${0.8 * k})`);
+    grad.addColorStop(0.45, `rgba(${b.boss === 'lugia' ? '65,20,100' : '63,20,100'},${0.8 * k})`);
     grad.addColorStop(0.72, `rgba(${R},${G},${B},${0.6 * k})`);
     grad.addColorStop(1, `rgba(${R},${G},${B},0)`);
     ctx.fillStyle = grad;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
     drawRaidSigil(ctx, b.boss, x, y, Math.min(70, r * 1.65), this.age * 2, .2 + .45 * k);
-    ctx.strokeStyle = `rgba(${b.boss === 'lugia' ? '185,233,255' : '196,150,255'},${0.65 * k})`;
+    ctx.strokeStyle = `rgba(${b.boss === 'lugia' ? '225,185,255' : '196,150,255'},${0.65 * k})`;
     ctx.lineWidth = 1.5;
     for (let i = 0; i < 6; i++) {
       const a = this.age * 3 + (i * Math.PI) / 3, r0 = r * 0.35, r1 = r * (0.9 + 0.25 * Math.sin(this.age * 12 + i));
@@ -561,7 +570,7 @@ export class BossPresenter {
       this.intro = true;
       g.spawn(new ScreenDim(data.in + 0.3, 0.5, '6,8,20'));
       if (data.id==='mewtwo') g.spawn(new PsyDome(180,205,110,INTRO));
-      else if (data.id==='lugia') { g.spawn(new TidalWave(110,280,1.5,[90,180,240]));sfx.splash(); }
+      else if (data.id==='lugia') { g.spawn(new TidalWave(110,280,1.5,SHADOW_LUGIA.rgb,false,SHADOW_LUGIA));sfx.splash(); }
       else for(let i=0;i<4;i++)g.spawn(new BeamLine(80+i*65,-80,130+i*35,240,1.3,def.color,2));
       sfx.roar();
       g.shake(3, 1.2);
@@ -587,7 +596,7 @@ export class BossPresenter {
       if (!this.seen.has(h.id)) {
         this.seen.add(h.id);
         if (data.id==='lugia' && h.k==='storm' && left>.2) {
-          for(const p of stormClouds(h))g.spawn(new StormCloud(p.x,p.y,left+.85));
+          for(const p of stormClouds(h))g.spawn(new StormCloud(p.x,p.y,left+1.2,SHADOW_LUGIA));
         }
         if (h.g !== this.group) {
           this.group = h.g;
@@ -602,11 +611,11 @@ export class BossPresenter {
       }
       if (h.k === 'cataclysm' && data.id === 'lugia' && left < .65 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
-        g.spawn(new TidalWave(100,620,Math.max(.2,left+.18),[70,150,235],true));
+        g.spawn(new TidalWave(100,620,Math.max(.2,left+.18),SHADOW_LUGIA.rgb,true,SHADOW_LUGIA));
       }
       if (h.k === 'tidal' && left < 0.55 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
-        g.spawn(new TidalWave(h.y - h.r - 120, h.y + h.r + 30, Math.max(0.2, left + 0.25), [70, 150, 235], true));
+        g.spawn(new TidalWave(h.y - h.r - 120, h.y + h.r + 30, Math.max(0.2, left + 0.25), SHADOW_LUGIA.rgb, true, SHADOW_LUGIA));
       }
       if (left <= 0 && !this.landed.has(h.id)) {
         this.landed.add(h.id);
@@ -628,7 +637,7 @@ export class BossPresenter {
   // The boss gathers power for the whole warning: an attack pose, a swelling glow at its head and
   // energy pulled in from around it (see aura). Meteors are first flung up into the sky.
   windUp(h, def, boss, left, now) {
-    const fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), g = this.game;
+    const fx = fxOf(h), rgb = typeRgb(h.t, def.rgb, boss.boss === 'lugia'), g = this.game;
     this.play(boss, animFor(def, 'wind', fx), left, true);
     if (this.chargeFx) this.chargeFx.life = 0;
     this.chargeFx = new BossCharge(boss, left, rgb, fx);
@@ -636,7 +645,7 @@ export class BossPresenter {
     this.charge = { until: now + left * 1000, rgb };
     if (boss.boss === 'lugia' && fx === 'cataclysm') {
       const targets = cataclysmSpots(h).slice(0,3);
-      for (const p of targets) g.spawn(new StormCloud(p.x,Math.max(130,p.y-140),left+.35));
+      for (const p of targets) g.spawn(new StormCloud(p.x,Math.max(130,p.y-140),left+.35,SHADOW_LUGIA));
     }
     if (fx === 'meteor' || fx === 'cataclysm') {
       for (let i = 0; i < Math.round(10 * Math.max(0.4, quality().particles / 1200)); i++) {
@@ -657,7 +666,7 @@ export class BossPresenter {
   // What leaves the boss and flies to where the hazard lands: a bolt of its energy, or for a ground
   // slam a fault line torn through the floor between them.
   throwAt(h, def, boss) {
-    const g = this.game, fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`;
+    const g = this.game, fx = fxOf(h), rgb = typeRgb(h.t, def.rgb, boss.boss === 'lugia'), color = `rgb(${rgb.join(',')})`;
     if (fx === 'psy' || (boss.boss === 'mewtwo' && (fx === 'storm' || fx === 'pillar'))) g.spawn(new LegendaryBeam(boss, h.x, h.s === 'lane' ? Math.min(BOUNDS.maxY, boss.y + 160) : h.y, color, fx === 'pillar' ? 14 : 9, .42));
     else if (fx === 'quake' && Math.hypot(h.x - boss.x, h.y - boss.y) > 60) this.trench({ x: boss.x, y: boss.y, x2: h.x, y2: h.y }, rgb);
   }
@@ -668,9 +677,9 @@ export class BossPresenter {
   }
 
   impact(h, def, boss) {
-    const g = this.game, rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`;
+    const g = this.game, rgb = typeRgb(h.t, def.rgb, boss.boss === 'lugia'), color = `rgb(${rgb.join(',')})`;
     if (boss.boss === 'mewtwo' && (h.s === 'circle' || h.s === 'line' || h.s === 'cross')) g.spawn(new RaidBurst(boss.boss, h.x2 ?? h.x, h.y2 ?? h.y, Math.min(170, h.r * 2 + 30)));
-    if (boss.boss === 'lugia' && fxOf(h) === 'beam') waterSplash(g, h.x2 ?? h.x, h.y2 ?? h.y);
+    if (boss.boss === 'lugia' && fxOf(h) === 'beam') shadowSplash(g, h.x2 ?? h.x, h.y2 ?? h.y);
     switch (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx) {
       case 'quake':
         this.breakGround(h.x, h.y, rgb, h.r > 100 ? 4 : 2, h.r);
@@ -688,9 +697,9 @@ export class BossPresenter {
           for (const y of [190,310,430,550]) g.spawn(new Pillar(h.x,y,.55,rgb,300));
           for (const y of [200,350,500]) g.marks.energy(h.x,y,h.r,rgb);
         } else for (const y of [230,400,570]) {
-          g.spawn(new ElementColumn(h.x,y,Math.min(240,y-150),h.r*1.3,boss.boss==='lugia'));
-          g.spawn(new PressureWave(h.x,y,h.r*1.5,boss.boss==='lugia'?'water':'air'));
-          if (boss.boss==='lugia') waterSplash(g,h.x,y); else g.marks.fracture(h.x,y,22);
+          g.spawn(new ElementColumn(h.x,y,Math.min(240,y-150),h.r*1.3,boss.boss==='lugia',.6,boss.boss==='lugia'?SHADOW_LUGIA:null));
+          g.spawn(new PressureWave(h.x,y,h.r*1.5,boss.boss==='lugia'?'water':'air',0,boss.boss==='lugia'?SHADOW_LUGIA:null));
+          if (boss.boss==='lugia') shadowSplash(g,h.x,y); else g.marks.fracture(h.x,y,22);
         }
         sfx.beamFire();
         g.shake(3, 0.2);
@@ -699,7 +708,7 @@ export class BossPresenter {
         if (h.s !== 'line') g.spawn(new LegendaryBeam(boss, h.x, h.y, color, h.r, .5, boss.boss==='lugia'));
         if (h.s === 'row' || h.s === 'cross') g.spawn(new BeamLine(BOUNDS.minX - 30, h.y, BOUNDS.maxX + 30, h.y, 0.4, color, h.r * 1.4));
         if (h.s === 'row' && boss.boss === 'lugia') {
-          g.spawn(new BeamLine(BOUNDS.minX-30,h.y,BOUNDS.maxX+30,h.y,.4,'#bfefff',h.r*.65));
+          g.spawn(new BeamLine(BOUNDS.minX-30,h.y,BOUNDS.maxX+30,h.y,.4,SHADOW_LUGIA.mist,h.r*.65));
           g.spawn(new BeamLine(BOUNDS.minX-30,h.y,BOUNDS.maxX+30,h.y,.35,'#ffffff',h.r*.18));
         }
         if (h.s === 'cross') g.spawn(new BeamLine(h.x, BOUNDS.minY - 30, h.x, BOUNDS.maxY + 30, 0.4, color, h.r * 1.4));
@@ -711,11 +720,13 @@ export class BossPresenter {
         g.shake(4, 0.25);
         break;
       case 'nova':
+        g.spawn(new RaidAreaBurst(boss.boss,h,rgb));
+        g.spawn(new ScreenDim(.85,.28,boss.boss==='lugia'?SHADOW_LUGIA.dim:'7,10,22'));
         if (boss.boss !== 'mewtwo') {
           const water=boss.boss==='lugia';
-          g.spawn(new PressureWave(h.x,h.y,380,water?'water':'air'));
+          g.spawn(new PressureWave(h.x,h.y,380,water?'water':'air',0,water?SHADOW_LUGIA:null));
           for(let i=0;i<6;i++) { const a=i*Math.PI/3,x=h.x+Math.cos(a)*150,y=h.y+Math.sin(a)*120;
-            if(water) waterSplash(g,x,y); else this.breakGround(x,y,rgb,1);
+            if(water) shadowSplash(g,x,y); else this.breakGround(x,y,rgb,1);
           }
           sfx.explosion();g.shake(8,.45);break;
         }
@@ -745,7 +756,7 @@ export class BossPresenter {
         g.shake(3, 0.2);
         break;
       case 'tidal':
-        for (const x of [70, 180, 290]) { g.marks.wet(x, h.y, h.r * 0.7); waterSplash(g, x, h.y); }
+        for (const x of [70, 180, 290]) { g.marks.wet(x, h.y, h.r * 0.7); shadowSplash(g, x, h.y); }
         sfx.splash();
         g.shake(3, 0.25);
         break;
@@ -755,26 +766,28 @@ export class BossPresenter {
             const strike=()=>{
               if(g.opponent!==boss || !boss.alive || g.state!=='fighting')return;
               const a=i*2.4,x=h.x+(i?Math.cos(a)*h.r*.5:0),y=h.y+(i?Math.sin(a)*h.r*.5:0);
-              g.spawn(new Lightning(cloud.x,cloud.y,x,y,.32,{width:i?2.5:4,branches:4}));
-              electricBurst(g,x,y,2,8);waterSplash(g,x,y);
+              g.spawn(new Lightning(cloud.x,cloud.y,x,y,.32,{width:i?2.5:4,branches:4,core:SHADOW_LUGIA.core,glow:'rgba(177,108,250,.65)'}));
+              electricBurst(g,x,y,2,8,SHADOW_LUGIA);shadowSplash(g,x,y);
               if(i%2===0)sfx.thunder();
             };
             if(i)g.later(i*.07,strike);else strike();
           });
         } else g.spawn(new Lightning(h.x+rand(-12,12),h.y-320,h.x,h.y,.35,{width:3,branches:4}));
-        electricBurst(g, h.x, h.y, 2, 14);
+        if(boss.boss==='lugia') electricBurst(g,h.x,h.y,2,14,SHADOW_LUGIA);
+        else electricBurst(g, h.x, h.y, 2, 14);
         g.marks.scorch(h.x, h.y, h.r * 0.6);
-        if (boss.boss==='lugia') { waterSplash(g,h.x,h.y);g.spawn(new PressureWave(h.x,h.y,h.r*1.4,'water')); }
+        if (boss.boss==='lugia') { shadowSplash(g,h.x,h.y);g.spawn(new PressureWave(h.x,h.y,h.r*1.4,'water',0,SHADOW_LUGIA)); }
         sfx.thunder();
         g.shake(4, 0.25);
         break;
       case 'cataclysm':
-        g.spawn(new ScreenDim(1.4, 0.45, boss.boss==='lugia'?'6,15,30':'20,6,6'));
+        g.spawn(new RaidAreaBurst(boss.boss,h,rgb));
+        g.spawn(new ScreenDim(1.4, 0.45, boss.boss==='lugia'?SHADOW_LUGIA.dim:'20,6,6'));
         g.flashT = Math.max(g.flashT, 0.16);
         for (const {x,y} of cataclysmSpots(h)) {
           if(boss.boss==='lugia') {
-            waterSplash(g,x,y);g.marks.wet(x,y,45);g.spawn(new ElementColumn(x,y,Math.min(180,y-150),42,true));
-            g.spawn(new PressureWave(x,y,70,'water'));
+            shadowSplash(g,x,y);g.marks.wet(x,y,45);g.spawn(new ElementColumn(x,y,Math.min(180,y-150),42,true,.6,SHADOW_LUGIA));
+            g.spawn(new PressureWave(x,y,70,'water',0,SHADOW_LUGIA));
           } else this.breakGround(x, y, rgb, 1, 60);
         }
         sfx.explosion();

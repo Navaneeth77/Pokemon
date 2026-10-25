@@ -33,9 +33,9 @@ From stage two, bosses periodically channel their ultimate behind a shield worth
 
 Bosses hold their position, altitude and facing while casting. Beams attach to their mouths. Rayquaza uses wind/meteor effects and Lugia uses mist/spray. Each has one SpriteCook disc beneath it; their mouths, meteors and dive trails do not repeat that disc. Mewtwo retains its psychic sigil. Dark wisps and impact effects keep the battlefield readable. Ultimate damage lands on the signature action's impact; movement attacks such as Dragon Ascent keep their flight/dive.
 
-Rayquaza and Lugia share layered cast, trail and impact effects across their raid patterns and playable moves. Meteors have molten rock cores, movement leaves a short slipstream, storm lightning starts at its cloud, and water waves/columns break into foam and spray. Dragon Pulse retains its travelling rings; Aeroblast uses the same layered mouth beam. Nova and ultimate impacts send pressure fronts across the floor. Visual effects do not decide damage or safe zones.
+Rayquaza and Lugia share layered cast, trail and impact effects across their raid patterns and playable moves. Meteors have molten rock cores, movement leaves a short slipstream, storm lightning starts at its cloud, and water waves/columns break into foam and spray. Dragon Pulse retains its travelling rings; Aeroblast uses the same layered mouth beam. Nova and cataclysm releases sustain moving pressure fronts, airborne gusts/spray or psychic shards after the warning fades. Their safe center or shelters remain visibly clear. Ultimate impacts also send pressure fronts across the floor. Visual effects do not decide damage or safe zones.
 
-Lugia also uses **Water Pulse**: a water-blue version of Dragon Pulse's layered beam and travelling rings, in both its raid rotation and fourth regular move slot. Thunderstorm forms five cloud clusters and five staggered bolts on High/Balanced (three on Performance); extra visual bolts remain inside the warning circle and add no hidden damage.
+Lugia also uses **Water Pulse**: Dragon Pulse's layered beam and travelling rings, water-blue for the fourth regular move slot and purple for the Shadow Lugia raid boss. Thunderstorm forms seven cloud clusters and seven staggered bolts on High/Balanced (four on Performance); extra visual bolts remain inside the warning circle and add no hidden damage.
 
 ### Elemental reactions and Mega stats
 
@@ -106,10 +106,15 @@ Browser profiling: open `/scripts/browser-bench.html` through the Vite dev serve
 
 See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Finishing sequences include a short visual replay of actual captured frames (raw pixel budget below 3 MB in High quality, cleared on exit). Full deterministic battle replay and network hit rewind are not implemented; match-history event timelines and existing authoritative hit timing are used instead.
 
+Raid bosses alone use the supplied **Shadow Lugia, Armored Mewtwo and Dark Rayquaza** skins. Playable legends and their Mega forms retain their original sheets and names. Shadow Lugia has the reference sheet's red eyes, purple beams/waves/lightning and a purple SpriteCook disc restricted to the floor. Mega boss skins retain their form stats and timings; Armored Mewtwo keeps its armor after evolving. Source sheets and the reproducible import script are retained under `art/sources/legendary-skins` and `scripts/prepare-legendary-skins.py`.
+
 ## Asset credits
 
 - Sprites and portraits: [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab), **CC BY-NC 4.0**, by its contributing artists, under `public/sprites`.
-- Rayquaza: PMD2/PMD1 rips by Redblueyellow and MR.C, Dark Night repaint by Dialga22239, recoloured green for this game.
+- Rayquaza: PMD2/PMD1 rips by Redblueyellow and MR.C; Dark Night repaint by Dialga22239. Playable Rayquaza retains the green recolor; raid bosses use the supplied dark palette.
+- Shadow Lugia: supplied sheet by **LaPokefanatica**. Armored Mewtwo: user-supplied sheet, artist not identified in the supplied image. These are imported pixel assets, not newly generated SpriteCook characters.
 - Trainer sprites and arenas are drawn in code. Sound effects and music are synthesized in code. The server skips arena textures, ground decoration, ambient particles and HUD animation while preserving gameplay callbacks.
 - Fonts: Pixelify Sans (OFL) and Luckiest Guy (Apache 2.0), via Fontsource.
 - Five SpriteCook assets were generated: elemental crest, ultimate-impact sprite and three legendary spell sprites. All remain active; Rayquaza/Lugia discs are restricted to the ground beneath each boss. Asset IDs, hashes and paths remain in spritecook-assets.json.
+
+For visual review, `scripts/browser-bench.html?preview=rayquaza&audit` (also `mewtwo` / `lugia`) captures every raid pattern in the real renderer at wind-up, release and follow-through. Armor poses are extracted as connected source characters to exclude neighboring tails and body fragments.

@@ -42,6 +42,13 @@
     "model": "pixel-engine-image-v1",
     "width": 96,
     "height": 96,
-    "credits": 6
+    "credits": 6,
+    "local_derivatives": [
+      {
+        "path": "public/art/raid-lugia-shadow.png",
+        "processing": "Purple hue shift; original alpha preserved",
+        "credits": 0
+      }
+    ]
   }
 ]

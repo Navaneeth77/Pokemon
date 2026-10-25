@@ -3,8 +3,9 @@ import '@fontsource/luckiest-guy/400.css';
 import {preloadImpactSprite} from '../src/effects.js';
 import {loadSpecies} from '../src/assets.js';
 import {spritesFor} from '../src/data/species.js';
+import {bossSpritesFor} from '../src/data/skins.js';
 import {Game,prepareSprites} from '../src/game.js';
-import {BOSSES,BossEncounter} from '../src/bosses.js';
+import {BOSSES,BossEncounter,attackLabel} from '../src/bosses.js';
 import {preloadRaidArt} from '../src/raid-art.js';
 import {MOVES} from '../src/moves.js';
 import {applyHit} from '../src/combat.js';
@@ -12,7 +13,7 @@ import {setQuality,qualityName} from '../src/quality.js';
 const noop=()=>{},status=document.querySelector('#status'),output=document.querySelector('#results'),button=document.querySelector('#run');
 const ids=['charizard','pikachu','rayquaza','blastoise','mewtwo','gengar','lugia','sceptile','lucario','gyarados','articuno'];
 await document.fonts.ready;await Promise.all([preloadImpactSprite(), ...['rayquaza','mewtwo','lugia'].map(preloadRaidArt)]);
-const started=performance.now(),needed=spritesFor(ids),sprites=await loadSpecies(needed);prepareSprites(sprites,needed);
+const started=performance.now(),needed=[...spritesFor(ids), ...['lugia','mewtwo','rayquaza'].flatMap(bossSpritesFor)],sprites=await loadSpecies(needed);prepareSprites(sprites,needed);
 const assetMs=performance.now()-started,ui=new Proxy({format:3},{get:(t,k)=>t[k]??noop}),game=new Game(document.querySelector('canvas'),sprites,ui);
 let current=null,last=performance.now();
 const results=[],originalQuality=qualityName();
@@ -87,6 +88,29 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
  :[['CAST BEAM',()=>castKind(preview==='rayquaza'?'dragonBeam':preview==='lugia'?'aeroblast':'cross')],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['CAST PILLARS',()=>castKind('lanes')],['CAST NOVA',()=>castKind('ring')],['CAST CATACLYSM',()=>castKind('cataclysm')],...(preview==='rayquaza'?[['CAST SLAM',()=>castKind('slam')]]:preview==='lugia'?[['CAST ROWS',()=>castKind('rows')],['CAST WATER PULSE',()=>castKind('waterPulse')]]:[])];
  for(const [label,run] of [...attacks,['RESTART RAID',restart],['HALF HP',()=>{if(raid)raid.boss.hp=raid.boss.maxHp*.5;else game.megaEvolve(game.player);}],['FINAL HIT',()=>{if(!raid)return;raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.5s',()=>step(30)],['STEP 0.1s',()=>step(6)]]){
   const b=document.createElement('button');b.textContent=label;b.onclick=run;button.after(b);
+ }
+ if(new URLSearchParams(location.search).has('audit')){
+  current=null;document.querySelector('aside').hidden=true;controls.hidden=true;
+  const gallery=document.createElement('section');gallery.style.cssText='position:relative;z-index:10;background:#101521;padding:12px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:960px;margin:auto';
+  document.body.append(gallery);
+  const patterns=[...new Set(BOSSES[preview].attacks.flat())];
+  for(const kind of patterns){
+   restart();game.ai.update=noop;game.player.dodgeInv=99;
+   if(kind==='ultimate'){raid.startUlt();raid.ult.t=.2;}else castKind(kind);
+   const title=document.createElement('h2');title.textContent=`${BOSSES[preview].name} · ${attackLabel(preview,kind)}`;title.style.cssText='grid-column:1/-1;margin:10px 0 0';gallery.append(title);
+   const at=Math.max(0,...raid.hazards.map(h=>h.at));
+   const times=kind==='ultimate'?[.1,.2+(preview==='lugia'?.9:BOSSES[preview].ultImpact[0]),.2+BOSSES[preview].ultDuration*.8]:[at*.5,at+.12,at+.48];
+   for(const [i,time] of times.entries()){
+    for(let n=0;raid.time<time&&n<1200;n++){game.player.hp=game.player.maxHp;game.update(1/60);}
+    game.shakeT=0;game.render();
+    const cell=document.createElement('figure');cell.style.margin='0';
+    const label=document.createElement('figcaption');label.textContent=`${['Wind-up','Release','Follow-through'][i]} · ${raid.time.toFixed(2)}s`;
+    const thumb=document.createElement('canvas');thumb.width=360;thumb.height=640;thumb.style.cssText='width:100%;height:auto;display:block';
+    thumb.getContext('2d').drawImage(game.canvas,game.view.ox*game.k,game.view.oy*game.k,360*game.k,640*game.k,0,0,360,640);
+    cell.append(label,thumb);gallery.append(cell);
+   }
+  }
+  gallery.dataset.complete='true';
  }
 }
 requestAnimationFrame(frame);

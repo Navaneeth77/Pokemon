@@ -185,12 +185,13 @@ test('legendary beam originates at its scaled airborne mouth and expires without
  assert.equal(g.player.hp, hp);
 });
 
-test('every Rayquaza/Lugia raid pattern and playable move renders through release and cleanup', () => {
- for(const id of ['rayquaza','lugia']) {
+test('every legendary raid pattern and playable move renders through release and cleanup', () => {
+ for(const id of ['rayquaza','lugia','mewtwo']) {
   const patterns=new Set();
   BOSSES[id].attacks.forEach((list,stage)=>list.forEach((kind,sequence)=>{
    if(patterns.has(kind))return;patterns.add(kind);
-   const g=battle(),raid=new BossEncounter([g],id);g.practice=true;
+   const g=battle();g.opponentSelection=[id];g.start();g.showcase=null;g.state='fighting';
+   const raid=new BossEncounter([g],id);g.practice=true;
    raid.intro=0;raid.stage=stage+1;raid.sequence=sequence;raid.boss.y=raid.home.y;raid.boss.invuln=false;
    raid.launch([g]);raid.next=999;if(raid.ult)raid.ult.t=.2;
    for(let i=0;i<360;i++){g.update(1/60);g.render();}
@@ -394,4 +395,55 @@ test('headless matches skip arena art and decorative effects while preserving la
  let landed=0,timed=0;g.spawn(new Falling(180,250,.05,'draco',()=>landed++));g.later(.05,()=>timed++);
  for(let i=0;i<12;i++)g.update(1/60);
  assert.equal(landed,1);assert.equal(timed,1);assert.ok(g.time>0);
+});
+
+test('raid skins stay on bosses; playable legends and their Megas keep original sheets', () => {
+ for (const [id, skin, name] of [['lugia','lugia-shadow','Shadow Lugia'],['mewtwo','mewtwo-armored','Armored Mewtwo'],['rayquaza','rayquaza-dark','Dark Rayquaza']]) {
+  const original=SPECIES[id], g=battle();g.selection=[id,'pikachu','charizard'];g.opponentSelection=[id];g.start();
+  const raid=new BossEncounter([g],id), boss=raid.boss;
+  assert.equal(g.player.species,original);assert.equal(g.player.sprite.set,sprites[id]);assert.equal(original.sprite,id);
+  assert.equal(boss.species.sprite,skin);assert.equal(boss.species.name,name);assert.equal(boss.sprite.set,sprites[skin]);
+  const hp=boss.hp,max=boss.maxHp;
+  if(id!=='lugia') {
+   evolveRaidBoss(boss,id,sprites);
+   const form=SPECIES[original.mega[0]];g.player.megaEvolve(form,sprites[form.sprite]);
+   assert.equal(g.player.species,form);assert.equal(g.player.sprite.set,sprites[form.sprite]);
+   assert.equal(boss.species.sprite,id==='mewtwo'?'mewtwo-armored-mega-y':'rayquaza-mega-dark');
+   assert.equal(boss.hp,hp);assert.equal(boss.maxHp,max);
+   assert.equal(boss.species.atk,form.atk);assert.equal(boss.species.spa,form.spa);
+  }
+  // Starting a regular match after a raid must not retain a skin or the raid flag.
+  g.start();assert.equal(g.opponent.sprite.set,sprites[id]);assert.equal(g.opponent.boss,undefined);
+ }
+});
+
+import { SHADOW_LUGIA, isShadowLugia } from '../src/data/skins.js';
+test('Shadow Lugia purple beams and storm tint do not affect playable Lugia', () => {
+ const g=battle();g.selection=['lugia','pikachu','charizard'];g.opponentSelection=['lugia'];g.start();g.showcase=null;g.state='fighting';
+ for(const m of [g.player,g.opponent]){m.hidden=false;m.appear=0;}
+ const raid=new BossEncounter([g],'lugia');raid.intro=0;raid.boss.y=raid.home.y;raid.sequence=1;raid.launch([g]);raid.next=999;
+ assert.equal(isShadowLugia(g.player),false);assert.equal(isShadowLugia(raid.boss),true);
+ assert.equal(new LegendaryBeam(g.player,180,500,'#8fdbff').color,'#8fdbff');
+ assert.equal(new LegendaryBeam(raid.boss,180,500,'#8fdbff').color,SHADOW_LUGIA.color);
+ g.update(1/60);assert.equal(g.effects.filter(e=>e.constructor.name==='StormCloud').length,7);
+ while(raid.time<1.6)g.update(1/60);
+ const bolts=g.effects.filter(e=>e.constructor.name==='Lightning');assert.ok(bolts.length>=2);
+ assert.ok(bolts.every(e=>e.core===SHADOW_LUGIA.core && e.glow.includes('177,108,250')));
+});
+
+import { RaidAreaBurst } from '../src/legendary-effects.js';
+test('all bosses release a sustained visible Nova and cataclysm with their exact safe spaces',()=>{
+ for(const id of ['rayquaza','mewtwo','lugia'])for(const kind of ['ring','cataclysm']){
+  const g=battle();g.opponentSelection=[id];g.start();g.showcase=null;g.state='fighting';
+  for(const m of [g.player,g.opponent]){m.hidden=false;m.appear=0;}
+  const raid=new BossEncounter([g],id);raid.intro=0;raid.boss.y=raid.home.y;
+  const stage=BOSSES[id].attacks.findIndex(list=>list.includes(kind));raid.stage=stage+1;raid.sequence=BOSSES[id].attacks[stage].indexOf(kind);raid.launch([g]);raid.next=999;
+  const h=raid.hazards[0],footprint=JSON.parse(JSON.stringify(h));
+  while(raid.time<h.at+.4)g.update(1/60);
+  const burst=g.effects.find(e=>e instanceof RaidAreaBurst);assert.ok(burst,`${id}/${kind} remains visible after the warning fades`);
+  assert.equal(burst.layer,'air');assert.equal(burst.hazard.r0,footprint.r0);assert.deepEqual(burst.hazard.safe,footprint.safe);
+  if(kind==='ring')assert.equal(hazardHits(burst.hazard,h.x,h.y),false);
+  else for(const [x,y] of h.safe)assert.equal(hazardHits(burst.hazard,x,y),false);
+  burst.draw(g.ctx);assert.equal(burst.update(2),false);
+ }
 });

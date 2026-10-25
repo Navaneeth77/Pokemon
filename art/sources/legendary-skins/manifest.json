@@ -1,0 +1,25 @@
+{
+  "sources": [
+    {
+      "path": "armored-mewtwo.png",
+      "sha256": "6c93d3a46b3e5e855ac3e3780c8f1d15a2acfe4464f8f6366810e1964e583b7a"
+    },
+    {
+      "path": "shadow-lugia.png",
+      "sha256": "a00a5cbc2511bd563a6b26caef08b8260c56d2e3ab99f599d3cc7913037ff339"
+    },
+    {
+      "path": "dark-rayquaza.png",
+      "sha256": "b48c1a638ebf8e51625104421ef9a53f4d8430ef30c56f20c7255c24b3783fe1"
+    }
+  ],
+  "method": "Exact supplied-palette transfer and source-pose extraction; Shadow Lugia red eyes imported using silhouette matches and exact local pixel patterns. Native alpha and animation timing preserved.",
+  "scope": "Raid bosses only; original player sprite folders untouched.",
+  "outputs": [
+    "lugia-shadow",
+    "rayquaza-dark",
+    "rayquaza-mega-dark",
+    "mewtwo-armored",
+    "mewtwo-armored-mega-y"
+  ]
+}

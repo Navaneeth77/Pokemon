@@ -341,22 +341,22 @@ export function sparkBurst(game, x, y, z, strong) {
   }
 }
 
-export function waterSplash(game, x, y) {
+export function waterSplash(game, x, y, colors = WATER) {
   for (let i = 0; i < 46; i++) {
     const a = rand(0, Math.PI * 2), sp = rand(30, 120);
     game.particles.spawn({
       x, y, z: rand(2, 12), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, vz: rand(60, 170), gz: 420, drag: 0.8,
-      life: rand(0.45, 0.8), size: rand(2, 4), colors: WATER,
+      life: rand(0.45, 0.8), size: rand(2, 4), colors,
     });
   }
   for (let i = 0; i < 12; i++) {
     const a = rand(0, Math.PI * 2), sp = rand(20, 50);
     game.particles.spawn({
       x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, drag: 3, life: rand(0.5, 0.8),
-      size: 4, sizeEnd: 9, colors: ['#e9f7ff', '#bfe4ff'], alpha: 0.7, round: true, layer: 'ground',
+      size: 4, sizeEnd: 9, colors: colors===WATER ? ['#e9f7ff','#bfe4ff'] : [colors[0],colors[1]], alpha: 0.7, round: true, layer: 'ground',
     });
   }
-  game.spawn(new Ring(x, y, { r0: 6, r1: 40, life: 0.4, color: '#cfefff', width: 3 }));
+  game.spawn(new Ring(x, y, { r0: 6, r1: 40, life: 0.4, color: colors===WATER ? '#cfefff' : colors[1], width: 3 }));
 }
 
 export function iceShatter(game, x, y, z) {
@@ -652,9 +652,9 @@ export class GroundMarker extends Effect {
 }
 
 export class StormCloud extends Effect {
-  constructor(x, y, life) {
+  constructor(x, y, life, theme = null) {
     super('air', life);
-    Object.assign(this, { x, y, puffs: Array.from({ length: 7 }, () => [rand(-22, 22), rand(-6, 6), rand(8, 14)]) });
+    Object.assign(this, { x, y, theme, puffs: Array.from({ length: 7 }, () => [rand(-22, 22), rand(-6, 6), rand(8, 14)]) });
   }
 
   draw(ctx) {
@@ -667,7 +667,7 @@ export class StormCloud extends Effect {
       ctx.fill();
     }
     if (Math.random() < 0.3) {
-      ctx.fillStyle = 'rgba(255,240,140,0.55)';
+      ctx.fillStyle = this.theme ? `rgba(${this.theme.rgb.join(',')},0.55)` : 'rgba(255,240,140,0.55)';
       ctx.beginPath();
       ctx.arc(this.x + rand(-15, 15), this.y + rand(-3, 3), rand(4, 8), 0, Math.PI * 2);
       ctx.fill();
@@ -710,15 +710,15 @@ export class StormSwirl extends Effect {
   }
 }
 
-export function electricBurst(game, x, y, z, n = 14) {
+export function electricBurst(game, x, y, z, n = 14, theme = null) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), sp = rand(60, 200);
     game.particles.spawn({
       x, y, z: z + rand(-4, 4), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, vz: rand(-20, 80), drag: 6,
-      life: rand(0.12, 0.3), size: rand(1, 2.5), colors: ['#ffffff', '#fff27a', '#ffd21f'],
+      life: rand(0.12, 0.3), size: rand(1, 2.5), colors: theme?.colors ?? ['#ffffff', '#fff27a', '#ffd21f'],
     });
   }
-  game.spawn(new Glow(x, y, z, 22, [255, 240, 120], 0.2));
+  game.spawn(new Glow(x, y, z, 22, theme?.rgb ?? [255, 240, 120], 0.2));
 }
 
 export function leafBurst(game, x, y, z, n = 10) {
@@ -1067,9 +1067,9 @@ export class Missile extends Effect {
 
 // A wall of water sweeping across the whole arena from y0 to y1.
 export class TidalWave extends Effect {
-  constructor(y0, y1, dur, rgb = [70, 140, 230], foam = false) {
+  constructor(y0, y1, dur, rgb = [70, 140, 230], foam = false, theme = null) {
     super('air', dur);
-    Object.assign(this, { y0, y1, rgb: rgb.join(','), foam });
+    Object.assign(this, { y0, y1, rgb: rgb.join(','), foam, theme });
   }
 
   get y() {
@@ -1082,22 +1082,22 @@ export class TidalWave extends Effect {
       const fade=Math.min(1,t*10,(1-t)*7),crest=x=>y-dir*(12+Math.sin(x*.045+this.age*9)*9+Math.sin(x*.14-this.age*13)*3);
       ctx.save();ctx.globalAlpha=fade;
       const body=ctx.createLinearGradient(0,y,0,y-dir*95);
-      body.addColorStop(0,'rgba(184,237,255,.95)');body.addColorStop(.2,`rgba(${this.rgb},.85)`);body.addColorStop(.65,'rgba(27,95,163,.5)');body.addColorStop(1,'rgba(25,70,145,0)');
+      body.addColorStop(0,this.theme?'rgba(227,185,255,.95)':'rgba(184,237,255,.95)');body.addColorStop(.2,`rgba(${this.rgb},.85)`);body.addColorStop(.65,this.theme?'rgba(89,27,143,.5)':'rgba(27,95,163,.5)');body.addColorStop(1,'rgba(25,70,145,0)');
       ctx.fillStyle=body;ctx.beginPath();ctx.moveTo(0,y-dir*95);ctx.lineTo(360,y-dir*95);
       for(let x=360;x>=0;x-=6)ctx.lineTo(x,crest(x));ctx.closePath();ctx.fill();
       // A rolling lip with a shaded underside, a bright ridge and fragmented foam.
-      for(const [width,color,offset] of [[10,'#247eae',3],[6,'#84d6ed',0]]){
+      for(const [width,color,offset] of [[10,this.theme?'#662d92':'#247eae',3],[6,this.theme?.color??'#84d6ed',0]]){
         ctx.lineWidth=width;ctx.strokeStyle=color;ctx.beginPath();
         for(let x=0;x<=360;x+=6){const cy=crest(x)+dir*offset;if(x)ctx.lineTo(x,cy);else ctx.moveTo(x,cy);}ctx.stroke();
       }
       const step=quality().particles>500?18:36;
       for(let x=0;x<360;x+=step){
         const cy=crest(x),phase=(this.age*2.5+x*.013)%1,lift=Math.sin(phase*Math.PI)*28;
-        ctx.globalAlpha=fade*(1-phase)*.8;ctx.fillStyle='#e7faff';
+        ctx.globalAlpha=fade*(1-phase)*.8;ctx.fillStyle=this.theme?.core??'#e7faff';
         ctx.fillRect(x+phase*8,cy-dir*(9+lift),2,4);
-        ctx.globalAlpha=fade*.95;ctx.strokeStyle='#f1fcff';ctx.lineWidth=2.5;
+        ctx.globalAlpha=fade*.95;ctx.strokeStyle=this.theme?.core??'#f1fcff';ctx.lineWidth=2.5;
         ctx.beginPath();ctx.moveTo(x,cy-dir*2);ctx.quadraticCurveTo(x+5,crest(x+5)-dir*6,x+9+Math.sin(x)*3,crest(x+9)-dir*2);ctx.stroke();
-        ctx.globalAlpha=fade*.45;ctx.strokeStyle='#b6e9f6';ctx.lineWidth=1;
+        ctx.globalAlpha=fade*.45;ctx.strokeStyle=this.theme?.mist??'#b6e9f6';ctx.lineWidth=1;
         const eddy=10+Math.sin(x*.37)**2*25;
         ctx.beginPath();ctx.moveTo(x+2,cy-dir*eddy);ctx.quadraticCurveTo(x+8,cy-dir*(eddy+5),x+13,cy-dir*eddy);ctx.stroke();
       }

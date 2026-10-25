@@ -465,7 +465,7 @@ export class Matchmaker {
     this.setState('matched');
     sfx.megaBurst?.();
     try {
-      await Promise.all([this.game.ensureSprites([...m.me.team, ...m.foe.team, ...(m.allyTeam ?? [])]), preloadRaidArt(m.raid)]);
+      await Promise.all([this.game.ensureSprites([...m.me.team, ...m.foe.team, ...(m.allyTeam ?? [])], m.raid), preloadRaidArt(m.raid)]);
     } catch (err) {
       console.error(err);
       if (this.match === m) this.fail('Could not load the battle. Check your connection and try again.', true);
@@ -501,7 +501,7 @@ export class Matchmaker {
     g.start();
     if (m.raid) {
       Object.assign(g, { showcase: null, state: 'fighting', timers: [] });
-      dressBoss(g.opponent, m.raid);
+      dressBoss(g.opponent, m.raid, g.opponent.maxHp, g.sprites);
       for (const p of [g.player, g.opponent]) {
         p.hidden = false;
         p.appear = 0;

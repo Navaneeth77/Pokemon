@@ -2,6 +2,7 @@ import { animDuration } from './assets.js';
 import { dirFromVector } from './sprite.js';
 import { LegendaryBeam } from './raid-art.js';
 import { skyLegend, CastEnergy, Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
+import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
 import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -1820,7 +1821,7 @@ function palette(c, type) {
 }
 
 function runSignature(a, g, u, t) {
-  const S = a.move.sig, P = palette(S.c, a.move.type);
+  const S = a.move.sig, P = palette(isShadowLugia(u) ? SHADOW_LUGIA.colors : S.c, a.move.type);
   const total = S.beats.reduce((sum, b) => sum + (b[2]?.frac ?? 0), 0) || 1;
   a.sigLen = S.len ?? Math.max(...S.beats.map(b => b[0])) + 1.5;
   for (const [time, kind, o = {}] of S.beats) a.later(time, () => BEATS[kind](a, g, u, t, { ...o, frac: (o.frac ?? 0) / total }, P));
@@ -2115,7 +2116,7 @@ const BEATS = {
 
   nova(a, g, u, t, o, P) {
     a.anim('Shoot', 1);
-    if(skyLegend(u))g.spawn(new PressureWave(u.x,u.y,480,'air'));
+    if(skyLegend(u))g.spawn(new PressureWave(u.x,u.y,480,'air',0,isShadowLugia(u)?SHADOW_LUGIA:null));
     else {
       g.spawn(new Pillar(u.x, u.y, 0.6, P.rgb, 460));
       g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 480, life: 0.6, color: P.c[0], width: 8 }));
