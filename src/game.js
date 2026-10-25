@@ -1,3 +1,4 @@
+import { drawCosmeticAura, CosmeticStarburst } from './economy-art.js';
 import { newSummary, recordCombat, cosmeticLoadout } from './mastery.js';
 import { quality, observeFrame } from './quality.js';
 import { BossPresenter, drawBossGround, drawBossHud, drawBossShield } from './bosses.js';
@@ -34,7 +35,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -216,7 +217,7 @@ export class Game {
     }
     if (this.online?.server) for (const m of this.playerTeam.members) m.remote = true;
     this.playerTeam.members.forEach((m, i) => { m.megaPick = this.megaPicks?.[this.selection[i]] ?? null; });
-    this.cosmetics = this.online?.authority ? {} : cosmeticLoadout();
+    this.cosmetics = this.online?.authority ? {} : {...cosmeticLoadout(),...this.flow?.economy?.loadout()};
     this.ui.buildTeam(this);
     this.reset();
     for (const m of this.playerTeam.members) m.megaChoice = m.megaPick;
@@ -673,6 +674,7 @@ export class Game {
   // Every ultimate opens with a cutscene: the battle freezes, letterbox bars slide in and the camera
   // pushes in on the user powering up. Then the move plays out across the whole arena.
   startUltCutscene(user, move) {
+    if(user.side==='player'&&this.cosmetics?.ultimate)this.spawn(new CosmeticStarburst(user,this.cosmetics.ultimate));
     if (this.raid || this.raidState || this.online?.server || this.online?.authority) {
       const game = this;
       this.showRaidUltCard(user, move);
@@ -1518,6 +1520,7 @@ export class Game {
     }
     for (const e of this.effects) if (e.layer === 'ground') e.draw(ctx);
     drawBossGround(ctx, this.bossFx?.view, this.opponent);
+    if(this.player.alive&&!this.player.hidden)drawCosmeticAura(ctx,this.player.x,this.player.y,this.cosmetics?.aura,this.time);
     this.particles.draw(ctx, 'ground');
     const actors = [this.player,this.opponent,this.red,this.gold,...(this.raidAlly?[this.raidAlly]:[])].map(a=>this.presentedActor(a)).sort((a,b)=>a.y-b.y);
     for (const a of actors) a.drawShadow(ctx);

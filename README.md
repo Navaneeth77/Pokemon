@@ -120,3 +120,43 @@ Raid bosses alone use the supplied **Shadow Lugia, Armored Mewtwo and Dark Rayqu
 - Five SpriteCook assets were generated: elemental crest, ultimate-impact sprite and three legendary spell sprites. All remain active; Rayquaza/Lugia discs are restricted to the ground beneath each boss. Asset IDs, hashes and paths remain in spritecook-assets.json.
 
 For visual review, `scripts/browser-bench.html?preview=rayquaza&audit` (also `mewtwo` / `lugia`) captures every raid pattern in the real renderer at wind-up, release and follow-through. Armor poses are extracted as connected source characters to exclude neighboring tails and body fragments.
+
+## Trainer Guild: missions, Chaos Coins and cosmetics
+
+Daily Missions, Chaos Shop and Collection are available from the main menu; the trainer header shows the selected wallet's balance. Three deterministic missions reset at **00:00 UTC**. The weekly victory trail resets Monday at 00:00 UTC. Completing all three dailies unlocks a separate bonus; offline days have no penalty. Reward values and the ten-item catalogue live in `src/economy.js`.
+
+- Daily missions award 80–120 coins; daily board bonus 100.
+- First eligible daily win awards 40. Lifetime win milestones 1/10/25 award 50/150/250.
+- Five weekly wins award 250; the first weekly boss victory awards another 100.
+- Matches must complete naturally, last at least 20 simulation seconds and deal at least 250 damage. Practice, cancellations, forfeits, disconnect victories and peer-hosted friend rooms do not award economy progress. Local bot and solo raid rewards count at most eight completed matches per day. Online progress comes only from the server's own battle and raid outcomes; clients cannot submit summaries for rewards.
+- Ultimates count confirmed damage hits, including separate hits of multipart moves. Mission descriptions explicitly say “ultimate hits.” Team/type missions count eligible team members, including the bench.
+
+The shop contains Amethyst Circuit and Ember Crest portrait frames, Skybound and Tempest Keeper titles, Astral Orbit and Jade Slipstream ground auras, Sapphire Arrival send-out rings, Victory Hop and Victory Roar poses, and Astral Overdrive ultimate-opening stars. Frames appear in the menu and battle HUD, titles beneath the menu trainer name, and the other cosmetics in actual battle/victory presentation. Poses use the selected animation where supported and the species' native victory fallback otherwise. No cosmetic changes HP, damage, hitboxes, timing or cooldowns. Existing mastery cosmetics remain available; an equipped shop cosmetic takes precedence in its slot.
+
+### Persistence and authority
+
+**Local Journey** is a browser-only prototype stored separately at `msb.economy.local`. It uses the completed local combat engine, has duplicate-result protection and a monotonic session clock, but a user who modifies browser storage/code or the device clock can tamper with it. It is not secure currency and never uploads or merges into the online wallet. Offline play remains available. The online countdown uses a clock anchored to server time after a successful response; a fully offline local journey uses device time and clearly remains local-only.
+
+**Online Journey** uses the existing anonymous player ID plus a random browser credential. The server stores only its hash. This prevents an ID alone from authorizing wallet operations, but it is **not an account, paid-purchase identity or cross-device login**. Clearing browser storage loses access; there is no recovery or automatic device transfer. Credentials are local browser data; use HTTPS/WSS outside localhost.
+
+The match server exposes a bounded, rate-limited `POST /economy` API for view/claim/buy/equip only. Prices and rewards are server-defined. Transactions validate ownership and balance, retain receipt IDs, and write the complete new state to a temporary file, fsync and rename **before** confirming success. Duplicate requests cannot debit or credit twice. Equip/unequip operations require ownership and are idempotent. Corrupt/unsupported server saves fail closed; corrupt local saves are preserved for recovery. Requests failing or timing out never replace a valid wallet with empty defaults. Cached online wallets remain separate and do not become spendable local funds.
+
+Set `ECONOMY_FILE` to a path on a **persistent disk** (default `server/data/economy.json`). This single-process file store survives ordinary server restarts with that disk. It does not use the leaderboard's optional Redis backend; ephemeral hosting loses it on redeploy, and shared-file multi-instance deployment is unsupported. Use a transactional database before horizontal scaling. Back up the ledger and browser credentials appropriately. No secrets or generated ledgers belong in Git.
+
+Before real payments: implement durable authenticated accounts, recovery, a transactional database, provider-side payment verification, idempotent webhooks, reconciliation/refunds, entitlement audits, privacy/security controls and applicable legal requirements. Keep payment records separate from earnable coins. No payment provider, premium currency, loot boxes or simulated real-money purchases are implemented. This Pokémon fan game has **no assumed commercial/IP clearance**; review rights and monetization implications before any paid launch.
+
+### Roster migration and QA
+
+The playable roster is now **137 final-stage or single-stage base species**, down from 220. All selections, random generators and server validation use that roster. Full removed/retained lists and regional decisions are in [docs/ROSTER-AUDIT.md](docs/ROSTER-AUDIT.md). Saved teams are backed up under `msb.teams.pre-final-v1` and migrated without transferring mastery to replacements. Archived species data/assets remain for records, shared moves and narrative scenes.
+
+Run locally in separate terminals:
+
+```sh
+npm install
+npm run dev
+npm run server
+```
+
+The game is at `http://localhost:5173`; the match server defaults to port 8787. For the economy unit checks use `node --test tests/economy.test.js`; `npm test` includes real WebSocket draft/co-op and HTTP anti-exploit checks. `npm run build` produces the client build.
+
+For an isolated UI transaction review, run `node scripts/guild-simulation.mjs`, then open `http://localhost:5173/scripts/guild-review.html` while Vite runs. Five battles are simulated through the real combat engine; the resulting rewards load into a **memory-only QA wallet**, with an explicit banner. Claims/purchases there do not affect real player saves. The generated fixture is ignored by Git and these script pages are not part of the Vite production build. No arena skins, emotes or badges are sold: only the implemented categories are displayed.

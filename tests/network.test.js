@@ -7,8 +7,17 @@ const port=18879;
 const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,PORT:String(port),LEADERBOARD_FILE:'/tmp/chaos-arena-test-records.json'},stdio:['ignore','pipe','pipe']});
 let logs='';server.stderr.on('data',b=>logs+=b);
 await once(server.stdout,'data');
-function client(id){const ws=new WebSocket(`ws://127.0.0.1:${port}`),messages=[];ws.on('message',raw=>messages.push(JSON.parse(raw)));return {ws,messages,send:m=>ws.send(JSON.stringify(m)),async wait(t,p=()=>true){for(let i=0;i<400;i++){const k=messages.findIndex(m=>m.t===t&&p(m));if(k>=0)return messages.splice(k,1)[0];await new Promise(r=>setTimeout(r,25));}throw new Error(`Timed out ${t}: ${logs}`);},async hello(){await once(ws,'open');this.send({t:'hello',v:2,pid:id,name:'Test'});await this.wait('welcome');}}}
+function client(id){const ws=new WebSocket(`ws://127.0.0.1:${port}`),messages=[];ws.on('message',raw=>messages.push(JSON.parse(raw)));return {ws,messages,send:m=>ws.send(JSON.stringify(m)),async wait(t,p=()=>true){for(let i=0;i<400;i++){const k=messages.findIndex(m=>m.t===t&&p(m));if(k>=0)return messages.splice(k,1)[0];await new Promise(r=>setTimeout(r,25));}throw new Error(`Timed out ${t}: ${logs}`);},async hello(extra={}){await once(ws,'open');this.send({t:'hello',v:2,pid:id,name:'Test',...extra});await this.wait('welcome');}}}
 async function pair(prefix){const a=client(prefix+'-playera'),b=client(prefix+'-playerb');await Promise.all([a.hello(),b.hello()]);return[a,b];}
+test('HTTP wallet rejects fabricated rewards, prices and invalid online teams',async()=>{
+ const pid=`eco-http-${Date.now()}`,credential='d'.repeat(64),url=`http://127.0.0.1:${port}/economy`;
+ const request=async q=>{const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pid,credential,...q})});return {status:r.status,body:await r.json()};};
+ assert.equal((await request({op:'view'})).body.wallet.balance,0);
+ assert.equal((await request({op:'grant',amount:999999})).status,400);
+ assert.equal((await request({op:'buy',id:'frame-amethyst',price:0})).status,400);
+ assert.equal((await request({op:'view'})).body.wallet.balance,0);
+ const c=client(pid);try{await c.hello({economyToken:credential});c.send({t:'queue',format:3,team:['charizard','pikachu','rayquaza']});assert.equal((await c.wait('error')).code,'bad-team');}finally{c.ws.close();}
+});
 test('server readiness and two-player snake draft launch',async()=>{
  assert.equal((await(await fetch(`http://localhost:${port}/ready`)).json()).ready,true);
  const cs=await pair('snake');try{
@@ -21,7 +30,7 @@ test('server readiness and two-player snake draft launch',async()=>{
  }finally{cs.forEach(c=>c.ws.close());}
 });
 test('private co-op uses shared boss HP; forged damage ignored; disconnect survives',async()=>{
- const cs=await pair('raid');const spec={t:'raid-queue',boss:'rayquaza',format:3,team:['charizard','pikachu','rayquaza'],lead:0,mega:{}};
+ const cs=await pair('raid');const spec={t:'raid-queue',boss:'rayquaza',format:3,team:['charizard','raichu','rayquaza'],lead:0,mega:{}};
  try{
  cs[0].send({...spec,kind:'private'});const lobby=await cs[0].wait('raid-waiting');
  cs[1].send({...spec,kind:'join',code:lobby.code});const ms=await Promise.all(cs.map(c=>c.wait('matched')));assert.equal(ms[0].id,ms[1].id);

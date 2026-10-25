@@ -1,3 +1,4 @@
+import { economyCredential } from './economy-client.js';
 import { appendBattleEvents } from './event-buffer.js';
 import { summaryHtml } from './results.js';
 import { saveSummary } from './mastery.js';
@@ -187,7 +188,7 @@ export class Matchmaker {
       }, Math.max(1,timeoutMs));
       ws.onopen = () => {
         const save = this.flow.save;
-        ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pid: this.pid, name: save.name ?? 'TRAINER', look: save.look ?? null }));
+        ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pid: this.pid, economyToken:this.flow.economy?.token??economyCredential(this.pid), name: save.name ?? 'TRAINER', look: save.look ?? null }));
       };
       ws.onmessage = ev => {
         if (this.ws !== ws) return;
@@ -876,6 +877,7 @@ export class Matchmaker {
 
   // ── Result: always the server's ──
   onEnd(m) {
+    this.flow.economy?.sync();
     if(m.summary) saveSummary({...m.summary,id:m.id,result:m.result,verified:true});
     this.result = m;
     this.record = m.record;

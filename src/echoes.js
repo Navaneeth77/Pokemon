@@ -1,6 +1,6 @@
 import { Cutscene } from './cutscene.js';
 import { SCENES, BATTLES, CHAPTERS, CAST, STARTER_LINES, RIVAL_OF } from './data/echoes.js';
-import { SPECIES } from './data/species.js';
+import { SPECIES, isPlayable, eligibleReplacement, normalizeTeam } from './data/species.js';
 import { TYPE_COLORS } from './data/types.js';
 import { aiCurve, DIFFICULTY, STARTERS } from './story.js';
 import { lookById, frontPalette } from './trainers.js';
@@ -159,9 +159,9 @@ export class Echoes {
 
   startBattle(id) {
     const def = BATTLES[id], s = this.save, g = this.game, ui = this.ui;
-    const pool = (def.pool ?? s.pool).filter(x => SPECIES[x]);
+    const pool=[...new Set((def.pool??s.pool).map(id=>isPlayable(id)?id:eligibleReplacement(id)))];
     const n = Math.max(1, Math.min(s.format, pool.length));
-    const foes = this.teamOf(def, n);
+    const foes = normalizeTeam(this.teamOf(def,n),n);
     this.current = id;
     this.leaveScreens();
     this.flow.screen = 'select';

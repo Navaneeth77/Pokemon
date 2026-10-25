@@ -8,7 +8,7 @@ import { SPECIES } from './data/species.js';
 export const MASTERY_THRESHOLDS = [0, 100, 250, 500, 900, 1500, 2400, 3600, 5200, 7500];
 const KEY = 'msb.mastery', VERSION = 2;
 const DIFF_RANK = ['easy', 'normal', 'hard', 'legendary'];
-const COUNTERS = ['damage', 'received', 'hits', 'kos', 'faints', 'ultimates', 'mega', 'switches', 'reactions', 'bossDamage'];
+const COUNTERS = ['damage', 'received', 'hits', 'kos', 'faints', 'ultimates', 'ultimateHits', 'mega', 'switches', 'reactions', 'bossDamage'];
 
 const blank = () => ({
   version: VERSION, species: {}, matches: [], processed: [], arenas: {}, moves: {},
@@ -73,7 +73,7 @@ export function newSummary(game) {
   return { id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`, events: [], droppedEvents: 0, species: { player: {}, opponent: {} }, moves: { player: {}, opponent: {} }, arena: game.arenaId ?? 'mtSilver' };
 }
 
-const row = () => ({ damage: 0, received: 0, hits: 0, kos: 0, faints: 0, ultimates: 0, mega: 0, switches: 0, reactions: 0, bossDamage: 0, discovered: [] });
+const row = () => ({ damage: 0, received: 0, hits: 0, kos: 0, faints: 0, ultimates: 0, ultimateHits:0, mega: 0, switches: 0, reactions: 0, bossDamage: 0, discovered: [] });
 
 // Only the game that decides a Pokémon's actions records them (remote copies are skipped), so a
 // predicted move and the server's confirmation are never both counted.
@@ -102,7 +102,7 @@ export function recordCombat(game, kind, actor, target, details = {}) {
   const side = actor.side, s = (game.summary.species[side][actor.baseSpecies.id] ??= row());
   if (kind === 'hit') {
     s.damage += details.damage;
-    s.hits++;
+    s.hits++;if(details.ultimate)s.ultimateHits=(s.ultimateHits??0)+1;
     if (target?.boss) s.bossDamage += details.damage;
     if (target && !target.boss) (game.summary.species[target.side][target.baseSpecies.id] ??= row()).received += details.damage;
   } else if (kind === 'reaction') {

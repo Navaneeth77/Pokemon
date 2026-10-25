@@ -1,3 +1,5 @@
+import { EconomyClient } from './economy-client.js';
+import { EconomyUI } from './economy-ui.js';
 import { ExpansionUI } from './expansion-ui.js';
 import { currentTitle, cosmeticLoadout } from './mastery.js';
 import { Opening, GAME_TITLE } from './opening.js';
@@ -40,6 +42,9 @@ export class Flow {
     this.online = new Online(game, this);
     this.mm = new Matchmaker(game, this);
     this.expansion = new ExpansionUI(this);
+    this.economy=new EconomyClient(this);
+    this.economyUI=new EconomyUI(this);
+    if(this.economy.scope==='server')this.economy.sync();
     // Invite links (?room=CODE) jump straight into that room after the title screen.
     this.pendingRoom = cleanCode(new URLSearchParams(location.search).get('room')) || null;
     if (this.pendingRoom) history.replaceState(null, '', location.pathname);
@@ -131,6 +136,9 @@ export class Flow {
       ['FRIEND ROOM', () => this.showOnline('home', '', 'title')],
       ['LEGENDARY RAIDS', () => this.expansion.raids(), 'Rayquaza · Mewtwo · Lugia'],
       ['DRAFT BATTLES', () => this.expansion.drafts(), 'Snake · Blind trade · Online'],
+      ['DAILY MISSIONS',()=>this.economyUI.open('missions'),'Earn Chaos Coins · Resets at 00:00 UTC'],
+      ['CHAOS SHOP',()=>this.economyUI.open('shop'),'Cosmetics · Your signature'],
+      ['COLLECTION',()=>this.economyUI.open('collection')],
       ['POKÉMON MASTERY', () => this.expansion.mastery(), 'Records · Levels · Match history'],
       ['ELEMENTAL GUIDE', () => this.expansion.guide()],
       ['MY TEAMS', () => this.showTeams(), 'Build & save your teams'],
@@ -138,12 +146,13 @@ export class Flow {
       ['TUTORIAL', () => this.startTutorial()],
     ];
     const menu = $('#title-menu');
-    const title = currentTitle();
+    const title = this.economy?.loadout().title?.name??currentTitle();
     menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div>`
-      + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
-    const frame = cosmeticLoadout().frame;
+      + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
+    const frame = this.economy?.loadout().frame??cosmeticLoadout().frame;
     if (frame) menu.querySelector('canvas').style.border = `2px solid ${frame.color}`;
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
+    this.economyUI.mountCounter();
     this.menuItems = items;
     this.menuIndex = 0;
     menu.querySelectorAll('.tm-item').forEach(b => b.addEventListener('click', () => {
@@ -169,6 +178,7 @@ export class Flow {
 
   highlightMenu() {
     $('#title-menu').querySelectorAll('.tm-item').forEach((b, i) => b.classList.toggle('on', i === this.menuIndex));
+    $('#title-menu .tm-item.on')?.scrollIntoView({block:'nearest'});
   }
 
   // ── Trainer setup ──
@@ -562,7 +572,7 @@ export class Flow {
     page.innerHTML = `
       <header class="pg-head">
         <span class="dex-lens"></span><span class="dex-leds"><i></i><i></i><i></i></span>
-        <h1>MY TEAMS</h1>
+        <h1>MY TEAMS</h1>${this.ui.rosterMigrated?'<p class="st-note">Legacy teams were updated to eligible final forms. Original teams are backed up in this browser; mastery records were preserved.</p>':''}
         <div class="pg-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name ?? 'TRAINER')}</span></div>
       </header>
       <div class="pg-bar"><button class="dex-btn" data-a="back">◀ MENU</button><span></span></div>

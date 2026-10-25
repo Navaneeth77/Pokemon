@@ -15,7 +15,7 @@ async function main() {
     document.fonts.load('400 16px "Luckiest Guy"'),
   ]);
   // Only the default team and the opponent's are loaded up front; other picks load when a battle starts.
-  const first = [...spritesFor([...DEFAULT_TEAM, ...OPPONENT_TEAM]), 'eevee', 'bidoof']; // + title-screen Pokémon
+  const first = [...spritesFor([...DEFAULT_TEAM, ...OPPONENT_TEAM]), 'pikachu', 'eevee', 'bidoof']; // + title-screen Pokémon
   const [sprites] = await Promise.all([loadSpecies(first),preloadImpactSprite().catch(()=>{})]);
   prepareSprites(sprites, first);
   const ui = new UI();

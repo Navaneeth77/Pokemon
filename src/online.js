@@ -1,7 +1,7 @@
 import { appendBattleEvents } from './event-buffer.js';
 import { Peer } from 'peerjs';
 import { MOVES } from './moves.js';
-import { SPECIES } from './data/species.js';
+import { SPECIES, isPlayable } from './data/species.js';
 import { TYPE_COLORS } from './data/types.js';
 import { lookById, frontPalette } from './trainers.js';
 import { nameAllowed, safeName } from './names.js';
@@ -266,6 +266,7 @@ export class Online {
         }
         return;
       case 'ready':
+        if(!Array.isArray(m.team)||m.team.length!==this.room?.format||new Set(m.team).size!==m.team.length||!m.team.every(isPlayable)){this.flow.onlineError('Your friend sent an ineligible team. Both players should refresh.');return;}
         this.them = { team: m.team, lead: m.lead, mega: m.mega ?? {} };
         this.flow.onlineUpdate();
         this.checkStart();

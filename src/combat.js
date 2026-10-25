@@ -265,7 +265,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');
   }
   if (reaction) resolveReaction(game, attacker, target, reaction, dmg, applyHit);
-  game.recordCombat?.('hit', attacker, target, { damage: actualDamage + barrier, move: move.id });
+  game.recordCombat?.('hit', attacker, target, { damage: actualDamage + barrier, move: move.id, ultimate:!!move.ultimate });
   if (o.hitstop) game.hitstop(o.hitstop);
   if (o.shake) game.shake(o.shake);
   if (!target.alive) game.onFaint(target, attacker, move);

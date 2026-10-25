@@ -8,6 +8,7 @@
 //
 //   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated)
 import './shim.js';
+import { EconomyStore } from './economy-store.js';
 import { resultSummary } from '../src/mastery.js';
 import { RaidRooms } from './raids.js';
 import { DraftRooms } from './drafts.js';
@@ -68,6 +69,8 @@ const records = new Map(); // pid → { name, w, l, d, rating }
 const START_RATING = 1000, ELO_K = 32;
 const DATA_FILE = process.env.LEADERBOARD_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'leaderboard.json');
 const PID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const economy = new EconomyStore(process.env.ECONOMY_FILE || path.join(path.dirname(DATA_FILE),'economy.json'));
+const economyRate = new Map();
 // Values pasted with quotes or spaces around them (common in hosting dashboards) still work.
 const envValue = k => (process.env[k] ?? '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
 const REDIS = envValue('UPSTASH_REDIS_REST_URL') && envValue('UPSTASH_REDIS_REST_TOKEN')
@@ -449,6 +452,7 @@ class Match {
         p.match = null;
         p.state = 'idle';
       }
+      if(!wasLoading&&['ko','time'].includes(reason)&&this.game)economy.award(p,resultSummary(this.game,s==='A'?'player':'opponent',{id:this.id,result,reason,team:this.side[s].team}));
       sendTo(p, { t: 'end', id: this.id, ranked:this.ranked, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
     log(`match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
@@ -493,7 +497,7 @@ function snapshot(team, switchCD, ack) {
   };
 }
 
-const raids = new RaidRooms({send:sendTo,validate:validTeam,create:(a,b)=>new Match(a,b),
+const raids = new RaidRooms({send:sendTo,award:(p,s)=>economy.award(p,s),validate:validTeam,create:(a,b)=>new Match(a,b),
   register:s=>{matches.set(s.id,s);ensureLoop();},remove:id=>matches.delete(id),snapshot,
   capacity:()=>raids.sessions.size < Math.max(1, Number(process.env.MAX_RAIDS)||1) && matches.size<MAX_MATCHES});
 setInterval(()=>raids.tick(Date.now()),1000).unref();
@@ -576,8 +580,10 @@ function hello(conn, m) {
   p.name = safeName(m.name);
   p.record.name = p.name; // the leaderboard shows the latest name
   p.look = LOOK_IDS.has(m.look) ? m.look : null;
+  if(/^[a-f0-9]{64}$/.test(m.economyToken??'')){try{economy.request(pid,m.economyToken,'view');}catch{ /* gameplay remains available if wallet recovery is needed */ }}
+  p.economyAuthenticated=economy.authenticated(pid,m.economyToken);
   conn.player = p;
-  send(conn.ws, { t: 'welcome', v: PROTOCOL, features:['raids','drafts','ranked-drafts','readiness'], record: p.record });
+  send(conn.ws, { t: 'welcome', v: PROTOCOL, features:['raids','drafts','ranked-drafts','readiness','economy'], record: p.record });
   if(p.match?.raidSession) p.match.raidSession.intro(p);
 }
 
@@ -687,6 +693,20 @@ function lobbyInfo(pid, fmt) {
 const server = http.createServer((req, res) => {
   const requestOrigin=req.headers.origin;
   if(requestOrigin && (!ORIGINS.length || ORIGINS.includes(requestOrigin))) res.setHeader('access-control-allow-origin',requestOrigin);
+  if(req.url==='/economy'){
+    if(requestOrigin&&ORIGINS.length&&!ORIGINS.includes(requestOrigin)){res.writeHead(403).end();return;}
+    res.setHeader('cache-control','no-store');
+    if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-methods':'POST','access-control-allow-headers':'content-type'}).end();return;}
+    if(req.method!=='POST'){res.writeHead(405).end();return;}
+    const ip=req.socket.remoteAddress,now=Date.now(),rate=economyRate.get(ip)??{at:now,n:0};
+    if(now-rate.at>10000){rate.at=now;rate.n=0;}rate.n++;economyRate.set(ip,rate);
+    if(economyRate.size>2000)for(const [key,v]of economyRate)if(now-v.at>10000)economyRate.delete(key);
+    if(rate.n>40){res.writeHead(429).end(JSON.stringify({error:'Please wait a moment before trying again.'}));return;}
+    let body='';req.on('data',c=>{body+=c;if(body.length>2048)req.destroy();});
+    req.on('end',()=>{try{const q=JSON.parse(body),wallet=economy.request(q.pid,q.credential,q.op,q.id);
+      res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({wallet}));
+    }catch(e){res.writeHead(400,{'content-type':'application/json'}).end(JSON.stringify({error:e.message}));}});return;
+  }
   if (req.url === '/lobby') {
     const origin = req.headers.origin;
     if (origin && (!ORIGINS.length || ORIGINS.includes(origin))) res.setHeader('access-control-allow-origin', origin);

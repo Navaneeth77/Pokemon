@@ -1,4 +1,4 @@
-import { SPECIES } from './data/species.js';
+import { SPECIES, isPlayable, eligibleReplacement, normalizeTeam } from './data/species.js';
 import { KANTO_LINES } from './data/kanto.js';
 import { TYPE_COLORS, typeMultiplier } from './data/types.js';
 import { drawBust, frontPalette } from './trainers.js';
@@ -153,7 +153,7 @@ export function poolAt(i, starter) {
     grew = false;
     for (const id of [...have]) for (const e of NEXT[id] ?? []) if (!have.has(e) && evoStage(e) <= i) { have.add(e); grew = true; }
   }
-  return [...have].filter(id => storyAllowed(id) && (KEEP_UNEVOLVED.has(id) || !(NEXT[id] ?? []).some(e => have.has(e)))).sort((a, b) => DEX(a) - DEX(b));
+  return [...new Set([...have].map(id=>isPlayable(id)?id:eligibleReplacement(id)))].filter(storyAllowed).sort((a,b)=>DEX(a)-DEX(b));
 }
 
 const lineRoot = id => (PREV[id] ? lineRoot(PREV[id]) : id);
@@ -186,7 +186,7 @@ export function teamFor(stage, n, difficulty, starter) {
     const next = shift(id, k);
     out.push(next !== id && (src.includes(next) || out.includes(next)) ? id : next);
   });
-  return out;
+  return normalizeTeam(out,n);
 }
 
 // Bot skill for battle `i` at a difficulty: interpolated along the campaign (see AI_CURVE).
@@ -204,7 +204,7 @@ export function aiCurve(t, difficulty) {
 }
 
 // Story teams use Kanto Pokémon; the legendary and mythical ones are left out of the League challenge.
-export const storyAllowed = id => !!SPECIES[id]?.kanto && SPECIES[id].class === 'regular';
+export const storyAllowed = id => isPlayable(id) && !!SPECIES[id]?.kanto && SPECIES[id].class === 'regular';
 
 function loadSave() {
   try {

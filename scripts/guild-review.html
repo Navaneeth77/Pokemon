@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Chaos Arena · Isolated economy QA</title></head><body><p style="position:fixed;z-index:300;top:0;margin:0;background:#301b25;color:#ffe5ba;font:12px monospace">QA · rewards earned by five simulated engine battles · memory only · no player saves</p><script type="module">
+import '@fontsource/pixelify-sans/500.css';import '@fontsource/pixelify-sans/700.css';import '@fontsource/luckiest-guy/400.css';import '../src/style.css';
+import {loadSpecies} from '../src/assets.js';import {ExpansionUI} from '../src/expansion-ui.js';import {EconomyClient} from '../src/economy-client.js';import {EconomyUI} from '../src/economy-ui.js';
+const fixture=await(await fetch('/scripts/.guild-earned.json')).json(),sprites=await loadSpecies(['charizard','rayquaza']);
+const flow={mm:{pid:'guild-qa-fixture',url:null},save:{name:'QA TRAINER',look:'red'},game:{sprites,cosmetics:{}},screen:'title',showTitleMenu(){}};
+flow.expansion=new ExpansionUI(flow);flow.economy=new EconomyClient(flow);flow.economy.local=fixture.wallet;flow.economy.scope='local';flow.economy.localError=null;
+flow.economy.saveLocal=w=>{flow.economy.local=w;};flow.economy.select=async scope=>{flow.economy.scope=scope;flow.economy.emit();};flow.economyUI=new EconomyUI(flow);flow.economyUI.open('missions');
+</script></body></html>

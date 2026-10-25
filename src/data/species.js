@@ -6,6 +6,7 @@
 // Only Mega forms with their own SpriteCollab sheet are included.
 
 import { KANTO_NEW, KANTO_EXISTING, KANTO_MEGAS, TYPE_ULT } from './kanto.js';
+import { isFinalSpecies, finalDescendants } from './roster-rules.js';
 import { DIMS } from './dims.js';
 
 import { MEGA_STATS } from './mega-stats.js';
@@ -197,10 +198,30 @@ for (const s of Object.values(SPECIES)) {
   if (d) Object.assign(s, { radius: d[0], shadow: [d[0], d[5]], bodyZ: d[1], headZ: d[2], mouth: { z: d[3], fwd: d[4] } });
 }
 
-export const ROSTER = LIST.map(s => s.id);
+export const ALL_BASE_SPECIES = LIST.map(s => s.id);
+export const ROSTER = ALL_BASE_SPECIES.filter(isFinalSpecies);
+const legalRoster = new Set(ROSTER);
+export const isPlayable = id => legalRoster.has(id);
+export function eligibleReplacement(id,used=new Set()) {
+ const descendants=finalDescendants(id);
+ return ROSTER.find(p=>!used.has(p)&&descendants.includes(p.toLowerCase()))
+  ?? ROSTER.find(p=>!used.has(p)&&SPECIES[p].class==='regular'&&SPECIES[p].types.some(t=>SPECIES[id]?.types.includes(t)))
+  ?? ROSTER.find(p=>!used.has(p));
+}
+export function normalizeTeam(ids,size=Math.min(6,Math.max(1,ids?.length||3))) {
+ const input=Array.isArray(ids)?ids:[],used=new Set(),out=[];
+ // Reserve retained teammates so replacements cannot displace them.
+ const reserved=new Set(input.filter(isPlayable));
+ for(const id of input.slice(0,size)) {
+  const next=isPlayable(id)&&!used.has(id)?id:eligibleReplacement(id,new Set([...used,...reserved]));
+  if(next){out.push(next);used.add(next);}
+ }
+ while(out.length<size){const next=eligibleReplacement(null,used);if(!next)break;out.push(next);used.add(next);}
+ return out;
+}
 // All 151, in Pokédex order.
-export const KANTO = LIST.filter(s => s.kanto).sort((a, b) => a.kanto - b.kanto).map(s => s.id);
-export const DEFAULT_TEAM = ['charizard', 'pikachu', 'rayquaza'];
+export const KANTO = LIST.filter(s => s.kanto && isPlayable(s.id)).sort((a, b) => a.kanto - b.kanto).map(s => s.id);
+export const DEFAULT_TEAM = ['charizard', 'raichu', 'rayquaza'];
 export const OPPONENT_TEAM = ['gyarados', 'sceptile', 'articuno'];
 export const CLASS_LABEL = { regular: 'Regular', legendary: 'Legendary', mythical: 'Mythical' };
 

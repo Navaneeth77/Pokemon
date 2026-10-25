@@ -2,7 +2,7 @@ import { summaryHtml } from './results.js';
 import { resultSummary, saveSummary } from './mastery.js';
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
-import { SPECIES, ROSTER, OPPONENT_TEAM, CLASS_LABEL } from './data/species.js';
+import { SPECIES, ROSTER, isPlayable, normalizeTeam, OPPONENT_TEAM, CLASS_LABEL } from './data/species.js';
 
 const CAT = { physical: 'Physical', special: 'Special', status: 'Status' };
 import { ABILITIES } from './data/abilities.js';
@@ -393,7 +393,12 @@ export class UI {
   loadTeams() {
     try {
       const list = JSON.parse(localStorage.getItem(TEAMS_KEY));
-      return Array.isArray(list) ? list.filter(t => t && typeof t.name === 'string' && Array.isArray(t.team) && t.team.some(id => SPECIES[id])) : [];
+      if(!Array.isArray(list))return [];
+      const clean=list.filter(t=>t&&typeof t.name==='string'&&Array.isArray(t.team)).slice(0,20).map(t=>({...t,team:normalizeTeam(t.team,t.format===6||t.team.length>3?6:3),rosterVersion:1}));
+      if(JSON.stringify(clean)!==JSON.stringify(list)){
+        if(!localStorage.getItem('msb.teams.pre-final-v1'))localStorage.setItem('msb.teams.pre-final-v1',JSON.stringify(list));
+        this.storeTeams(clean);this.rosterMigrated=true;
+      }return clean;
     } catch {
       return [];
     }
@@ -751,6 +756,7 @@ export class UI {
   }
 
   showResult(win, winner) {
+    this.game.flow?.economy?.completeLocal(this.game,win);
     if ((!this.game.online || !this.game.online.server) && !this.game.practice) saveSummary(resultSummary(this.game, 'player', {result:win?'win':'loss'}));
     if (this.game.online?.server) {
       // Matchmaking: the match server's verdict, whatever this screen saw.
