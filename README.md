@@ -31,7 +31,7 @@ Rayquaza and Mewtwo Mega Evolve once at **50% HP** into Mega Rayquaza and Mega M
 
 From stage two, bosses periodically channel their ultimate behind a shield worth 5% of maximum HP. **Break the shield** before the countdown expires to cancel the attack and earn a four-second vulnerability window. Shield damage can overflow into HP. An uninterrupted ultimate hits active players through dodges for 40/55/70/85% of maximum HP on Easy/Normal/Hard/Legendary. Existing Dragon Ascent, Psystrike and Aeroblast choreography plays cosmetically alongside the authoritative outcome. Dragon Ascent rises above the arena before diving. Player ultimates retain their charge intro and attack animation without pausing the shared raid.
 
-Bosses hold their position and facing while casting. Beams attach to their mouths. Rayquaza uses wind/meteor effects and Lugia uses mist/spray; Mewtwo retains its psychic sigil. Dark wisps and impact effects keep the battlefield readable. Ultimate damage lands on the signature action's impact; movement attacks such as Dragon Ascent keep their flight/dive.
+Bosses hold their position, altitude and facing while casting. Beams attach to their mouths. Rayquaza uses wind/meteor effects and Lugia uses mist/spray. Each has one SpriteCook disc beneath it; their mouths, meteors and dive trails do not repeat that disc. Mewtwo retains its psychic sigil. Dark wisps and impact effects keep the battlefield readable. Ultimate damage lands on the signature action's impact; movement attacks such as Dragon Ascent keep their flight/dive.
 
 ### Elemental reactions and Mega stats
 
@@ -108,4 +108,4 @@ See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.m
 - Rayquaza: PMD2/PMD1 rips by Redblueyellow and MR.C, Dark Night repaint by Dialga22239, recoloured green for this game.
 - Trainer sprites and arenas are drawn in code. Sound effects and music are synthesized in code. The server skips arena textures, ground decoration, ambient particles and HUD animation while preserving gameplay callbacks.
 - Fonts: Pixelify Sans (OFL) and Luckiest Guy (Apache 2.0), via Fontsource.
-- Five SpriteCook assets were generated: elemental crest, ultimate-impact sprite and three legendary spell sprites. Crest, impact and psychic sigil remain active; Rayquaza/Lugia vortex images are retained as unused source assets after visual review. Asset IDs, hashes and paths remain in spritecook-assets.json.
+- Five SpriteCook assets were generated: elemental crest, ultimate-impact sprite and three legendary spell sprites. All remain active; Rayquaza/Lugia discs are restricted to the ground beneath each boss. Asset IDs, hashes and paths remain in spritecook-assets.json.

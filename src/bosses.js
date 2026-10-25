@@ -5,7 +5,7 @@ import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
-import { drawRaidSigil, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
+import { drawRaidSigil, drawRaidGroundAura, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
 import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, rainbowBurst, debris, dustCloud, electricBurst, waterSplash, rand } from './effects.js';
@@ -192,7 +192,7 @@ export class BossEncounter {
     }
     this.vulnerable = Math.max(0, this.vulnerable - dt);
     const anchored = this.intro <= 0 && !this.dash && (this.ult || this.ultRelease || this.time < this.castUntil || this.transition > 0);
-    const anchor = anchored && { x: b.x, y: b.y, dir: b.dir };
+    const anchor = anchored && { x: b.x, y: b.y, z: b.z, flyT: b.flyT, dir: b.dir };
     b.vx = b.vy = 0;
     this.bossUpdate(dt, this.games[0]);
     if (anchor) Object.assign(b, anchor, { moving: false });
@@ -243,12 +243,12 @@ export class BossEncounter {
     }
     this.resolve(active);
     if (this.ult && this.transition <= 0 && (this.ult.t -= dt) <= 0) this.fireUlt(active);
-    if (this.ult || this.transition > 0 || this.vulnerable > 0 || (this.next -= dt) > 0) return;
+    if (this.ult || this.transition > 0 || this.vulnerable > 0 || (this.next -= dt) > 0 || this.dash || this.time < this.castUntil) return;
     this.launch(active);
   }
 
   startUlt() {
-    if (this.ult || this.ultRelease) return;
+    if (this.ult || this.ultRelease || this.dash) return;
     const t = Math.max(4, ULT.channel * this.diff.tele), barrier = Math.round(this.boss.maxHp * ULT.barrier);
     this.ult = { t, d: t, shield: barrier, max: barrier };
     this.ultN++;
@@ -586,7 +586,7 @@ export class BossPresenter {
       }
       if ((h.k === 'meteor' || (h.k === 'cataclysm' && data.id === 'rayquaza')) && left < 0.85 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
-        if (h.s === 'circle') g.spawn(new Falling(h.x, h.y, Math.max(0.15, left), 'draco', () => {}, def.rgb));
+        if (h.s === 'circle') g.spawn(new Falling(h.x, h.y, Math.max(0.15, left), data.id === 'rayquaza' ? 'raid-meteor' : 'draco', () => {}, def.rgb));
       }
       if (h.k === 'tidal' && left < 0.55 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
@@ -705,7 +705,7 @@ export class BossPresenter {
         g.shake(3, 0.2);
         break;
       case 'tidal':
-        for (const x of [70, 180, 290]) g.marks.wet(x, h.y, h.r * 0.7);
+        for (const x of [70, 180, 290]) { g.marks.wet(x, h.y, h.r * 0.7); waterSplash(g, x, h.y); }
         sfx.splash();
         g.shake(3, 0.25);
         break;
@@ -793,7 +793,7 @@ export class BossPresenter {
 export function drawBossGround(ctx, view, boss) {
   if (!view || !BOSSES[view.id]) return;
   const def = BOSSES[view.id];
-  if (view.id === 'mewtwo' && boss && !boss.hidden && boss.alive) {
+  if (boss && !boss.hidden && boss.alive) {
     const pulse = 0.5 + 0.5 * Math.sin(view.tm * 4), rgb = view.vu > 0 ? [255, 220, 80] : view.st >= 4 ? [255, 90, 60] : def.rgb;
     const r = boss.radius * (2 + pulse * 0.3), grad = ctx.createRadialGradient(boss.x, boss.y, 2, boss.x, boss.y, r);
     grad.addColorStop(0, 'rgba(8,4,18,0.9)');
@@ -804,7 +804,7 @@ export function drawBossGround(ctx, view, boss) {
     ctx.beginPath();
     ctx.ellipse(boss.x, boss.y, r, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
-    drawRaidSigil(ctx, view.id, boss.x, boss.y, r * 2.4, view.tm, view.ul ? .8 : .4, .45);
+    drawRaidGroundAura(ctx, view.id, boss.x, boss.y, r * 2.4, view.tm, view.ul ? .8 : .4, .45);
   }
   for (const h of view.hz ?? []) {
     const left = h.at - view.tm;

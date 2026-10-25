@@ -139,15 +139,18 @@ test('legendary casts anchor position and facing; movement attacks still dash af
  for (const id of ['rayquaza', 'mewtwo', 'lugia']) {
   const g = battle(), b = new BossEncounter([g], id);
   b.intro = 0; b.boss.invuln = false; b.boss.x = 180; b.boss.y = 205;
-  b.home = { x: 70, y: 390 }; b.launch([g]);
+  b.boss.z = 28; b.home = { x: 70, y: 390 }; b.launch([g]);
+  const altitude = b.boss.z;
   const cast = [b.boss.x, b.boss.y, b.boss.dir];
   for (let i = 0; i < 60; i++) { g.player.x = i % 2 ? 20 : 340; b.boss.vx = 100; b.tick(1 / 60); }
   assert.deepEqual([b.boss.x, b.boss.y, b.boss.dir], cast, `${id} holds its casting pose`);
+  assert.equal(b.boss.z, altitude, `${id} does not bob during its cast`);
   g.player.x = b.boss.x; g.player.y = b.boss.y + 1; g.separate();
   assert.deepEqual([b.boss.x, b.boss.y], cast.slice(0, 2), 'body contact cannot push a casting boss');
   b.hazards = []; b.startUlt();
   for (let i = 0; i < 30; i++) b.tick(1 / 60);
   assert.deepEqual([b.boss.x, b.boss.y, b.boss.dir], cast, `${id} channels in place`);
+  assert.equal(b.boss.z, altitude, `${id} channels at a fixed altitude`);
   b.ult.t = 0; b.tick(1 / 60);
   for (let i = 0; i < 50; i++) b.tick(1 / 60);
   assert.deepEqual([b.boss.x, b.boss.y, b.boss.dir], cast, `${id} does not roam underneath its ultimate`);
@@ -156,6 +159,20 @@ test('legendary casts anchor position and facing; movement attacks still dash af
  b.sequence = 1; b.launch([g]); const start = [b.boss.x, b.boss.y];
  for (let i = 0; i < 100; i++) b.tick(1 / 60);
  assert.notDeepEqual([b.boss.x, b.boss.y], start, 'Dragon Dive still travels');
+});
+
+test('long meteor volleys finish before the next attack; a dash cannot start an ultimate', () => {
+ const g = battle(), b = new BossEncounter([g], 'rayquaza', { difficulty: 'legendary' });
+ b.intro = 0; b.boss.invuln = false; b.boss.y = b.home.y; b.launch([g]);
+ const group = b.group, until = b.castUntil;
+ b.next = 0; // A ready attack must still wait for the current volley and its recovery.
+ while (b.time < until - .02) b.tick(1 / 60);
+ assert.equal(b.group, group); assert.equal(b.ult, null);
+ b.dash = { x0: b.boss.x, y0: b.boss.y, x1: 180, y1: 420, t: 0, dur: .32 };
+ b.startUlt(); assert.equal(b.ult, null);
+ const mon = b.boss; mon.remote = true; mon.animHold = 1; mon.z = 28;
+ mon.updateFlight(.1); assert.equal(mon.z, 28, 'online held poses do not bob either');
+ mon.zOverride = 180; mon.updateFlight(.1); assert.equal(mon.z, 180, 'explicit ascent still owns altitude');
 });
 
 import { bossMouth, LegendaryBeam } from '../src/raid-art.js';

@@ -77,7 +77,8 @@ proof of artistic quality, internet reliability, or universal device performance
   Mega effects do not stop the shared clock. All roster ultimate actions are runtime-audited; existing
   identity-specific choreography is preserved, with a SpriteCook impact sprite integrated into hits.
   Mewtwo retains its SpriteCook psychic effects. Rayquaza and Lugia use natural wind/spray with
-  mouth-attached beams; their ornamental vortex sprites were removed from rendering after review.
+  mouth-attached beams. Their SpriteCook discs appear only beneath each boss; casts hold position,
+  altitude and facing while released movement attacks retain their choreography.
   A second consecutive raid now resets presenter state, with first/second-run coverage for all bosses.
 - Boss defeat variations, finishing hit emphasis, a brief skippable final-hit visual capture,
   varied/equippable victory poses, survivor/stat/XP

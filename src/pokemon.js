@@ -216,6 +216,8 @@ export class Pokemon {
       this.z = this.zOverride;
       return;
     }
+    // A legendary's held cast pose also holds its altitude on online clients.
+    if (this.boss && this.animHold > 0) return;
     const fly = this.species.fly;
     if (!fly) {
       this.z = 0;

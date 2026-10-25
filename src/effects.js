@@ -913,7 +913,7 @@ export class Spike extends Effect {
 export class Falling extends Effect {
   constructor(x, y, dur, style, onLand, rgb = [255, 255, 255]) {
     super('air', dur);
-    Object.assign(this, { x, y, style, onLand, rgb, h: 280, dx: style === 'draco' || style === 'orb' ? -70 : 0 });
+    Object.assign(this, { x, y, style, onLand, rgb, h: 280, dx: ['draco', 'orb', 'raid-meteor'].includes(style) ? -70 : 0 });
   }
 
   update(dt) {
@@ -959,23 +959,35 @@ export class Falling extends Effect {
         ctx.closePath();
         ctx.fill();
       }
-    } else if (this.style === 'draco') {
-      const g = ctx.createLinearGradient(x, y, x - this.dx * 0.5, y - 60);
+    } else if (this.style === 'draco' || this.style === 'raid-meteor') {
+      const large = this.style === 'raid-meteor', radius = large ? 20 : 12, tail = large ? 110 : 60;
+      const g = ctx.createLinearGradient(x, y, x - this.dx * 0.5, y - tail);
       g.addColorStop(0, 'rgba(255,200,120,0.9)');
       g.addColorStop(1, 'rgba(160,80,255,0)');
       ctx.strokeStyle = g;
-      ctx.lineWidth = 8;
+      ctx.lineWidth = large ? 17 : 8;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x - this.dx * 0.5, y - 60);
+      ctx.lineTo(x - this.dx * 0.5, y - tail);
       ctx.stroke();
-      const r = ctx.createRadialGradient(x, y, 0, x, y, 12);
+      if (large) {
+        ctx.strokeStyle = '#fff2be'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - this.dx * .22, y - 40); ctx.stroke();
+        ctx.fillStyle = '#56353f'; ctx.beginPath();
+        for (let i = 0; i < 7; i++) {
+          const a = i * Math.PI * 2 / 7 + this.age * 4, rr = i % 2 ? 8 : 11;
+          if (i) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          else ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        ctx.closePath(); ctx.fill();
+      }
+      const r = ctx.createRadialGradient(x, y, 0, x, y, radius);
       r.addColorStop(0, '#fff4d0');
       r.addColorStop(0.5, 'rgba(255,140,60,0.9)');
       r.addColorStop(1, 'rgba(160,60,255,0)');
       ctx.fillStyle = r;
-      ctx.fillRect(x - 12, y - 12, 24, 24);
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
     } else {
       ctx.fillStyle = '#7a7266';
       ctx.beginPath();

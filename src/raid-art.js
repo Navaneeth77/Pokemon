@@ -3,7 +3,7 @@ import { quality } from './quality.js';
 
 const images = new Map(), pending = new Map();
 export function preloadRaidArt(id) {
-  if (id !== 'mewtwo') return Promise.resolve();
+  if (!['rayquaza', 'mewtwo', 'lugia'].includes(id)) return Promise.resolve();
   if (!pending.has(id)) pending.set(id, loadImage(`/art/raid-${id}.png`).then(image => images.set(id, image)).catch(() => { pending.delete(id); }));
   return pending.get(id);
 }
@@ -18,6 +18,11 @@ export function bossMouth(boss, toward) {
 
 export function drawRaidSigil(ctx, id, x, y, size, time, alpha = 1, tilt = 1) {
   if (id !== 'mewtwo') return;
+  drawRaidGroundAura(ctx, id, x, y, size, time, alpha, tilt);
+}
+
+// Species discs belong on the floor. Only Mewtwo also uses its sigil in the air.
+export function drawRaidGroundAura(ctx, id, x, y, size, time, alpha = 1, tilt = .45) {
   const image = images.get(id);
   if (!image) return;
   ctx.save();
@@ -31,14 +36,18 @@ export function drawRaidSigil(ctx, id, x, y, size, time, alpha = 1, tilt = 1) {
 export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, alpha = 1) {
   const ray = boss.boss === 'rayquaza', point = focused ? bossMouth(boss) : { x: boss.x, y: boss.y - boss.bodyZ };
   ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 1;
-  const count = quality().particles > 500 ? 6 : 3;
+  const count = quality().particles > 500 ? 8 : 4;
   for (let i = 0; i < count; i++) {
     const t = (age * 1.6 + i / count) % 1, side = i % 2 ? 1 : -1;
-    const x = point.x + side * (8 + (1 - t) * boss.radius), y = point.y + 24 - t * 52;
-    ctx.globalAlpha = alpha * (.12 + .25 * power) * Math.sin(t * Math.PI);
+    const x = point.x + side * (8 + (1 - t) * boss.radius * 1.4), y = point.y + 34 - t * 76;
+    ctx.globalAlpha = alpha * (.15 + .4 * power) * Math.sin(t * Math.PI);
     ctx.strokeStyle = ray ? '#c6d5d0' : '#c3e8f4';
     ctx.beginPath(); ctx.moveTo(x + side * 9, y + 14);
-    ctx.quadraticCurveTo(x - side * 7, y + 4, x - side * 11, y - 12); ctx.stroke();
+    ctx.quadraticCurveTo(x - side * 7, y + 4, x - side * 11, y - 22); ctx.stroke();
+    if (!ray) {
+      ctx.fillStyle = '#d3efff';
+      ctx.fillRect(x - side * 11, y - 24, 1.5, 3 + power * 3);
+    }
   }
   if (focused) {
     const r = 5 + 9 * power, glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, r);
@@ -74,6 +83,19 @@ export class LegendaryBeam {
       ctx.closePath(); ctx.fill();
     }
     ctx.globalAlpha = fade;
+    if (this.boss.boss !== 'mewtwo') {
+      // Broken pressure trails follow the beam, rather than portal hoops at its mouth.
+      ctx.strokeStyle = core; ctx.lineWidth = 1;
+      const count = quality().particles > 500 ? 7 : 3;
+      for (let i = 0; i < count; i++) {
+        const t = (this.age * 2.4 + i / count) % 1, end = Math.min(1, t + .12);
+        const offset = (i % 2 ? 1 : -1) * width * (.6 + .1 * Math.sin(this.age * 25 + i));
+        ctx.globalAlpha = fade * Math.sin(t * Math.PI) * .75;
+        ctx.beginPath(); ctx.moveTo(origin.x + dx * t + nx * offset, origin.y + dy * t + ny * offset);
+        ctx.lineTo(origin.x + dx * end + nx * offset * 1.1, origin.y + dy * end + ny * offset * 1.1); ctx.stroke();
+      }
+      ctx.globalAlpha = fade;
+    }
     if (this.boss.boss === 'mewtwo' && quality().particles > 500) {
       ctx.strokeStyle = this.color; ctx.lineWidth = 1.5;
       for (let i = 0; i < 4; i++) {

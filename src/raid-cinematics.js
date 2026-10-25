@@ -12,6 +12,7 @@ export function bossUltimateVisual(game, boss) {
     return copy;
   };
   const user = clone(boss), target = clone(game.player);
+  if (boss.boss === 'lugia') user.zOverride = user.z;
   user.foe = target; target.foe = user;
   const stage = Object.create(game);
   stage.state = 'presentation'; // applyHit rejects non-combat stages

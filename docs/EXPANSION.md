@@ -23,9 +23,10 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 - Reusable summaries cover ordinary, friend-room, draft and raid matches. Results show survivors,
   damage, moves, reactions, transforms and earned XP. Bounded event replay has play/pause/scrubbing;
   it does not claim deterministic simulation playback or award progression.
-- SpriteCook crest, impact and Mewtwo's psychic sigil remain in use. Rayquaza/Lugia's generated
-  vortex sprites are retained in the manifest but no longer loaded or drawn: natural wind, spray and
-  impacts replace the ornamental discs. No further generation credits were spent on this revision.
+- SpriteCook crest, impact and all three legendary sprites remain in use. Rayquaza/Lugia each have
+  one ground disc; their air effects use natural wind, spray, longer meteor trails and beam pressure
+  streaks. Casts hold position, facing and altitude until release; the next attack waits for recovery.
+  Intentional Dragon Dive/Ascent movement remains. No further generation credits were spent.
 - Re-entering a raid clears the prior BossPresenter and cancels its detached ultimate; reused hazard
   IDs and ultimate counters now trigger the entrance, charge and attack animations again.
   Rayquaza/Lugia's move-name overlay leaves their faces visible; Mewtwo's presentation is unchanged.

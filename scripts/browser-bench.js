@@ -71,7 +71,7 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
  const step=frames=>{for(let i=0;i<frames;i++)game.update(1/60);};
  restart();
  document.querySelector('aside p').textContent='Actual raid renderer. Starts paused. Restart checks the same game instance twice.';
- button.textContent='CAST ULTIMATE';button.onclick=()=>{if(raid.ultRelease)return;raid.startUlt();raid.ult.t=.8;};
+ button.textContent='CAST ULTIMATE';button.onclick=()=>{if(raid.ultRelease)return;raid.startUlt();if(raid.ult)raid.ult.t=.8;};
  const opening=preview==='rayquaza'?'CAST METEORS':preview==='lugia'?'CAST TIDAL':'CAST ORBS';
  const followup=preview==='rayquaza'?'CAST DASH':preview==='lugia'?'CAST STORM':'CAST SLAM';
  for(const [label,run] of [['CAST BEAM',()=>cast(2,2)],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['RESTART RAID',restart],['HALF HP',()=>{raid.boss.hp=raid.boss.maxHp*.5;}],['FINAL HIT',()=>{raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.5s',()=>step(30)],['STEP 0.1s',()=>step(6)]]){
