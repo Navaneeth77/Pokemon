@@ -31,11 +31,20 @@ export class EconomyStore {
       return;
     }
     try {
-      let lines = 0;
-      for (const line of text.split('\n')) {
-        if (!line.trim()) continue;
-        lines++;
-        const row = JSON.parse(line);
+      // A file that doesn't end in a newline is either the first version's single-object save or a
+      // write cut short by a crash: a damaged last line after good ones is dropped, and the file is
+      // rewritten cleanly so later appends start on a fresh line.
+      const rows = text.split('\n').filter(l => l.trim()), torn = !text.endsWith('\n');
+      let good = 0;
+      for (let i = 0; i < rows.length; i++) {
+        let row;
+        try {
+          row = JSON.parse(rows[i]);
+        } catch (e) {
+          if (torn && i === rows.length - 1 && good) break;
+          throw e;
+        }
+        good++;
         if (row.players) {
           // The first version stored everyone in one object.
           if (row.version !== 1) throw Error('Unsupported economy save');
@@ -43,7 +52,7 @@ export class EconomyStore {
         } else if (PID.test(row.pid ?? '') && row.credential && row.wallet) this.data.players[row.pid] = { credential: row.credential, wallet: row.wallet };
         else if (row.version !== 1) throw Error('Unsupported economy save');
       }
-      if (lines > 100 + 3 * Object.keys(this.data.players).length) this.compact();
+      if (torn || rows.length > 100 + 3 * Object.keys(this.data.players).length) this.compact();
     } catch {
       this.data = { version: 1, players: {} };
       this.error = 'Economy storage could not be loaded. Existing data was preserved.';
