@@ -45,7 +45,7 @@ function frame(now){
  if(n%45===10)game.playerRelease(n/45%4|0);
  if(['ultimates','soak'].includes(current.name)&&n%240===0){game.player.cancelAction();game.player.charging=null;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}
  if(['reactions','soak'].includes(current.name)&&n%45===0){for(const type of ['water','electric','fire','ice'])applyHit(game,game.player,game.opponent,{id:`bench-${type}`,name:type,type,power:2,cat:'special',cooldown:1},{critChance:0});}
- if(current.name.startsWith('raid')||current.name==='soak'){game.raid.boss.hp=game.raid.boss.maxHp*.2;if(n%240===120){game.raid.startUlt();game.raid.ult.t=.5;}}
+ if(current.name.startsWith('raid')||current.name==='soak'){game.raid.boss.hp=game.raid.boss.maxHp*.2;if(n%240===120){game.raid.startUlt();if(game.raid.ult)game.raid.ult.t=.5;}}
  const a=performance.now();game.update(Math.min(.05,Math.max(0,elapsed/1000)));const b=performance.now();game.render();const c=performance.now();
  if(n>20){current.frames.push(elapsed);current.updates.push(b-a);current.renders.push(c-b);if(inputAt)current.inputs.push(c-inputAt);}
  current.maxEffects=Math.max(current.maxEffects,game.effects.length);current.maxParticles=Math.max(current.maxParticles,game.particles.list.length);
@@ -59,12 +59,22 @@ function frame(now){
 }
 button.disabled=false;button.textContent='RUN ALL SCENARIOS';button.onclick=()=>{if(current||!scenarios.length)return;results.length=0;button.disabled=true;current=setup(scenarios.shift());last=performance.now();};
 if(['rayquaza','mewtwo','lugia'].includes(preview)){
- current=setup(['raid-preview',3,'high']);game.opponentSelection=[preview];game.start();game.showcase=null;game.state='fighting';game.practice=true;game.timers=[];
- for(const m of [game.player,game.opponent]){m.hidden=false;m.appear=0;}game.gold.hidden=true;
- const raid=new BossEncounter([game],preview);raid.intro=0;raid.boss.x=180;raid.boss.y=raid.home.y;raid.next=999;
- document.querySelector('h1').textContent='Legendary VFX preview';document.querySelector('aside p').textContent='Actual raid renderer. Attacks are triggered here for visual review.';
+ current=setup(['3v3',3,'high']);previewPaused=true;
+ let raid,round=0;
+ function restart(){
+  game.opponentSelection=[preview];game.start();game.showcase=null;game.state='fighting';game.practice=true;game.timers=[];
+  for(const m of [game.player,game.opponent]){m.hidden=false;m.appear=0;}game.gold.hidden=true;
+  raid=new BossEncounter([game],preview);raid.intro=0;raid.boss.x=180;raid.boss.y=raid.home.y;raid.next=999;
+  document.querySelector('h1').textContent=`Legendary VFX · raid ${++round}`;
+ }
+ function cast(stage,sequence){raid.ult=null;raid.ultRelease=null;raid.transition=0;raid.vulnerable=0;raid.hazards=[];raid.stage=stage;raid.sequence=sequence;raid.launch([game]);raid.next=999;}
+ const step=frames=>{for(let i=0;i<frames;i++)game.update(1/60);};
+ restart();
+ document.querySelector('aside p').textContent='Actual raid renderer. Starts paused. Restart checks the same game instance twice.';
  button.textContent='CAST ULTIMATE';button.onclick=()=>{if(raid.ultRelease)return;raid.startUlt();raid.ult.t=.8;};
- for(const [label,run] of [['CAST BEAM',()=>{raid.ult=null;raid.ultRelease=null;raid.stage=2;raid.sequence=2;raid.launch([game]);raid.next=999;}],['HALF HP',()=>{raid.boss.hp=raid.boss.maxHp*.5;}],['FINAL HIT',()=>{raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.1s',()=>{for(let i=0;i<6;i++)game.update(1/60);}]]){
+ const opening=preview==='rayquaza'?'CAST METEORS':preview==='lugia'?'CAST TIDAL':'CAST ORBS';
+ const followup=preview==='rayquaza'?'CAST DASH':preview==='lugia'?'CAST STORM':'CAST SLAM';
+ for(const [label,run] of [['CAST BEAM',()=>cast(2,2)],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['RESTART RAID',restart],['HALF HP',()=>{raid.boss.hp=raid.boss.maxHp*.5;}],['FINAL HIT',()=>{raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.5s',()=>step(30)],['STEP 0.1s',()=>step(6)]]){
   const b=document.createElement('button');b.textContent=label;b.onclick=run;button.after(b);
  }
 }

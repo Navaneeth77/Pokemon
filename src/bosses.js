@@ -5,10 +5,10 @@ import { applyHit } from './combat.js';
 import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
-import { drawRaidSigil, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
+import { drawRaidSigil, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
-import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, rainbowBurst, debris, dustCloud, electricBurst, rand } from './effects.js';
+import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, rainbowBurst, debris, dustCloud, electricBurst, waterSplash, rand } from './effects.js';
 
 // Legendary raids. BossEncounter is the authority (in the browser for solo raids, on the match server
 // for co-op): it moves the boss, picks attacks, and decides which hazards hit whom. Screens only draw
@@ -464,8 +464,8 @@ const animFor = (def, kind, fx) => def.anims?.[kind]?.[fx] ?? def.anims?.[kind]?
 
 // The boss gathering power: a swelling glow at its head with spikes of light. Follows the boss.
 class BossCharge {
-  constructor(boss, life, rgb) {
-    Object.assign(this, { layer: 'air', boss, life, rgb, age: 0 });
+  constructor(boss, life, rgb, kind) {
+    Object.assign(this, { layer: 'air', boss, life, rgb, kind, age: 0 });
   }
 
   update(dt) {
@@ -475,6 +475,10 @@ class BossCharge {
 
   draw(ctx) {
     const b = this.boss, k = Math.min(1, (this.age / this.life) * 1.15), [R, G, B] = this.rgb;
+    if (b.boss === 'rayquaza' || b.boss === 'lugia') {
+      drawNaturalCharge(ctx, b, this.age, k, this.kind === 'beam' || this.kind === 'ultimate');
+      return;
+    }
     const { x, y } = bossMouth(b), r = b.radius * (0.5 + 0.9 * k) * (1 + 0.08 * Math.sin(this.age * 30));
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, `rgba(10,5,20,${0.95 * k})`);
@@ -586,7 +590,7 @@ export class BossPresenter {
       }
       if (h.k === 'tidal' && left < 0.55 && !this.falling.has(h.id)) {
         this.falling.add(h.id);
-        g.spawn(new TidalWave(h.y - h.r - 120, h.y + h.r + 30, Math.max(0.2, left + 0.25), [70, 150, 235]));
+        g.spawn(new TidalWave(h.y - h.r - 120, h.y + h.r + 30, Math.max(0.2, left + 0.25), [70, 150, 235], true));
       }
       if (left <= 0 && !this.landed.has(h.id)) {
         this.landed.add(h.id);
@@ -611,7 +615,7 @@ export class BossPresenter {
     const fx = fxOf(h), rgb = typeRgb(h.t, def.rgb), g = this.game;
     this.play(boss, animFor(def, 'wind', fx), left, true);
     if (this.chargeFx) this.chargeFx.life = 0;
-    this.chargeFx = new BossCharge(boss, left, rgb);
+    this.chargeFx = new BossCharge(boss, left, rgb, fx);
     g.spawn(this.chargeFx);
     this.charge = { until: now + left * 1000, rgb };
     if (fx === 'meteor' || fx === 'cataclysm') {
@@ -645,7 +649,8 @@ export class BossPresenter {
 
   impact(h, def, boss) {
     const g = this.game, rgb = typeRgb(h.t, def.rgb), color = `rgb(${rgb.join(',')})`;
-    if (h.s === 'circle' || h.s === 'line' || h.s === 'cross') g.spawn(new RaidBurst(boss.boss, h.x2 ?? h.x, h.y2 ?? h.y, Math.min(170, h.r * 2 + 30)));
+    if (boss.boss === 'mewtwo' && (h.s === 'circle' || h.s === 'line' || h.s === 'cross')) g.spawn(new RaidBurst(boss.boss, h.x2 ?? h.x, h.y2 ?? h.y, Math.min(170, h.r * 2 + 30)));
+    if (boss.boss === 'lugia' && fxOf(h) === 'beam') waterSplash(g, h.x2 ?? h.x, h.y2 ?? h.y);
     switch (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx) {
       case 'quake':
         this.breakGround(h.x, h.y, rgb, h.r > 100 ? 4 : 2, h.r);
@@ -776,7 +781,7 @@ export class BossPresenter {
         g.particles.spawn({ x: hx + Math.cos(a) * d, y: hy + Math.sin(a) * d * 0.5, z: hz + rand(-10, 10), vx: (-Math.cos(a) * d) / life, vy: (-Math.sin(a) * d * 0.5) / life, life, size: 2.5, sizeEnd: 1, fade: false, colors: ['#ffffff', `rgb(${this.charge.rgb.join(',')})`] });
       }
     }
-    if ((this.pulseT -= dt) <= 0) {
+    if (boss.boss === 'mewtwo' && (this.pulseT -= dt) <= 0) {
       this.pulseT = data.st >= 4 ? 0.7 : 1.2;
       g.spawn(new Ring(boss.x, boss.y, { r0: boss.radius * 0.6, r1: boss.radius * 2.2, life: 0.8, color: colors.at(-1), width: 2 }));
     }
@@ -788,7 +793,7 @@ export class BossPresenter {
 export function drawBossGround(ctx, view, boss) {
   if (!view || !BOSSES[view.id]) return;
   const def = BOSSES[view.id];
-  if (boss && !boss.hidden && boss.alive) {
+  if (view.id === 'mewtwo' && boss && !boss.hidden && boss.alive) {
     const pulse = 0.5 + 0.5 * Math.sin(view.tm * 4), rgb = view.vu > 0 ? [255, 220, 80] : view.st >= 4 ? [255, 90, 60] : def.rgb;
     const r = boss.radius * (2 + pulse * 0.3), grad = ctx.createRadialGradient(boss.x, boss.y, 2, boss.x, boss.y, r);
     grad.addColorStop(0, 'rgba(8,4,18,0.9)');

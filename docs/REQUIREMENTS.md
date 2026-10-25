@@ -76,8 +76,9 @@ proof of artistic quality, internet reliability, or universal device performance
 - Existing skippable trainer/team VS intro now names the arena. Online player ultimate intros and
   Mega effects do not stop the shared clock. All roster ultimate actions are runtime-audited; existing
   identity-specific choreography is preserved, with a SpriteCook impact sprite integrated into hits.
-  Three additional SpriteCook spell sprites provide distinct boss cast/muzzle/impact effects; a dark
-  aura, stationary casts and mouth-attached tapered beams were checked in the real renderer.
+  Mewtwo retains its SpriteCook psychic effects. Rayquaza and Lugia use natural wind/spray with
+  mouth-attached beams; their ornamental vortex sprites were removed from rendering after review.
+  A second consecutive raid now resets presenter state, with first/second-run coverage for all bosses.
 - Boss defeat variations, finishing hit emphasis, a brief skippable final-hit visual capture,
   varied/equippable victory poses, survivor/stat/XP
   results, rematch paths, health/ultimate/Mega/status/switch/dodge indicators and online ping/jitter cues.

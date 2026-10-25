@@ -2,6 +2,7 @@ import { loadImage } from './assets.js';
 import { quality } from './quality.js';
 import { outlinedText, rainbowRing, megaSymbol } from './draw.js';
 import { blit } from './sprite.js';
+import { drawNaturalCharge } from './raid-art.js';
 
 export const rand = (a, b) => a + Math.random() * (b - a);
 export const FIRE = ['#fffbd0', '#ffe066', '#ffab33', '#ff6a1f', '#d23a17', '#7a3a2a'];
@@ -793,6 +794,10 @@ export class EnergyAura extends Effect {
   draw(ctx) {
     const m = this.mon, t = this.age / this.life;
     const a = Math.min(1, this.age / 0.12) * (t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1);
+    if (m.boss === 'rayquaza' || m.boss === 'lugia') {
+      drawNaturalCharge(ctx, m, this.age, 1, false, a);
+      return;
+    }
     const cx = m.x, cy = m.y - m.bodyZ, r = this.comet ? 42 : 34;
     const [R, G, B] = this.tint?.glow ?? [90, 230, 140];
     const [r1, r2] = this.tint?.rings ?? ['rgba(160,255,200,1)', 'rgba(255,230,120,1)'];
@@ -1049,9 +1054,9 @@ export class Missile extends Effect {
 
 // A wall of water sweeping across the whole arena from y0 to y1.
 export class TidalWave extends Effect {
-  constructor(y0, y1, dur, rgb = [70, 140, 230]) {
+  constructor(y0, y1, dur, rgb = [70, 140, 230], foam = false) {
     super('air', dur);
-    Object.assign(this, { y0, y1, rgb: rgb.join(',') });
+    Object.assign(this, { y0, y1, rgb: rgb.join(','), foam });
   }
 
   get y() {
@@ -1070,11 +1075,25 @@ export class TidalWave extends Effect {
     ctx.lineWidth = 4;
     ctx.beginPath();
     for (let x = 0; x <= 360; x += 8) {
-      const wy = y - dir * (6 + Math.sin(x * 0.08 + this.age * 18) * 4);
+      const chop = this.foam ? Math.sin(x * .21 - this.age * 11) * 2 : 0;
+      const wy = y - dir * (6 + Math.sin(x * 0.08 + this.age * 18) * 4 + chop);
       if (x) ctx.lineTo(x, wy);
       else ctx.moveTo(x, wy);
     }
     ctx.stroke();
+    if (this.foam) {
+      const alpha = ctx.globalAlpha, step = quality().particles > 500 ? 12 : 24;
+      // Broken foam patches and spray, rather than parallel ornamental wave lines.
+      ctx.globalAlpha = alpha * .85; ctx.fillStyle = '#e4f8ff';
+      for (let x = 0; x < 360; x += step) {
+        const wave = Math.sin(x * .16 + this.age * 18), crest = y - dir * (7 + wave * 4);
+        ctx.fillRect(x, crest, 5 + wave * 2, 3);
+        ctx.globalAlpha = alpha * .4;
+        ctx.fillRect(x + 3, crest - dir * (6 + Math.sin(x * .31) * 4), 8 + wave * 3, 2);
+        ctx.globalAlpha = alpha * .85;
+        ctx.fillRect(x + 5, crest - dir * (12 + 9 * Math.sin(x * .3 + this.age * 9)), 2, 3);
+      }
+    }
     ctx.globalAlpha = 1;
   }
 }

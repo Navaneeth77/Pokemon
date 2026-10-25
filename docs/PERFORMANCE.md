@@ -139,3 +139,11 @@ matches, interrupt/rejoin one connection, and observe /health. After genuine hos
 /ready and matchmaking startup. Self-pinging cannot prove an always-on free-host lifecycle. Start with
 the current capacity, lower quality if frame pacing fails, and use hosting with an always-on guarantee
 if sleep delays are unacceptable.
+
+## Follow-up visual correction
+
+The recorded six-scenario visual profile predates removal of the Rayquaza/Lugia vortex decorations.
+The follow-up removes their sprite loads, ground/muzzle discs, beam hoops and generic orbiting auras;
+Lugia's tidal crest adds bounded foam/spray detail. No fresh frame-time numbers are claimed here.
+The full suite passed 38 tests; targeted raid/render checks were rerun after the final visual edits,
+including consecutive raids with reused event IDs. The production build also passes.

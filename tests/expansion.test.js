@@ -180,6 +180,29 @@ test('Lugia aliases use valid cropped charge frames and wing beats', () => {
 import { bossUltimateVisual } from '../src/raid-cinematics.js';
 import { MOVES } from '../src/moves.js';
 import { resultSummary } from '../src/mastery.js';
+test('restarting raids resets entrance, hazard and ultimate presentation for every legendary', () => {
+ const g = battle();
+ for (const id of ['rayquaza', 'mewtwo', 'lugia']) {
+  let previousVisual = null, previousPresenter = null;
+  for (let run = 0; run < 2; run++) {
+   g.opponentSelection = [id]; g.start();
+   assert.equal(g.bossFx, null, 'restart must discard previously played event IDs');
+   if (previousVisual) assert.equal(previousVisual.action.cancelled, true);
+   g.showcase = null; g.state = 'fighting'; g.timers = [];
+   for (const mon of [g.player, g.opponent]) { mon.hidden = false; mon.appear = 0; }
+   const raid = new BossEncounter([g], id); g.update(1 / 60);
+   const fx = g.bossFx;
+   assert.notEqual(fx, previousPresenter); assert.equal(fx.intro, true, `${id} entrance run ${run + 1}`);
+   raid.intro = 0; raid.next = 999; raid.launch([g]); g.update(1 / 60);
+   assert.ok(fx.seen.has(1), 'first attack is presented again with reused hazard ID 1');
+   raid.startUlt(); g.update(1 / 60); assert.ok(fx.chargeFx);
+   raid.ult.t = 0; g.update(1 / 60);
+   assert.equal(fx.ultFired, 1); assert.ok(fx.ultimateVisual, `${id} ultimate run ${run + 1}`);
+   g.render();
+   previousPresenter = fx; previousVisual = fx.ultimateVisual;
+  }
+ }
+});
 test('raid cinematics: player winds up without freezing the raid; legendary visuals cannot damage live actors', () => {
  for (const id of ['rayquaza', 'mewtwo', 'lugia']) {
   const g = battle(); g.opponentSelection = [id]; g.start(); g.showcase = null; g.state = 'fighting';

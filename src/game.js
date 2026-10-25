@@ -13,6 +13,7 @@ import { comboRole, soften } from './combat.js';
 import { typeMultiplier } from './data/types.js';
 import { Showcase, Finale } from './cinema.js';
 import { FinalHitReplay } from './final-hit-replay.js';
+import { outlinedText } from './draw.js';
 import { loadSpecies, measureDims } from './assets.js';
 import { WINGS } from './data/wings.js';
 import { addFlapAnim } from './flap.js';
@@ -112,6 +113,8 @@ export class Game {
   recordCombat(kind, actor, target, details) { recordCombat(this, kind, actor, target, details); }
 
   reset() {
+    this.bossFx?.ultimateVisual?.action.cancel();
+    this.bossFx = null;
     if (!this.headless) (this.finishReplay ??= new FinalHitReplay()).clear();
     this.summary = newSummary(this);
     this.time = 0;
@@ -722,6 +725,15 @@ export class Game {
   // Letterbox bars plus a name card in the move's type colour.
   drawUltCard(ctx, c) {
     const T = ULT_CUT, e = c.t < 0.2 ? ease(c.t / 0.2) : c.t > T - 0.2 ? ease(Math.max(0, (T - c.t) / 0.2)) : 1;
+    if (c.compact && (c.mon.boss === 'rayquaza' || c.mon.boss === 'lugia')) {
+      // Channel names already occupy the boss HUD. Keep the release label above the sprite.
+      if (!this.bossFx?.view?.ul) {
+        ctx.save(); ctx.globalAlpha = e;
+        outlinedText(ctx, c.move.name.toUpperCase(), 180, 129, { size: 11, align: 'center', color: '#e4f4ed', lw: 2 });
+        ctx.restore();
+      }
+      return;
+    }
     const bar = (c.compact ? 12 : 58) * e, [c1, c2] = this.ultColors(c);
     const seed = c.move.name.split('').reduce((n,ch)=>n+ch.charCodeAt(0),0);
     ctx.save();ctx.strokeStyle=c1;ctx.globalAlpha=.32*e;ctx.lineWidth=2;

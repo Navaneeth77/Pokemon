@@ -3,7 +3,7 @@ import { quality } from './quality.js';
 
 const images = new Map(), pending = new Map();
 export function preloadRaidArt(id) {
-  if (!['rayquaza', 'mewtwo', 'lugia'].includes(id)) return Promise.resolve();
+  if (id !== 'mewtwo') return Promise.resolve();
   if (!pending.has(id)) pending.set(id, loadImage(`/art/raid-${id}.png`).then(image => images.set(id, image)).catch(() => { pending.delete(id); }));
   return pending.get(id);
 }
@@ -17,12 +17,36 @@ export function bossMouth(boss, toward) {
 }
 
 export function drawRaidSigil(ctx, id, x, y, size, time, alpha = 1, tilt = 1) {
+  if (id !== 'mewtwo') return;
   const image = images.get(id);
   if (!image) return;
   ctx.save();
   ctx.translate(x, y); ctx.scale(1, tilt); ctx.rotate(time * (id === 'mewtwo' ? -.8 : .55));
   ctx.globalAlpha = alpha; ctx.imageSmoothingEnabled = false;
   ctx.drawImage(image, -size / 2, -size / 2, size, size);
+  ctx.restore();
+}
+
+// Open gusts and spray gather around the body without a flat portal sprite.
+export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, alpha = 1) {
+  const ray = boss.boss === 'rayquaza', point = focused ? bossMouth(boss) : { x: boss.x, y: boss.y - boss.bodyZ };
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 1;
+  const count = quality().particles > 500 ? 6 : 3;
+  for (let i = 0; i < count; i++) {
+    const t = (age * 1.6 + i / count) % 1, side = i % 2 ? 1 : -1;
+    const x = point.x + side * (8 + (1 - t) * boss.radius), y = point.y + 24 - t * 52;
+    ctx.globalAlpha = alpha * (.12 + .25 * power) * Math.sin(t * Math.PI);
+    ctx.strokeStyle = ray ? '#c6d5d0' : '#c3e8f4';
+    ctx.beginPath(); ctx.moveTo(x + side * 9, y + 14);
+    ctx.quadraticCurveTo(x - side * 7, y + 4, x - side * 11, y - 12); ctx.stroke();
+  }
+  if (focused) {
+    const r = 5 + 9 * power, glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, r);
+    glow.addColorStop(0, `rgba(230,248,255,${alpha * .7})`);
+    glow.addColorStop(.3, `rgba(${ray ? '120,224,177' : '135,203,240'},${alpha * .32})`);
+    glow.addColorStop(1, 'rgba(160,220,245,0)');
+    ctx.globalAlpha = 1; ctx.fillStyle = glow; ctx.fillRect(point.x-r, point.y-r, r*2, r*2);
+  }
   ctx.restore();
 }
 
@@ -50,7 +74,7 @@ export class LegendaryBeam {
       ctx.closePath(); ctx.fill();
     }
     ctx.globalAlpha = fade;
-    if (quality().particles > 500) {
+    if (this.boss.boss === 'mewtwo' && quality().particles > 500) {
       ctx.strokeStyle = this.color; ctx.lineWidth = 1.5;
       for (let i = 0; i < 4; i++) {
         const t = (p * 2 + i / 4) % 1, cx = origin.x + dx * t, cy = origin.y + dy * t;

@@ -23,12 +23,12 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 - Reusable summaries cover ordinary, friend-room, draft and raid matches. Results show survivors,
   damage, moves, reactions, transforms and earned XP. Bounded event replay has play/pause/scrubbing;
   it does not claim deterministic simulation playback or award progression.
-- Five SpriteCook assets are integrated: the crest, ultimate-impact sprite and three 96×96 signature
-  spell effects. Boss casts use dark auras, mouth-attached tapered beams and distinct impact sprites.
-  Ordinary casts anchor position/facing; Dragon Ascent and Dragon Dive retain their movement.
-  Ultimate damage lands at the signature move's impact rather than ending the fight before its animation.
-  The latest three assets cost 18 SpriteCook credits; the checked balance afterward was 10.
-  Asset IDs, hashes and paths are in spritecook-assets.json.
+- SpriteCook crest, impact and Mewtwo's psychic sigil remain in use. Rayquaza/Lugia's generated
+  vortex sprites are retained in the manifest but no longer loaded or drawn: natural wind, spray and
+  impacts replace the ornamental discs. No further generation credits were spent on this revision.
+- Re-entering a raid clears the prior BossPresenter and cancels its detached ultimate; reused hazard
+  IDs and ultimate counters now trigger the entrance, charge and attack animations again.
+  Rayquaza/Lugia's move-name overlay leaves their faces visible; Mewtwo's presentation is unchanged.
 - Abortable readiness/retries, legacy-health compatibility, welcome gating, feature negotiation,
   bounded co-op rejoin, coalesced wake requests and unchanged protocol 2.
 - Bounded decorative/event/stamp caches; hidden-page/menu render reduction; quality modes preserve
@@ -39,8 +39,8 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 
 ## Verification
 
-The focused/full test history is retained in the task. `npm test` passes all 37 tests; `npm run build` succeeds and `git diff --check` is clean.
-The build retains a large-chunk warning (about 618 KB uncompressed / 201 KB gzip). No lint script is
+The focused/full test history is retained in the task. `npm test` passes all 38 tests; `npm run build` succeeds and `git diff --check` is clean.
+The build retains a large-chunk warning (about 620 KB uncompressed / 202 KB gzip). No lint script is
 defined. Exact measurements are recorded in PERFORMANCE.md. Coverage includes all roster ultimate action completion, raid shield
 break/expiry, half-HP Mega state, skyward Dragon Ascent, immunity/switch/faint/chain behavior, mastery
 migration/rewards, bounded queues, ranked Elo, actual two-client drafts/co-op and reconnect.
