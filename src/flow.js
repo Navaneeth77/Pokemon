@@ -135,8 +135,8 @@ export class Flow {
       ['BOT BATTLES', () => this.showFormat(), 'Easy · Medium · Hard'],
       ['ONLINE BATTLES', () => this.enterQueueSelect(), this.onlineSub()],
       ['FRIEND ROOM', () => this.showOnline('home', '', 'title')],
-      ['LEGENDARY RAIDS', () => this.expansion.raids(), 'Rayquaza · Mewtwo · Lugia'],
-      ['DRAFT BATTLES', () => this.expansion.drafts(), 'Snake · Blind trade · Online'],
+      ['LEGENDARY RAIDS', () => this.expansion.raids(), this.raidSub()],
+      ['DRAFT BATTLES', () => this.expansion.drafts(), this.draftSub()],
       ['DAILY MISSIONS',()=>this.economyUI.open('missions'),'Earn Chaos Coins · Resets at 00:00 UTC'],
       ['CHAOS SHOP',()=>this.economyUI.open('shop'),'Cosmetics · Your signature'],
       ['COLLECTION',()=>this.economyUI.open('collection')],
@@ -154,7 +154,7 @@ export class Flow {
     };
     const groups = [['BATTLE', [0, 1, 2]], ['EXPANSION', [3, 4]], ['TRAINER GUILD', [5, 6, 7]], ['TRAINER & TOOLS', [8, 9, 10, 11, 12]]];
     menu.innerHTML = `<header class="tm-logo" aria-label="${GAME_TITLE.full}"></header>`
-      + `<div class="px-window tm-bar"><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div></div>`
+      + `<div class="px-window tm-bar"><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}<small class="tm-online">${this.onlineTotal()}</small></span></div></div>`
       + `<div class="tm-grid">${groups.map(([name, ids]) => `<section class="px-window tm-sec"><h3 class="tm-group">${name}</h3>${ids.map(row).join('')}</section>`).join('')}</div>`;
     menu.querySelector('.tm-logo').append(this.opening.logoCanvas());
     // The start screen changes its pixel scale with the window; the menu's copy of the logo follows.
@@ -178,16 +178,43 @@ export class Flow {
     this.highlightMenu();
   }
 
+  // How many players are in each online mode right now, from the match server: ranked (3v3 and 6v6),
+  // 'raid' or 'draft'. Shown on the menu only when someone is there.
+  hereNow(kind) {
+    const l = this.mm?.lobby, sum = o => Object.entries(o ?? {}).reduce((n, [k, v]) => n + (k === 'waiting' ? 0 : v), 0);
+    if (!l) return 0;
+    return kind === 'ranked' ? sum(l.modes?.[3]) + sum(l.modes?.[6]) : sum(kind === 'raid' ? l.raids : l.drafts);
+  }
+
   onlineSub() {
+    const n = this.hereNow('ranked');
+    return `Find a random opponent${n ? ` · ● ${n} here now` : ''}`;
+  }
+
+  raidSub() {
+    const n = this.hereNow('raid');
+    return `Rayquaza · Mewtwo · Lugia${n ? ` · ● ${n} here now` : ''}`;
+  }
+
+  draftSub() {
+    const n = this.hereNow('draft');
+    return `Snake · Blind trade · Online${n ? ` · ● ${n} here now` : ''}`;
+  }
+
+  onlineTotal() {
     const n = this.mm?.lobby?.online;
-    return n == null ? 'Find a random opponent' : `Find a random opponent · ● ${n} playing online`;
+    return n ? `● ${n} trainer${n === 1 ? '' : 's'} online` : '';
   }
 
   // New numbers from the match server: the main menu's Online Battles line shows who's online.
   lobbyChanged() {
     if (this.screen !== 'title') return;
-    const sub = document.querySelector('#title-menu .tm-item[data-i="1"] small');
-    if (sub) sub.textContent = this.onlineSub();
+    for (const [i, text] of [[1, this.onlineSub()], [3, this.raidSub()], [4, this.draftSub()]]) {
+      const sub = document.querySelector(`#title-menu .tm-item[data-i="${i}"] small`);
+      if (sub) sub.textContent = text;
+    }
+    const total = document.querySelector('#title-menu .tm-online');
+    if (total) total.textContent = this.onlineTotal();
   }
 
   // The menu is a grid of cards: the card whose centre is nearest in the pressed direction (wrapping

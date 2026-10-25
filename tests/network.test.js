@@ -4,7 +4,7 @@ import { WebSocket } from 'ws';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 const port=18879;
-const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,PORT:String(port),LEADERBOARD_FILE:'/tmp/chaos-arena-test-records.json'},stdio:['ignore','pipe','pipe']});
+const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,PORT:String(port),LEADERBOARD_FILE:'/tmp/chaos-arena-test-records.json',MAX_RAIDS:'4',MAX_MATCHES:'8'},stdio:['ignore','pipe','pipe']});
 let logs='';server.stderr.on('data',b=>logs+=b);
 await once(server.stdout,'data');
 function client(id){const ws=new WebSocket(`ws://127.0.0.1:${port}`),messages=[];ws.on('message',raw=>messages.push(JSON.parse(raw)));return {ws,messages,send:m=>ws.send(JSON.stringify(m)),async wait(t,p=()=>true){for(let i=0;i<400;i++){const k=messages.findIndex(m=>m.t===t&&p(m));if(k>=0)return messages.splice(k,1)[0];await new Promise(r=>setTimeout(r,25));}throw new Error(`Timed out ${t}: ${logs}`);},async hello(extra={}){await once(ws,'open');this.send({t:'hello',v:2,pid:id,name:'Test',...extra});await this.wait('welcome');}}}
@@ -58,6 +58,23 @@ test('blind trade completes three rounds and launches six distinct picks',async(
  for(const c of cs)c.send({t:'draft-confirm',id:states[0].id});
  const ms=await Promise.all(cs.map(c=>c.wait('matched')));for(const m of ms)assert.equal(new Set(m.me.team).size,6);
  }finally{cs.forEach(c=>c.ws.close());}
+});
+test('lobby shows where players are: raids and drafts by queue, and survives a running raid',async()=>{
+ const lobby=async(q={})=>{const r=await fetch(`http://127.0.0.1:${port}/lobby`,{method:'POST',body:JSON.stringify(q)});assert.equal(r.status,200,`lobby failed: ${logs.slice(-400)}`);return r.json();};
+ const [a,b]=await pair('where'),c=client('where-playerc');await c.hello();
+ const raid={t:'raid-queue',boss:'lugia',format:3,lead:0,mega:{},kind:'public',difficulty:'hard'};
+ try{
+  a.send({...raid,team:['charizard','raichu','rayquaza']});await a.wait('raid-waiting');
+  b.send({t:'draft-queue',mode:'snake',format:3});await b.wait('draft-waiting');
+  await lobby({pid:'where-browser-1',fmt:'draft'});
+  let l=await lobby();
+  assert.equal(l.raids.searching,1);assert.equal(l.raids.waiting['lugia:hard:3'],1);
+  assert.equal(l.drafts.searching,1);assert.equal(l.drafts.browsing,1);await lobby({pid:'where-menu-1',fmt:'menu'});assert.equal((await lobby()).menu,1);assert.equal(Object.values(l.drafts.waiting)[0],1);
+  c.send({...raid,team:['blastoise','gengar','garchomp']});await Promise.all([a.wait('matched'),c.wait('matched')]);
+  l=await lobby();assert.equal(l.raids.battling,2);assert.equal(l.raids.searching,0);assert.ok(l.online>=4);
+  const [x,y]=await pair('where-ranked');x.send({t:'queue',format:3,team:['charizard','raichu','lucario']});y.send({t:'queue',format:3,team:['blastoise','gengar','garchomp']});
+  await Promise.all([x.wait('matched'),y.wait('matched')]);l=await lobby();assert.equal(l.modes[3].battling,2,'ordinary matches are counted too');[x,y].forEach(z=>z.ws.close());
+ }finally{[a,b,c].forEach(x=>x.ws.close());}
 });
 test.after(()=>server.kill());
 

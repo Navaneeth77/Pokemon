@@ -179,21 +179,40 @@ async function flushRecords() {
 const standings = () => [...records.entries()].filter(([, r]) => r.w + r.l + r.d > 0).sort(([, a], [, b]) => b.rating - a.rating || b.w - a.w);
 const rankOf = pid => standings().findIndex(([p]) => p === pid) + 1 || null;
 
-// Who is around right now: in a match, searching, or looking at the Online Battles screen (the game
-// checks in every few seconds while it's open), per format. Each player is counted once.
-const lobby = new Map(); // pid → { fmt, at }
+// Who is around right now, and where: in a battle, searching or looking at a screen, for ranked 3v3/6v6,
+// Legendary Raids and Draft Battles (the game checks in every few seconds while a screen is open). Each
+// player is counted once, at the most involved place they are (battling, then drafting/searching, then
+// browsing). Queues waiting for a partner are listed so players can see who they could join.
+const lobby = new Map(); // pid → { fmt: 3 | 6 | 'raid' | 'draft' | 'menu', at }
 const LOBBY_TTL = 12_000;
 function presence() {
   const now = Date.now(), seen = new Map();
-  for (const m of matches.values()) for (const s of ['A', 'B']) seen.set(m.side[s].player.pid, { fmt: m.format, what: 'battling' });
-  for (const f of [3, 6]) for (const e of queues[f]) if (!seen.has(e.player.pid)) seen.set(e.player.pid, { fmt: f, what: 'searching' });
+  const put = (pid, where) => { if (pid && !seen.has(pid)) seen.set(pid, where); };
+  for (const m of matches.values()) {
+    // Co-op raid sessions sit in the same table as ordinary matches but have entries, not sides.
+    // Co-op players who dropped out (still inside their rejoin window) aren't online.
+    if (!m.side) {
+      for (const e of m.entries ?? []) if (e.player.ws) put(e.player.pid, { mode: 'raid', what: 'battling' });
+    } else {
+      for (const s of ['A', 'B']) put(m.side[s].player.pid, { mode: m.draftMode ? 'draft' : m.format, what: 'battling' });
+    }
+  }
+  for (const r of drafts.rooms.values()) for (const p of r.players) put(p.pid, { mode: 'draft', what: 'drafting' });
+  for (const e of drafts.waiting) put(e.p.pid, { mode: 'draft', what: 'searching', key: `${e.mode}:${e.format}:${e.ranked ? 'ranked' : 'casual'}:${e.roster ?? 'regular'}` });
+  for (const e of raids.waiting) put(e.player.pid, { mode: 'raid', what: 'searching', key: e.kind === 'public' ? `${e.boss}:${e.difficulty}:${e.format}` : null });
+  for (const f of [3, 6]) for (const e of queues[f]) put(e.player.pid, { mode: f, what: 'searching' });
   for (const [pid, l] of lobby) {
     if (now - l.at > LOBBY_TTL) lobby.delete(pid);
-    else if (!seen.has(pid)) seen.set(pid, { fmt: l.fmt, what: 'browsing' });
+    else put(pid, { mode: l.fmt, what: 'browsing' });
   }
   const modes = { 3: { browsing: 0, searching: 0, battling: 0 }, 6: { browsing: 0, searching: 0, battling: 0 } };
-  for (const v of seen.values()) modes[v.fmt][v.what]++;
-  return { online: seen.size, modes };
+  const raid = { browsing: 0, searching: 0, battling: 0, waiting: {} }, draft = { browsing: 0, searching: 0, drafting: 0, battling: 0, waiting: {} }, menu = { browsing: 0 };
+  for (const v of seen.values()) {
+    const box = v.mode === 'raid' ? raid : v.mode === 'draft' ? draft : v.mode === 'menu' ? menu : modes[v.mode];
+    box[v.what]++;
+    if (v.key) box.waiting[v.key] = (box.waiting[v.key] ?? 0) + 1;
+  }
+  return { online: seen.size, modes, raids: raid, drafts: draft, menu: menu.browsing };
 }
 
 function send(ws, msg) {
@@ -712,7 +731,7 @@ setInterval(() => {
 // The game's Online Battles screen: who's online per format, the top 10, and the asking player's rank.
 // Players are identified by their anonymous id in the request body (never in the URL); ids are never sent out.
 function lobbyInfo(pid, fmt) {
-  if (pid && PID_RE.test(pid) && (fmt === 3 || fmt === 6)) lobby.set(pid, { fmt, at: Date.now() });
+  if (pid && PID_RE.test(pid) && [3, 6, 'raid', 'draft', 'menu'].includes(fmt)) lobby.set(pid, { fmt, at: Date.now() });
   const table = standings(), mine = pid ? table.findIndex(([p]) => p === pid) : -1;
   return {
     ...presence(),
@@ -754,7 +773,7 @@ const server = http.createServer((req, res) => {
       let q = {};
       try { q = JSON.parse(body || '{}'); } catch { /* ignore */ }
       try {
-        const info = lobbyInfo(typeof q.pid === 'string' ? q.pid : null, q.fmt === 6 ? 6 : q.fmt === 3 ? 3 : null);
+        const info = lobbyInfo(typeof q.pid === 'string' ? q.pid : null, [3, 6, 'raid', 'draft', 'menu'].includes(q.fmt) ? q.fmt : null);
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify(info));
       } catch (err) {

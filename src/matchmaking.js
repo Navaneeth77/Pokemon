@@ -97,17 +97,21 @@ export class Matchmaker {
   // While the main menu or the Online Battles screen is open, the game checks in with the match server
   // every few seconds (on the Online Battles screen it also counts you as online, in your format).
   async pollLobby(force = false) {
-    const f = this.flow, onQueue = !!f.ui.queue && this.game.state === 'select';
+    const f = this.flow, onQueue = !!f.ui.queue && this.game.state === 'select', where = f.expansion?.where ?? null;
     if (!this.url || document.hidden || this.lobbyBusy) return;
-    if (!force && !onQueue && f.screen !== 'title' && !this.busy && !this.lbOpen) return;
+    if (!force && !onQueue && !where && f.screen !== 'title' && !this.busy && !this.lbOpen) return;
     this.lobbyBusy = true;
     try {
       const here = onQueue || this.busy;
-      const body = JSON.stringify(here ? { pid: this.pid, fmt: this.spec?.format && this.busy ? this.spec.format : f.ui.format } : { pid: this.pid });
+      // On the Raids or Drafts screen the player counts as browsing there ('raid' / 'draft').
+      // Anyone with the main menu open counts as online too (shown in the total only).
+      const fmt = where ?? (here ? (this.spec?.format && this.busy ? this.spec.format : f.ui.format) : f.screen === 'title' ? 'menu' : null);
+      const body = JSON.stringify(fmt != null ? { pid: this.pid, fmt } : { pid: this.pid });
       const res = await fetch(`${this.httpUrl}/lobby`, { method: 'POST', body, headers: { 'content-type': 'text/plain' }, cache: 'no-store', signal: AbortSignal.timeout(8000) });
       this.lobby = await res.json();
       f.lobbyChanged?.();
       f.ui.lobbyChanged?.();
+      f.expansion?.lobbyChanged?.();
       if (this.state === 'searching') this.renderLive();
       if (this.lbOpen) this.renderLeaderboard();
     } catch {

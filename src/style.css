@@ -1584,3 +1584,7 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 .tm-bar .tm-who .chaos-wallet-chip { color: #283058; background: #fff3b0; border: 3px solid #283058; box-shadow: inset 0 0 0 2px #e8c24a, 0 3px 0 rgba(0, 0, 0, 0.35); }
 .tm-bar .tm-who .chaos-wallet-chip b { color: #283058; }
 .tm-bar .tm-who .chaos-wallet-chip small { color: #5870b8; }
+/* Live player counts (match server presence) */
+.tm-online { display: block; margin-top: 2px; font-size: 10px; letter-spacing: 1px; color: #2f8a45; }
+.exp-live { color: #9dffb8 !important; font-size: 12px; }
+.raid-wait { font-style: normal; font-size: 10px; font-weight: 700; color: #9dffb8; min-height: 12px; }

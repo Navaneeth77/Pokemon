@@ -23,21 +23,58 @@ export class ExpansionUI {
     return this.el;
   }
   close(cancel = true) {
+    this.where = null;
     clearInterval(this.timer); this.el?.remove(); this.el = null;
     if(cancel && this.raidPending) {this.mm.send({t:'raid-cancel'});this.mm.cancel();this.mm.state='idle';this.raidPending=false;}
     if (cancel && this.drafting) { this.mm.send({ t: 'draft-cancel' }); this.mm.cancel(); this.mm.state = 'idle'; this.drafting = false; }
   }
+  // Who is in raids or drafts right now, and which queues already have someone waiting for a partner
+  // (public raids by boss, difficulty and team size; drafts by mode, size, ranking and pool).
+  lobbyChanged() {
+    const l = this.mm.lobby, box = this.where === 'raid' ? l?.raids : this.where === 'draft' ? l?.drafts : null;
+    const live = this.el?.querySelector('[data-live]');
+    if (!live) return;
+    if (!box) {
+      live.textContent = l ? '' : 'Checking who is online…';
+      return;
+    }
+    const waiting = Object.entries(box.waiting ?? {});
+    const n = box.browsing + box.searching + box.battling + (box.drafting ?? 0);
+    const parts = this.where === 'raid'
+      ? [`${box.battling} fighting a boss`, `${box.searching} waiting for a partner`, `${box.browsing} choosing`]
+      : [`${box.drafting} drafting`, `${box.battling} battling`, `${box.searching} waiting for an opponent`, `${box.browsing} choosing`];
+    live.textContent = n ? `● ${n} here now · ${parts.filter(t => !t.startsWith('0 ')).join(' · ')}` : '● Nobody else here right now — start a queue and others will find you.';
+    if (this.where === 'raid') {
+      for (const tag of this.el.querySelectorAll('[data-wait]')) {
+        const mine = waiting.filter(([k]) => k.startsWith(`${tag.dataset.wait}:`)).map(([k, c]) => {
+          const [, diff, size] = k.split(':');
+          return `${c} waiting · ${RAID_DIFFICULTY[diff]?.label ?? diff} · ${size} Pokémon`;
+        });
+        tag.textContent = mine.join(' / ');
+      }
+    } else if (waiting.length) {
+      const pool = { regular: 'regular Pokémon', all: 'full roster' };
+      live.textContent += ` — waiting: ${waiting.map(([k, c]) => {
+        const [mode, size, ranked, roster] = k.split(':');
+        return `${c} × ${mode === 'trade' ? 'Blind trade' : 'Snake'} ${size}v${size}, ${ranked}, ${pool[roster] ?? roster}`;
+      }).join('; ')}`;
+    }
+  }
+
   // Raid setup: boss, difficulty, team size and how to play (solo, online partner, private room).
   raids() {
     const save = this.flow.save, pick = { difficulty: save.raidDifficulty ?? 'normal', size: save.raidSize ?? 3, kind: 'solo' };
     const seg = (key, options) => `<div class="exp-seg" data-seg="${key}">${options.map(([v, label]) => `<button class="px-btn small${String(pick[key]) === String(v) ? ' primary' : ''}" data-v="${v}">${label}</button>`).join('')}</div>`;
-    const el = this.open('LEGENDARY RAIDS', `<p>Four stages as its HP falls · telegraphed attacks that break the arena · strike while it's staggered<br>A faint sends out your next teammate; no revives. In co-op, the raid goes on while either of you can fight.</p>
-      <div class="raid-bosses">${Object.entries(BOSSES).map(([id, b]) => `<button class="raid-boss" data-boss="${id}" style="--accent:${b.color}"><img src="${portrait(id)}" alt=""><b>${b.name}</b><small>${b.title}</small><i>${b.stages.join(' → ')}</i></button>`).join('')}</div>
+    const el = this.open('LEGENDARY RAIDS', `<p>Four stages as its HP falls · telegraphed attacks that break the arena · strike while it's staggered<br>A faint sends out your next teammate; no revives. In co-op, the raid goes on while either of you can fight.</p><p class="exp-live" data-live></p>
+      <div class="raid-bosses">${Object.entries(BOSSES).map(([id, b]) => `<button class="raid-boss" data-boss="${id}" style="--accent:${b.color}"><img src="${portrait(id)}" alt=""><b>${b.name}</b><small>${b.title}</small><i>${b.stages.join(' → ')}</i><em class="raid-wait" data-wait="${id}"></em></button>`).join('')}</div>
       <div class="raid-opts"><span>DIFFICULTY</span>${seg('difficulty', Object.entries(RAID_DIFFICULTY).map(([k, d]) => [k, d.label]))}
       <span>TEAM</span>${seg('size', [[3, '3 POKÉMON'], [6, '6 POKÉMON']])}
       <span>PLAY</span>${seg('kind', [['solo', 'SOLO'], ['public', 'ONLINE PARTNER'], ['private', 'CREATE ROOM'], ['join', 'JOIN ROOM']])}</div>
       <input class="raid-code hidden" data-code maxlength="6" placeholder="ROOM CODE" aria-label="Raid room code" autocomplete="off" spellcheck="false">
       <p class="exp-status">${this.diffNote(pick.difficulty)}</p>`);
+    this.where = 'raid';
+    this.lobbyChanged();
+    this.mm.pollLobby(true);
     const status = el.querySelector('.exp-status'), code = el.querySelector('[data-code]');
     el.querySelectorAll('[data-seg]').forEach(box => box.querySelectorAll('button').forEach(btn => btn.onclick = () => {
       const key = box.dataset.seg;
@@ -218,7 +255,10 @@ export class ExpansionUI {
     this.flow.syncFullscreen();
   }
   drafts() {
-    const el = this.open('DRAFT BATTLES', `<p>Online · server-controlled choices</p><label>QUEUE <select data-ranked><option value="no">UNRANKED</option><option value="yes">RANKED · affects your rating</option></select></label><label>POOL <select data-roster><option value="regular">REGULAR POKÉMON</option><option value="all">FULL LEGAL ROSTER</option></select></label><div class="exp-options"><button class="px-btn primary" data-mode="snake" data-size="3">SNAKE · 3 VS 3</button><button class="px-btn primary" data-mode="snake" data-size="6">SNAKE · 6 VS 6</button><button class="px-btn" data-mode="trade" data-size="6">BLIND TRADE · 6 VS 6</button></div><div class="draft-previews"><article><b>SHARED POOL</b><div><img src="${portrait('charizard')}" alt="Charizard"><img src="${portrait('raichu')}" alt="Raichu"><img src="${portrait('blastoise')}" alt="Blastoise"></div><span>A → B → B → A</span><small>Every pick removes a Pokémon from the common pool.</small></article><article><b>BLIND TRADE</b><div><img src="${portrait('sceptile')}" alt="Sceptile"><span>⇄</span><img src="${portrait('lucario')}" alt="Lucario"></div><span>KEEP ONE · SEND ONE</span><small>Three private rounds; simultaneous reveals.</small></article></div><p class="exp-status" role="status"></p>`);
+    const el = this.open('DRAFT BATTLES', `<p>Online · server-controlled choices</p><p class="exp-live" data-live></p><label>QUEUE <select data-ranked><option value="no">UNRANKED</option><option value="yes">RANKED · affects your rating</option></select></label><label>POOL <select data-roster><option value="regular">REGULAR POKÉMON</option><option value="all">FULL LEGAL ROSTER</option></select></label><div class="exp-options"><button class="px-btn primary" data-mode="snake" data-size="3">SNAKE · 3 VS 3</button><button class="px-btn primary" data-mode="snake" data-size="6">SNAKE · 6 VS 6</button><button class="px-btn" data-mode="trade" data-size="6">BLIND TRADE · 6 VS 6</button></div><div class="draft-previews"><article><b>SHARED POOL</b><div><img src="${portrait('charizard')}" alt="Charizard"><img src="${portrait('raichu')}" alt="Raichu"><img src="${portrait('blastoise')}" alt="Blastoise"></div><span>A → B → B → A</span><small>Every pick removes a Pokémon from the common pool.</small></article><article><b>BLIND TRADE</b><div><img src="${portrait('sceptile')}" alt="Sceptile"><span>⇄</span><img src="${portrait('lucario')}" alt="Lucario"></div><span>KEEP ONE · SEND ONE</span><small>Three private rounds; simultaneous reveals.</small></article></div><p class="exp-status" role="status"></p>`);
+    this.where = 'draft';
+    this.lobbyChanged();
+    this.mm.pollLobby(true);
     el.querySelectorAll('[data-mode]').forEach(b => b.onclick = async () => {
       if (this.drafting) return;
       this.drafting = true; this.mm.state = 'connecting';
