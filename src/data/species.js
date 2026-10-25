@@ -83,7 +83,7 @@ const LIST = [
   mon('porygonZ', 'Porygon-Z', ['normal'], R, [1350, 96, 1.18, 0.92, 0.9], ['triAttack', 'thunderbolt', 'iceBeam', 'recover'], 'digitalDistortion', 'analytic', { sprite: 'porygon-z', ...hover(8, 2, 3) }),
 
   // ── Legendary ──
-  mon('lugia', 'Lugia', ['psychic', 'flying'], L, [1700, 92, 1.08, 1.2, 1.6], ['airSlash', 'surf', 'extrasensory', 'dragonPulse'], 'aeroblast', 'multiscale', hover(14, 2.5, 2.4)),
+  mon('lugia', 'Lugia', ['psychic', 'flying'], L, [1700, 92, 1.08, 1.2, 1.6], ['airSlash', 'surf', 'extrasensory', 'lugiaWaterPulse'], 'aeroblast', 'multiscale', hover(14, 2.5, 2.4)),
   mon('hoOh', 'Ho-Oh', ['fire', 'flying'], L, [1650, 90, 1.15, 1.1, 1.5], ['braveBird', 'flamethrower', 'extrasensory', 'earthquake'], 'sacredFire', 'regenerator', { sprite: 'ho-oh', ...hover(14, 2.5, 2.4) }),
   mon('kyogre', 'Kyogre', ['water'], L, [1650, 86, 1.2, 1.1, 1.9], ['waterPulse', 'surf', 'iceBeam', 'thunderbolt'], 'originPulse', 'drizzle'),
   mon('groudon', 'Groudon', ['ground'], L, [1700, 80, 1.22, 1.12, 2], ['earthquake', 'firePunch', 'rockSlide', 'flamethrower'], 'precipiceBlades', 'drought'),

@@ -2299,6 +2299,11 @@ const NEW_MOVES = {
 
   fireBlast: shot('Fire Blast', 'fire', 115, 3.2, 'Huge fireball · may burn', { style: 'bigFire', sound: 'explosion' }, { status: ['burn', 0.25] }),
   waterPulse: shot('Water Pulse', 'water', 80, 1.8, 'Water orb · may stun', { style: 'water', sound: 'splash' }, { status: ['stun', 0.12] }),
+  lugiaWaterPulse: {
+    name:'Water Pulse',type:'water',power:95,cooldown:2.4,range:300,minRange:50,ai:'ranged',tag:'Water pulse beam',Action:BeamAttack,
+    beam:beam({charge:.35,width:11,visualWidth:14,duration:.5,sound:'pulse',rings:'#b6edff',
+      colors:['#3286c9','#8edbff','#effcff'],chargeColors:WATER_JET,teleColor:'90,170,255',flash:[150,220,255],mark:'wet',knockback:150}),
+  },
   extrasensory: shot('Extrasensory', 'psychic', 85, 2, 'Psychic orb', { style: 'psy' }),
   psyshock: shot('Psyshock', 'psychic', 50, 2.2, 'Twin psychic orbs', { style: 'psy', spread: [-0.1, 0.1], stagger: 0.06 }),
   psychoCut: shot('Psycho Cut', 'psychic', 70, 1.4, 'Fast psychic blade · high crit', { anim: 'Swing', speed: 1, style: 'psy', sound: 'airSlash' }),
@@ -2725,7 +2730,7 @@ for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xSciss
 for (const id of ['psychoCut', 'shadowSneak', 'hex']) MOVES[id].pull = true;
 
 // Hold-to-charge moves: up to +60% power, bigger projectiles and beams, and a shorter wind-up on release.
-const CHARGEABLE = ['hyperBeam', 'solarBeam', 'dragonPulse', 'darkPulse', 'iceBeam', 'flashCannon', 'psybeam', 'auroraBeam', 'auraSphere', 'shadowBall',
+const CHARGEABLE = ['hyperBeam', 'solarBeam', 'dragonPulse', 'lugiaWaterPulse', 'darkPulse', 'iceBeam', 'flashCannon', 'psybeam', 'auroraBeam', 'auraSphere', 'shadowBall',
   'energyBall', 'sludgeBomb', 'moonblastShot', 'waterPulse', 'fireBlast', 'extrasensory', 'psyshock', 'powerGem', 'hex', 'discharge', 'hyperVoice',
   'dazzlingGleam', 'nightDaze', 'heatWave', 'searingShot'];
 for (const id of CHARGEABLE) MOVES[id].chargeable = true;

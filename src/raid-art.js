@@ -74,7 +74,8 @@ export class LegendaryBeam {
     const x = origin.x + (this.x - origin.x) * reveal, y = origin.y + (this.y - origin.y) * reveal;
     const width = this.width * Math.min(1, this.age / .045) * Math.min(1, (1 - p) * 5);
     ctx.save(); const fade = Math.min(1, (1 - p) * 4);
-    const core = this.boss.boss === 'rayquaza' ? '#d0ffe4' : this.boss.boss === 'lugia' ? '#c7efff' : '#e6caff';
+    const id=this.boss.boss??this.boss.species.megaOf??this.boss.species.id;
+    const core = id === 'rayquaza' ? '#d0ffe4' : id === 'lugia' ? '#c7efff' : '#e6caff';
     const dx = x - origin.x, dy = y - origin.y, distance = Math.hypot(dx, dy) || 1, nx = -dy / distance, ny = dx / distance;
     for (const [scale, color, alpha] of [[1.18, '#38214f', .35], [1, this.color, .8], [.55, core, .95], [.22, '#ffffff', 1]]) {
       const mouthWidth = Math.min(10, width * .22) * scale, endWidth = width * .5 * scale;

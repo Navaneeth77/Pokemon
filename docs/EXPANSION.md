@@ -35,6 +35,10 @@ PERFORMANCE.md separates measurements from deployment/device limits.
   slipstreams, pressure pillars and matching Skyfall landing points; Lugia has rolling foam, cloud-origin
   lightning and water columns that break into spray. Both base and Mega Dragon Ascent retain their
   skyward flight and gain movement trails. Ground discs remain confined to the caster's floor aura.
+- Lugia's Water Pulse uses Dragon Pulse's layered beam/rings in water blue and primes water reactions;
+  it joins the raid rotation and replaces the playable Dragon Pulse slot. Other Pokémon keep their
+  existing Water Pulse orb. Thunderstorm now creates five cloud clusters and staggered bolts (three
+  at Performance quality), with per-target clouds for co-op and no additional untelegraphed damage.
 - Abortable readiness/retries, legacy-health compatibility, welcome gating, feature negotiation,
   bounded co-op rejoin, coalesced wake requests and unchanged protocol 2.
 - Bounded decorative/event/stamp caches; hidden-page/menu render reduction; quality modes preserve

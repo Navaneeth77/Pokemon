@@ -216,6 +216,23 @@ test('slipstreams survive a stopped actor, remain bounded and expire without mov
  assert.equal(trail.update(1),false);
 });
 
+test('Lugia Water Pulse primes water reactions and its expanded storm stays anchored without extra damage',()=>{
+ const g=battle(),id=SPECIES.lugia.moves.find(id=>MOVES[id].name==='Water Pulse');
+ assert.ok(id);assert.equal(MOVES[id].beam.duration,MOVES.dragonPulse.beam.duration);
+ applyHit(g,g.player,g.opponent,MOVES[id],{critChance:0});
+ assert.equal(g.opponent.elementAura.type,'water');
+ const raid=new BossEncounter([g],'lugia');raid.intro=0;raid.boss.y=raid.home.y;raid.sequence=1;raid.launch([g]);raid.next=999;
+ const cast=[raid.boss.x,raid.boss.y,raid.boss.z];
+ g.update(1/60);
+ assert.ok(g.effects.filter(e=>e.constructor.name==='StormCloud').length>=3);
+ while(raid.time<1.35)g.update(1/60);
+ const hp=g.player.hp;
+ while(raid.time<1.6)g.update(1/60);
+ assert.equal(g.player.hp,hp,'extra visual bolts do not deal untelegraphed damage');
+ assert.ok(g.effects.filter(e=>e.constructor.name==='Lightning').length>=2);
+ assert.deepEqual([raid.boss.x,raid.boss.y,raid.boss.z],cast);
+});
+
 test('Lugia aliases use valid cropped charge frames and wing beats', () => {
  const a = sprites.lugia.anims;
  assert.equal(a.Charge.offset, 2); assert.equal(a.Charge.frames, 8);

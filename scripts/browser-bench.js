@@ -72,6 +72,7 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
   document.querySelector('h1').textContent=`Legendary VFX · ${playable?'playable':'raid'} ${++round}`;
  }
  function cast(stage,sequence){raid.ult=null;raid.ultRelease=null;raid.transition=0;raid.vulnerable=0;raid.hazards=[];raid.stage=stage;raid.sequence=sequence;raid.launch([game]);raid.next=999;}
+ function castKind(kind){const stage=BOSSES[preview].attacks.findIndex(list=>list.includes(kind));if(stage>=0)cast(stage+1,BOSSES[preview].attacks[stage].indexOf(kind));}
  const step=frames=>{for(let i=0;i<frames;i++)game.update(1/60);};
  restart();
  document.querySelector('aside p').textContent='Actual raid renderer. Starts paused. Restart checks the same game instance twice.';
@@ -83,7 +84,7 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
  const opening=preview==='rayquaza'?'CAST METEORS':preview==='lugia'?'CAST TIDAL':'CAST ORBS';
  const followup=preview==='rayquaza'?'CAST DASH':preview==='lugia'?'CAST STORM':'CAST SLAM';
  const attacks=playable?game.player.species.moves.map(id=>[`PLAY ${MOVES[id].name.toUpperCase()}`,()=>{game.opponent.y=game.player.y+(MOVES[id].ai==='melee'?70:170);game.player.cancelAction();game.player.busy=0;game.player.cooldowns[id]=0;game.useMove(game.player,id);}])
- :[['CAST BEAM',()=>cast(2,2)],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['CAST PILLARS',()=>cast(preview==='rayquaza'?3:1,preview==='rayquaza'?5:2)],['CAST NOVA',()=>cast(3,preview==='rayquaza'?3:4)],['CAST CATACLYSM',()=>cast(4,0)],...(preview==='rayquaza'?[['CAST SLAM',()=>cast(2,3)]]:preview==='lugia'?[['CAST ROWS',()=>cast(2,3)]]:[])];
+ :[['CAST BEAM',()=>castKind(preview==='rayquaza'?'dragonBeam':preview==='lugia'?'aeroblast':'cross')],[opening,()=>cast(1,0)],[followup,()=>cast(1,1)],['CAST PILLARS',()=>castKind('lanes')],['CAST NOVA',()=>castKind('ring')],['CAST CATACLYSM',()=>castKind('cataclysm')],...(preview==='rayquaza'?[['CAST SLAM',()=>castKind('slam')]]:preview==='lugia'?[['CAST ROWS',()=>castKind('rows')],['CAST WATER PULSE',()=>castKind('waterPulse')]]:[])];
  for(const [label,run] of [...attacks,['RESTART RAID',restart],['HALF HP',()=>{if(raid)raid.boss.hp=raid.boss.maxHp*.5;else game.megaEvolve(game.player);}],['FINAL HIT',()=>{if(!raid)return;raid.ult=null;raid.ultRelease=null;raid.hazards=[];raid.stage=4;raid.transition=0;raid.next=999;raid.boss.hp=1;raid.boss.invuln=false;game.practice=false;game.startUltCutscene(game.player,MOVES[game.player.species.ultimate]);}],['PAUSE / RESUME',()=>{previewPaused=!previewPaused;}],['STEP 0.5s',()=>step(30)],['STEP 0.1s',()=>step(6)]]){
   const b=document.createElement('button');b.textContent=label;b.onclick=run;button.after(b);
  }

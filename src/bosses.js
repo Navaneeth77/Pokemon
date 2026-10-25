@@ -47,7 +47,7 @@ export const BOSSES = {
   lugia: {
     name: 'Lugia', title: 'GUARDIAN OF THE TIDES', arena: 'seafoam', type: 'water', color: '#8fdbff', rgb: [143, 219, 255], scale: 1.9,
     stages: ['CALM SEAS', 'RISING TIDE', 'MAELSTROM', 'HYDRO TEMPEST'],
-    attacks: [['tidal', 'storm', 'lanes'], ['tidal', 'storm', 'aeroblast', 'rows', 'ultimate'], ['aeroblast', 'tidal', 'ultimate', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'ultimate', 'aeroblast', 'tidal', 'storm']],
+    attacks: [['tidal', 'storm', 'waterPulse', 'lanes'], ['tidal', 'storm', 'aeroblast', 'waterPulse', 'rows', 'ultimate'], ['aeroblast', 'waterPulse', 'tidal', 'ultimate', 'storm', 'ring'], ['cataclysm', 'tidal', 'storm', 'waterPulse', 'ultimate', 'aeroblast', 'tidal', 'storm']],
     cataclysm: 'HYDRO DELUGE', ultimate: 'AEROBLAST', ultImpact: [1.3, 1.3], ultDuration: 2.1,
     // Lugia never spins: it holds its wings open to charge, fires with Shoot and beats its wings to strike.
     anims: { wind: { default: 'Charge' }, strike: { default: 'Shoot', quake: 'Attack', tidal: 'Attack', dive: 'Attack', nova: 'Attack', cataclysm: 'Attack' } },
@@ -71,6 +71,7 @@ const ATTACKS = {
   storm: { label: 'THUNDERSTORM', hint: 'MOVE', shape: 'circle', r: 56, tele: 1.3, power: 130, at: 'each', type: 'electric', fx: 'storm', step: 0.2 },
   aeroblast: { label: 'AEROBLAST', hint: 'SIDESTEP', shape: 'line', r: 40, tele: 1.4, power: 180, at: 'line', fx: 'beam', vuln: 2 },
   dragonBeam: { label: 'DRAGON PULSE', hint: 'SIDESTEP THE BEAM', shape: 'line', r: 26, tele: 1.65, power: 155, at: 'line', fx: 'beam', vuln: 1.5 },
+  waterPulse: { label: 'WATER PULSE', hint: 'SIDESTEP THE BEAM', shape: 'line', r: 26, tele: 1.65, power: 155, at: 'line', fx: 'beam', type: 'water', vuln: 1.5 },
   cataclysm: { hint: 'FIND COVER', shape: 'cover', r: 46, tele: 2.6, power: 240, at: 'cover', count: 2, fx: 'cataclysm', vuln: 3.2 },
   // Not a hazard: the boss channels its signature move behind a barrier (see startUlt).
   ultimate: { fx: 'ultimate', hint: 'BREAK THE SHIELD!' },
@@ -458,6 +459,10 @@ const typeRgb = (t, fallback) => RGB[t] ?? fallback;
 const fxOf = h => (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx);
 const cataclysmSpots = h => Array.from({length:9},(_,i)=>({x:70+i%3*110,y:170+Math.floor(i/3)*150}))
   .filter(p=>!h.safe.some(([x,y,r])=>Math.hypot(p.x-x,p.y-y)<r+20));
+const stormClouds = h => {
+  const count=quality().particles>500?5:3;
+  return Array.from({length:count},(_,i)=>({x:clampX(h.x+(i-(count-1)/2)*28),y:Math.max(130,h.y-140)-(i%2)*14}));
+};
 // Animations for the wind-up (held until the attack lands) and for the strike itself. Each boss can
 // override these with its own fitting animations (BOSSES[id].anims), so no boss strikes a pose that
 // makes no sense for it.
@@ -581,6 +586,9 @@ export class BossPresenter {
       const left = h.at - tm;
       if (!this.seen.has(h.id)) {
         this.seen.add(h.id);
+        if (data.id==='lugia' && h.k==='storm' && left>.2) {
+          for(const p of stormClouds(h))g.spawn(new StormCloud(p.x,p.y,left+.85));
+        }
         if (h.g !== this.group) {
           this.group = h.g;
           sfx.bossWarn();
@@ -626,8 +634,8 @@ export class BossPresenter {
     this.chargeFx = new BossCharge(boss, left, rgb, fx);
     g.spawn(this.chargeFx);
     this.charge = { until: now + left * 1000, rgb };
-    if (boss.boss === 'lugia' && (fx === 'storm' || fx === 'cataclysm')) {
-      const targets = fx === 'storm' ? [h] : cataclysmSpots(h).slice(0,3);
+    if (boss.boss === 'lugia' && fx === 'cataclysm') {
+      const targets = cataclysmSpots(h).slice(0,3);
       for (const p of targets) g.spawn(new StormCloud(p.x,Math.max(130,p.y-140),left+.35));
     }
     if (fx === 'meteor' || fx === 'cataclysm') {
@@ -742,7 +750,18 @@ export class BossPresenter {
         g.shake(3, 0.25);
         break;
       case 'storm':
-        g.spawn(new Lightning(h.x + rand(-12, 12), boss.boss==='lugia'?Math.max(130,h.y-140):h.y-320, h.x, h.y, 0.35, { width: 3, branches: 4 }));
+        if (boss.boss==='lugia') {
+          stormClouds(h).forEach((cloud,i)=>{
+            const strike=()=>{
+              if(g.opponent!==boss || !boss.alive || g.state!=='fighting')return;
+              const a=i*2.4,x=h.x+(i?Math.cos(a)*h.r*.5:0),y=h.y+(i?Math.sin(a)*h.r*.5:0);
+              g.spawn(new Lightning(cloud.x,cloud.y,x,y,.32,{width:i?2.5:4,branches:4}));
+              electricBurst(g,x,y,2,8);waterSplash(g,x,y);
+              if(i%2===0)sfx.thunder();
+            };
+            if(i)g.later(i*.07,strike);else strike();
+          });
+        } else g.spawn(new Lightning(h.x+rand(-12,12),h.y-320,h.x,h.y,.35,{width:3,branches:4}));
         electricBurst(g, h.x, h.y, 2, 14);
         g.marks.scorch(h.x, h.y, h.r * 0.6);
         if (boss.boss==='lugia') { waterSplash(g,h.x,h.y);g.spawn(new PressureWave(h.x,h.y,h.r*1.4,'water')); }
