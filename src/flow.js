@@ -153,13 +153,19 @@ export class Flow {
       return `<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
     };
     const groups = [['BATTLE', [0, 1, 2]], ['EXPANSION', [3, 4]], ['TRAINER GUILD', [5, 6, 7]], ['TRAINER & TOOLS', [8, 9, 10, 11, 12]]];
-    menu.innerHTML = `<header class="tm-logo"><b>${GAME_TITLE.top}</b><span>${GAME_TITLE.bottom}</span><small>${GAME_TITLE.tag}</small></header>`
+    menu.innerHTML = `<header class="tm-logo" aria-label="${GAME_TITLE.full}"></header>`
       + `<div class="px-window tm-bar"><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div></div>`
       + `<div class="tm-grid">${groups.map(([name, ids]) => `<section class="px-window tm-sec"><h3 class="tm-group">${name}</h3>${ids.map(row).join('')}</section>`).join('')}</div>`;
+    menu.querySelector('.tm-logo').append(this.opening.logoCanvas());
+    // The start screen changes its pixel scale with the window; the menu's copy of the logo follows.
+    this.logoResize ??= window.addEventListener('resize', () => requestAnimationFrame(() => {
+      const logo = this.screen === 'title' && $('#title-menu .tm-logo');
+      if (logo) logo.replaceChildren(this.opening.logoCanvas());
+    })) ?? true;
     menu.scrollTop = 0;
     const frame = this.economy?.loadout().frame??cosmeticLoadout().frame;
-    if (frame) menu.querySelector('canvas').style.border = `2px solid ${frame.color}`;
-    menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
+    if (frame) menu.querySelector('.tm-who canvas').style.border = `2px solid ${frame.color}`;
+    menu.querySelector('.tm-who canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
     this.economyUI.mountCounter();
     this.menuItems = items;
     this.menuIndex = 0;

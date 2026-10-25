@@ -151,8 +151,8 @@ fraction of 100 ms, but that is an estimate until it is measured.
 
 **Main menu (25 Oct).** The menu was a panel floating over the title art. It is now a page of its own
 (`.title-menu`, scrollable) drawn over the start screen's own night sky: `Opening.backdrop` (set by
-`Flow.show`) draws just the sky, stars, moon, mountains and snow. The logo is the same Luckiest Guy logo in
-HTML so it scrolls with the page, and each group is a cream `px-window` with the red ▶ cursor, the
+`Flow.show`) draws just the sky, stars, moon, mountains and snow. The logo is drawn by the start screen's own
+`drawTitle()` (`Opening.logoCanvas`, same size and pixel scale, re-drawn on resize) so the two match exactly, and each group is a cream `px-window` with the red ▶ cursor, the
 game's own widgets (an earlier dark-navy version with glows was wrong and was replaced). Two columns on
 desktop, one on phones; the corner buttons have their own 52 px strip. The arrow keys follow the grid
 (`Flow.menuNeighbour`).

@@ -183,6 +183,42 @@ export class Opening {
     return by + bh + Math.floor(size * 0.55) + 4;
   }
 
+  // The logo exactly as the start screen draws it (same code, size and pixel scale), cropped onto its
+  // own canvas so the main menu page can show it.
+  logoCanvas() {
+    const { W, H, scale } = this, h = Math.min(H, this.titleBottom() + 8);
+    const full = document.createElement('canvas');
+    full.width = W;
+    full.height = h;
+    const main = this.ctx, t = this.t;
+    this.ctx = full.getContext('2d', { willReadFrequently: true });
+    this.t = Math.max(t, T.title + 1); // fully dropped in, as it rests on the start screen
+    try {
+      this.drawTitle();
+    } finally {
+      this.ctx = main;
+      this.t = t;
+    }
+    const d = full.getContext('2d').getImageData(0, 0, W, h).data;
+    let x0 = W, x1 = -1, y0 = h, y1 = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < W; x++) {
+        if (!d[(y * W + x) * 4 + 3]) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    const c = document.createElement('canvas'), cw = Math.max(1, x1 - x0 + 1), ch = Math.max(1, y1 - y0 + 1);
+    c.width = cw;
+    c.height = ch;
+    c.getContext('2d').drawImage(full, x0, y0, cw, ch, 0, 0, cw, ch);
+    c.style.width = `${cw * scale}px`;
+    c.style.height = `${ch * scale}px`;
+    return c;
+  }
+
   drawTitle() {
     const { W, H, t } = this, k = Math.min(1, Math.max(0, (t - T.title) / 0.5));
     if (k <= 0) return;
