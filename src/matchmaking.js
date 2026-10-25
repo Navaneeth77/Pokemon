@@ -13,6 +13,8 @@ import { lookById, frontPalette } from './trainers.js';
 import { safeName } from './names.js';
 import { sfx } from './audio.js';
 import { preloadRaidArt } from './raid-art.js';
+import { matchServerUrl, warmServer, serverIsWarm, rememberReady } from './server-connection.js';
+export { matchServerUrl } from './server-connection.js';
 
 // Online matchmaking against random players, through the match server (server/index.js).
 //
@@ -24,7 +26,7 @@ import { preloadRaidArt } from './raid-art.js';
 const PROTOCOL = 2;
 const PID_KEY = 'msb.pid';
 const CONNECT_TIMEOUT_MS = 12000; // one attempt; a sleeping server is retried until WAKE_WAIT_MS
-const WAKE_WAIT_MS = 75000; // a free-plan server that went to sleep takes up to a minute to wake
+const WAKE_WAIT_MS = 120000; // allow a sleeping host to boot, then complete readiness + welcome
 const SILENCE_MS = 10000;
 const INPUT_GAP_MS = 25; // a changed direction goes out straight away, at most 40 times a second
 const PRED_MS = 700; // our own predicted attack waits at least this long for the server to confirm it
@@ -34,15 +36,6 @@ const INTERP_MIN_MS = 35, INTERP_MAX_MS = 180;
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
-
-// VITE_MATCH_SERVER_URL (wss://…) in production; a server on this computer (or on the LAN) in development.
-export function matchServerUrl() {
-  const env = import.meta.env?.VITE_MATCH_SERVER_URL;
-  if (env) return env;
-  const h = location.hostname;
-  const local = h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local') || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(h);
-  return local ? `ws://${h}:8787` : null;
-}
 
 // An anonymous random id this browser keeps, so the server can tell players apart (and never pairs
 // a player with themselves). In development ?pid=… lets two tabs act as two different players.
@@ -97,14 +90,7 @@ export class Matchmaker {
   // A sleeping match server starts waking on its first request, so the game knocks as soon as it
   // loads: by the time the player has picked a team the server is usually up.
   wake() {
-    if (!this.url) return;
-    try {
-      const key='msb.serverWake',last=Number(localStorage.getItem(key));
-      if (Date.now()-last<30000) return;
-      localStorage.setItem(key,String(Date.now()));
-    } catch {}
-    this.wakeAbort?.abort(); this.wakeAbort=new AbortController();
-    fetch(`${this.httpUrl}/health`,{mode:'no-cors',cache:'no-store',signal:AbortSignal.any([this.wakeAbort.signal,AbortSignal.timeout(8000)])}).catch(()=>{});
+    return warmServer(this.url);
   }
 
   // ── Who's online and the leaderboard ──
@@ -280,18 +266,33 @@ export class Matchmaker {
     for (let attempt = 0; Date.now() < until; attempt++) {
       if (epoch !== this.connectEpoch) throw new Error('cancelled');
       try {
-        let res = await fetch(`${this.httpUrl}/ready`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(Math.max(1,Math.min(6000,until-Date.now())))]) });
-        // Old protocol-2 servers have /health only. The WebSocket welcome still gates readiness.
-        const legacy=res.status===404;
-        if(legacy) res=await fetch(`${this.httpUrl}/health`,{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(Math.max(1,Math.min(6000,until-Date.now())))])});
-        const status=await res.json();
-        if (!res.ok || !(legacy?status.ok:status.ready)) throw new Error('not ready');
+        if (!serverIsWarm(this.url)) {
+          try {
+            const options = () => ({ cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(Math.max(1,Math.min(20000,until-Date.now())))]) });
+            let res = await fetch(`${this.httpUrl}/ready`, options());
+            // Old protocol-2 servers have /health only.
+            const legacy=res.status===404;
+            if(legacy) res=await fetch(`${this.httpUrl}/health`,options());
+            const status=await res.json();
+            if (!res.ok || !(legacy?status.ok:status.ready)) throw new Error('not ready');
+          } catch (err) {
+            // Older hosts omit HTTP CORS headers; Render's boot page can also be HTML.
+            // Neither proves the socket is unavailable. A valid welcome remains mandatory below.
+            if (controller.signal.aborted || !['TypeError','SyntaxError'].includes(err.name)) throw err;
+          }
+        }
         if (epoch !== this.connectEpoch) throw new Error('cancelled');
-        await this.connect(Math.min(CONNECT_TIMEOUT_MS,until-Date.now()));
+        const remaining = until - Date.now();
+        if (remaining <= 0) break;
+        await this.connect(Math.min(CONNECT_TIMEOUT_MS,remaining));
+        rememberReady(this.url);
         return;
       } catch (err) {
+        rememberReady(this.url, false);
         if (epoch !== this.connectEpoch || ['duplicate', 'version'].includes(err.code)) throw err;
-        await new Promise(resolve => { this.retryResolve = resolve; this.retryTimer = setTimeout(resolve, Math.min(8000, 500 * 2 ** attempt) * (0.8 + Math.random() * 0.4)); });
+        const remaining = until - Date.now();
+        if (remaining <= 0) break;
+        await new Promise(resolve => { this.retryResolve = resolve; this.retryTimer = setTimeout(resolve, Math.min(remaining, Math.min(8000, 500 * 2 ** attempt) * (0.8 + Math.random() * 0.4))); });
       }
     }
     throw new Error('Server startup timed out');
@@ -308,35 +309,37 @@ export class Matchmaker {
       return;
     }
     this.result = null;
+    const attempt = this.findAttempt = Symbol('find');
     this.waking = false;
     this.setState('connecting');
     this.wake();
     // Still connecting after a few seconds: the server is most likely waking up, so say so and keep trying.
-    const until = Date.now() + WAKE_WAIT_MS;
     clearTimeout(this.wakeNote);
     this.wakeNote = setTimeout(() => {
       if (this.state !== 'connecting') return;
       this.waking = true;
       this.setState('connecting');
     }, 3500);
-    for (;;) {
-      try {
-        await this.connectReady();
-        break;
-      } catch (err) {
-        if (this.state !== 'connecting') return;
-        if (err.code === 'duplicate' || err.code === 'version') return this.fail(err.message, err.code === 'duplicate');
-        if (Date.now() > until) return this.fail("Couldn't reach the match server. Check your connection and try again.", true);
-        await new Promise(r => setTimeout(r, 2000));
-        if (this.state !== 'connecting') return;
-      }
+    try {
+      await Promise.all([
+        this.connectReady(),
+        // Cold sprite downloads happen during host startup, before the server's match-load deadline.
+        this.game.ensureSprites(this.spec.team).catch(() => { throw Object.assign(new Error('Could not load your team. Check your connection and try again.'), { code: 'assets' }); }),
+      ]);
+    } catch (err) {
+      if (this.findAttempt !== attempt || this.state !== 'connecting') return;
+      this.readyAbort?.abort();this.connectEpoch=(this.connectEpoch??0)+1;
+      clearTimeout(this.wakeNote);
+      const specific=['duplicate','version','assets'].includes(err.code);
+      return this.fail(specific?err.message:"Couldn't reach the match server. Check your connection and try again.", err.code!=='version');
     }
+    if (this.findAttempt !== attempt || this.state !== 'connecting') return;
     clearTimeout(this.wakeNote);
-    if (this.state !== 'connecting') return;
     this.send({ t: 'queue', ...this.spec });
   }
 
   cancel() {
+    this.findAttempt = null;
     this.readyAbort?.abort();
     this.wakeAbort?.abort();
     this.connectEpoch = (this.connectEpoch ?? 0) + 1;
@@ -369,6 +372,7 @@ export class Matchmaker {
 
   // Leaves whatever is going on (title menu, another mode). A running match is forfeited.
   stop() {
+    this.findAttempt = null;
     this.readyAbort?.abort();
     this.wakeAbort?.abort();
     this.connectEpoch = (this.connectEpoch ?? 0) + 1;
@@ -438,7 +442,7 @@ export class Matchmaker {
           if (b && m.raid.mg) evolveRaidBoss(b, m.raid.id, this.game.sprites);
           if (b && b.maxHp !== m.raid.maxHp) b.species = { ...b.species, hp: m.raid.maxHp };
         }
-        if(m.ally) this.updateAlly(m.ally);
+        if(m.ally) this.updateAlly(m.ally, m.ts);
         // One message per server wake-up: what happened since the last one, then the current state.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
         if (Array.isArray(m.e)) this.events=appendBattleEvents(this.events,m.e);
@@ -512,11 +516,27 @@ export class Matchmaker {
     }
   }
 
-  updateAlly(s) {
+  updateAlly(s, ts) {
     const g=this.game,sp=SPECIES[s.species];if(!sp || !g.sprites[sp.sprite])return;
-    if(g.raidAlly?.species.id!==sp.id){g.raidAlly=new Pokemon(sp,g.sprites[sp.sprite],'player');g.raidAlly.reset(s.x,s.y,s.dir);g.raidAlly.remote=true;}
-    const a=g.raidAlly;Object.assign(a,{x:s.x,y:s.y,dir:s.dir,hp:s.hp,hidden:s.hidden||s.eliminated});a.sprite.dir=s.dir;a.sprite.update(1/30);
-    if(s.disconnected)g.hud.callout('player','PARTNER DISCONNECTED · 15s GRACE');
+    if(g.raidAlly?.species.id!==sp.id){g.raidAlly=new Pokemon(sp,g.sprites[sp.sprite],'player');g.raidAlly.reset(s.x,s.y,s.dir);g.raidAlly.remote=true;this.allyBuf=[];}
+    const a=g.raidAlly;
+    if(typeof ts==='number'){
+      const b=this.allyBuf??=[];b.push({ts,i:sp.id,x:s.x,y:s.y,d:s.dir});
+      while(b.length>90)b.shift();
+    }else {a.x=s.x;a.y=s.y;}
+    Object.assign(a,{dir:s.dir,hp:s.hp,hidden:s.hidden||s.eliminated});
+    if(s.disconnected&&!this.allyDisconnected)g.hud.callout('player','PARTNER DISCONNECTED · 15s GRACE');
+    this.allyDisconnected=!!s.disconnected;
+  }
+
+  tickAlly(dt, now) {
+    const a=this.game.raidAlly;if(!a)return;
+    const s=this.sampleFoe(now,this.allyBuf);
+    if(s&&s.i===a.species.id){
+      const moved=Math.hypot(s.x-a.x,s.y-a.y)>.05;
+      a.x=s.x;a.y=s.y;a.sprite.dir=s.d;a.sprite.play(moved?'Walk':'Idle');
+    }
+    a.sprite.update(dt);
   }
 
   begin() {
@@ -533,6 +553,8 @@ export class Matchmaker {
     this.offset = null;
     this.delay = null;
     this.foeSample = null;
+    this.allyBuf = [];
+    this.allyDisconnected = false;
   }
 
   // A button press: the server applies it with the normal rules, and the result comes back as events.
@@ -597,6 +619,7 @@ export class Matchmaker {
   tick(dt) {
     if (this.state !== 'battle' || !this.match) return;
     const g = this.game, p = g.player, pr = this.pred, now = performance.now();
+    this.tickAlly(dt, now);
     if (pr) {
       // Time stands still for predictions while a cutscene pauses the battle.
       if (g.cinematic) for (const e of pr.moves) e.at += dt * 1000;
@@ -731,8 +754,7 @@ export class Matchmaker {
 
   // Where the opponent was a moment ago, between the two server updates around that moment (or a
   // little past the newest one, in the same direction, while the next is late).
-  sampleFoe(now) {
-    const b = this.foeBuf;
+  sampleFoe(now, b = this.foeBuf) {
     if (!b?.length || this.offset == null) return null;
     const t = now - this.offset - this.delay;
     let k = b.length - 1;
@@ -855,7 +877,9 @@ export class Matchmaker {
     } else {
       // Interpolated positions are already smooth: follow them closely. Without the server's clock
       // (an older server), glide toward the latest update instead.
-      const k = 1 - Math.exp(-dt * (this.foeSample ? 30 : 14));
+      // Interpolation already supplies a continuous position. A second low-pass filter added
+      // roughly another 33 ms of pursuit lag even on a perfect connection.
+      const k = this.foeSample ? 1 : 1 - Math.exp(-dt * 14);
       if (Math.hypot(tx - pre.x, ty - pre.y) > 120) {
         mon.x = tx;
         mon.y = ty;
@@ -978,7 +1002,7 @@ export class Matchmaker {
     const el = this.el, m = this.match, team = m ? m.me.team : this.spec?.team ?? [];
     const foe = m ? esc(safeName(m.foe.name)) : '';
     const views = {
-      connecting: ['CONNECTING', this.waking ? 'Waking up the match server — after a quiet spell this can take up to a minute<span class="ol-dots"></span>' : 'Reaching the match server<span class="ol-dots"></span>', [['cancel', 'CANCEL']]],
+      connecting: ['CONNECTING', this.waking ? 'Starting the match server — a sleeping host can take a minute or longer. Your team will queue automatically when it is ready<span class="ol-dots"></span>' : 'Connecting and preparing your team<span class="ol-dots"></span>', [['cancel', 'CANCEL']]],
       searching: ['SEARCHING', `${this.note ? `${esc(this.note)}<br>` : ''}Looking for an opponent for a ${this.spec?.format ?? 3} VS ${this.spec?.format ?? 3} battle<span class="ol-dots"></span>`, [['cancel', 'CANCEL']]],
       matched: ['OPPONENT FOUND!', `You will battle <b>${foe}</b>.<br>Loading the battle<span class="ol-dots"></span>`, []],
       loading: ['OPPONENT FOUND!', `Waiting for <b>${foe}</b> to finish loading<span class="ol-dots"></span>`, []],

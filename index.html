@@ -1,16 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="booting">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b0a1f" />
     <title>Pokémon: Chaos Arena</title>
+    <!-- Critical boot styling must arrive before the JS/CSS graph or default battle markup flashes. -->
+    <style>
+      html,body{margin:0;background:#0b0a1f}
+      html.booting body>:not(#boot-screen){visibility:hidden!important}
+      #boot-screen{position:fixed;inset:0;z-index:100000;display:grid;place-content:center;gap:18px;text-align:center;background:#0b0a1f;color:#eae5ff;font:700 14px monospace;letter-spacing:2px;padding:24px}
+      #boot-screen strong{font-size:clamp(20px,5vw,32px);color:#f4d48b}
+      #boot-screen p{font-size:12px;letter-spacing:1px;max-width:36em;line-height:1.7}
+      #boot-screen button{justify-self:center;padding:12px 24px;background:#30274e;color:#fff;border:2px solid #b99be7;font:inherit;cursor:pointer}
+      #boot-screen [hidden]{display:none}
+      html:not(.booting) #boot-screen{display:none}
+    </style>
   </head>
   <body>
+    <div id="boot-screen" role="status" aria-live="polite">
+      <strong>POKÉMON: CHAOS ARENA</strong>
+      <p id="boot-status">Preparing the arena…</p>
+      <button id="boot-retry" type="button" hidden onclick="location.reload()">RETRY</button>
+    </div>
     <div id="app">
       <div id="stage">
         <canvas id="game"></canvas>
-        <div id="select-overlay" class="overlay">
+        <div id="select-overlay" class="overlay hidden">
           <div class="select-card">
             <header class="sel-head">
               <button class="mini-btn sel-back" type="button">◀ Menu</button>
@@ -110,6 +126,6 @@
     <div id="touch" class="touch hidden"></div>
     <!-- Story cutscenes (src/cutscene.js) -->
     <div id="cutscene" class="hidden"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/entry.js"></script>
   </body>
 </html>
