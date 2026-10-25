@@ -73,7 +73,7 @@ export class PressureWave {
   }
 }
 
-// A tapered column with a bright core and travelling pressure contours, anchored to its impact.
+// Separate wind funnels or water spouts, anchored to their impacts.
 export class ElementColumn {
   constructor(x,y,height=260,width=30,water=false,life=.6,theme=null){
     Object.assign(this,{x,y,height,width,water,life,theme,age:0,layer:'air'});
@@ -99,14 +99,33 @@ export class ElementColumn {
       }
       ctx.restore();return;
     }
-    for(const [scale,color,alpha] of [[1.5,this.water?'#5689c5':'#4da583',.18],[1,this.water?'#84d7f8':'#8dffc4',.55],[.4,'#e3fff6',.8],[.12,'#ffffff',1]]){
-      ctx.globalAlpha=fade*alpha;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(-w*scale*.5,0);ctx.lineTo(-w*scale*.12,-h);ctx.lineTo(w*scale*.12,-h);ctx.lineTo(w*scale*.5,0);ctx.closePath();ctx.fill();
+    // A translucent funnel, with broken front-facing gusts instead of a wire cage.
+    const mist=ctx.createLinearGradient(-w,0,w,0);
+    mist.addColorStop(0,'rgba(165,185,176,0)');mist.addColorStop(.4,'rgba(165,185,176,.2)');mist.addColorStop(.6,'rgba(207,220,210,.26)');mist.addColorStop(1,'rgba(165,185,176,0)');
+    ctx.globalAlpha=fade;ctx.fillStyle=mist;ctx.beginPath();
+    for(const side of [-1,1])for(let j=0;j<=24;j++){
+      const t=side<0?j/24:1-j/24,x=Math.sin(t*5+this.age*5)*w*.12+side*w*(.17+.7*t*t),y=-h*t;
+      if(side<0&&j===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }ctx.closePath();ctx.fill();
+    const count=quality().particles>500?5:3;
+    for(let strand=0;strand<count;strand++){
+      const phase=strand/count*Math.PI*2-this.age*16;
+      for(let j=1;j<=36;j++){
+        const t=j/36,prev=(j-1)/36,a=phase+t*11,pa=phase+prev*11;
+        const visibility=Math.max(0,Math.sin(a));if(visibility<.15)continue;
+        const r=w*(.17+.7*t*t),pr=w*(.17+.7*prev*prev);
+        const x=Math.cos(a)*r+Math.sin(t*5+this.age*5)*w*.12,y=-h*t;
+        const px=Math.cos(pa)*pr+Math.sin(prev*5+this.age*5)*w*.12,py=-h*prev;
+        for(const [line,alpha] of [[5,.1],[1.1,.75]]){
+          ctx.globalAlpha=fade*visibility*alpha*Math.sin(t*Math.PI);ctx.strokeStyle=line>2?'#b6c9be':'#e5eee9';ctx.lineWidth=line;
+          ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(x,y);ctx.stroke();
+        }
+      }
     }
-    ctx.strokeStyle=this.water?'#dcf6ff':'#c4ffe3';ctx.lineWidth=1;
-    const count=quality().particles>500?4:2;
-    for(let i=0;i<count;i++){
-      const t=(p*2+i/count)%1;ctx.globalAlpha=fade*Math.sin(t*Math.PI)*.8;
-      ctx.beginPath();ctx.ellipse(0,-h*t,w*(.65-.4*t),w*.12,0,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<12;i++){
+      const t=(this.age*1.3+i/12)%1,a=i*2.4-this.age*11,r=w*(.3+.65*t);
+      ctx.globalAlpha=fade*Math.sin(t*Math.PI)*.7;ctx.fillStyle=i%3?'#c1d0c4':'#687c70';
+      ctx.fillRect(Math.cos(a)*r,-h*t+Math.sin(a)*r*.2,1+i%2,2);
     }
     ctx.restore();
   }
@@ -135,13 +154,13 @@ export class NovaGather {
 function windVortex(ctx,h,inner,r,age,opacity){
   const streams=quality().particles>500?8:4;
   for(let arm=0;arm<streams;arm++){
-    const phase=arm/streams*Math.PI*2-age*2.8,points=[];
+    const phase=arm/streams*Math.PI*2-age*4.2,points=[];
     for(let i=0;i<=32;i++){
-      const t=i/32,a=phase+t*2.5,rr=inner+9+(r-inner)*t;
+      const t=i/32,a=phase+t*3.5,rr=inner+9+(r-inner)*t;
       const ripple=Math.sin(t*17+age*9+arm)*3;
       points.push({x:h.x+Math.cos(a)*(rr+ripple),y:h.y+Math.sin(a)*(rr+ripple),t});
     }
-    for(const [width,color,alpha] of [[15,'#a8c8c3',.055],[5,'#d6e8e3',.18],[1,'#f0f8f4',.65]]){
+    for(const [width,color,alpha] of [[29,'#a8c8c3',.09],[10,'#d6e8e3',.21],[1.4,'#f0f8f4',.78]]){
       ctx.strokeStyle=color;
       for(let i=1;i<points.length;i++){
         const a=points[i-1],b=points[i],taper=Math.sin(b.t*Math.PI);
@@ -204,7 +223,7 @@ export class RaidAreaBurst {
     }
     for(const f of this.fragments){
       const start=(f.r-inner)/(outer-inner)*.52,t=this.age-start;if(t<0||t>.9)continue;
-      const a=f.a+(psy?t*.7:0),r=f.r+f.v*t,z=Math.max(0,f.vz*t-125*t*t),x=h.x+Math.cos(a)*r,y=h.y+Math.sin(a)*r-z;
+      const a=f.a+(psy?t*.7:this.id==='rayquaza'?-t*3:0),r=f.r+f.v*t,z=Math.max(0,f.vz*t-125*t*t),x=h.x+Math.cos(a)*r,y=h.y+Math.sin(a)*r-z;
       ctx.globalAlpha=fade*Math.min(1,t*12)*(1-t/.9);
       if(psy){
         ctx.save();ctx.translate(x,y);ctx.rotate(t*3+f.seed);ctx.fillStyle='#514762';ctx.strokeStyle=core;ctx.lineWidth=.6;

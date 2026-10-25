@@ -12,8 +12,8 @@ export function preloadRaidArt(id) {
 export function bossMouth(boss, toward) {
   const angle = toward ? Math.atan2(toward.y - boss.y, toward.x - boss.x) : Math.PI / 2 - boss.dir * Math.PI / 4;
   const mouth = boss.species.mouth ?? { fwd: boss.radius * .4, z: boss.species.headZ * .75 };
-  // Lugia's Shoot sheet holds its beak above its chest; its ordinary move origin sits too low.
-  const height = (boss.boss ?? boss.species.megaOf ?? boss.species.id) === 'lugia' ? boss.species.headZ + 4 * (boss.drawScale ?? 1) : mouth.z;
+  // The imported Shadow Lugia sheet places its beak below the crown; use its mouth height.
+  const height = (boss.boss ?? boss.species.megaOf ?? boss.species.id) === 'lugia' && !isShadowLugia(boss) ? boss.species.headZ + 4 * (boss.drawScale ?? 1) : mouth.z;
   return { x: boss.x + Math.cos(angle) * mouth.fwd, y: boss.y + Math.sin(angle) * mouth.fwd - height - boss.lift };
 }
 
@@ -111,6 +111,71 @@ export class LegendaryBeam {
       }
     }
     drawRaidSigil(ctx, this.boss.boss, origin.x, origin.y, Math.min(44, 18 + width * .35), this.age * 5, .65);
+    ctx.restore();
+  }
+}
+
+// A focused psychic lance with travelling filaments, rather than flat crossed bars.
+export class PsychicBeam {
+  constructor(x,y,x2,y2,width=24,life=.65){Object.assign(this,{x,y,x2,y2,width,life,age:0,layer:'air'});}
+  update(dt){this.age+=dt;return this.age<this.life;}
+  draw(ctx){
+    const p=this.age/this.life,fade=Math.min(1,this.age/.045,(1-p)*5),dx=this.x2-this.x,dy=this.y2-this.y,d=Math.hypot(dx,dy)||1;
+    ctx.save();ctx.translate(this.x,this.y);ctx.rotate(Math.atan2(dy,dx));ctx.lineCap='round';
+    const w=this.width*(.85+.08*Math.sin(this.age*43));
+    const g=ctx.createLinearGradient(0,-w,0,w);
+    for(const [at,c] of [[0,'rgba(131,56,208,0)'],[.3,'rgba(131,56,208,.12)'],[.5,'rgba(224,180,255,.5)'],[.7,'rgba(131,56,208,.12)'],[1,'rgba(131,56,208,0)']])g.addColorStop(at,c);
+    ctx.globalAlpha=fade;ctx.fillStyle=g;ctx.fillRect(0,-w,d,w*2);
+    for(const [line,color,alpha] of [[w*.28,'#9e61d7',.65],[w*.1,'#e9c9ff',.95],[1.2,'#fff2ff',1]]){
+      ctx.lineWidth=line;ctx.strokeStyle=color;ctx.globalAlpha=fade*alpha;
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(d,0);ctx.stroke();
+    }
+    for(let i=0;i<(quality().particles>500?8:4);i++){
+      const t=(this.age*2.2+i/8)%1,x=t*d,side=i%2?1:-1;
+      ctx.globalAlpha=fade*Math.sin(t*Math.PI)*.65;ctx.strokeStyle=i%3?'#dcb1ff':'#ffffff';ctx.lineWidth=.8;
+      ctx.beginPath();ctx.moveTo(x-24,side*w*.55);ctx.quadraticCurveTo(x,side*w*.9,x+32,side*w*.2);ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// Aeroblast is a rotating air tunnel. Water Pulse keeps its compact beam and pulse rings.
+export class AeroblastBeam {
+  constructor(boss,x,y,width=60,life=.8){Object.assign(this,{boss,x,y,width,life,age:0,layer:'air'});}
+  update(dt){this.age+=dt;return this.age<this.life&&this.boss.alive&&!this.boss.hidden;}
+  draw(ctx){
+    const o=bossMouth(this.boss,this),dx=this.x-o.x,dy=this.y-o.y,d=Math.hypot(dx,dy)||1;
+    const fade=Math.min(1,this.age/.06,(1-this.age/this.life)*5),length=d*Math.min(1,this.age/.12),shadow=isShadowLugia(this.boss);
+    ctx.save();ctx.translate(o.x,o.y);ctx.rotate(Math.atan2(dy,dx));ctx.lineCap='round';
+    const w=this.width*.5;
+    const mist=ctx.createLinearGradient(0,-w,0,w);
+    mist.addColorStop(0,'rgba(150,110,205,0)');mist.addColorStop(.35,shadow?'rgba(174,109,231,.25)':'rgba(163,207,226,.25)');mist.addColorStop(.5,shadow?'rgba(234,202,255,.45)':'rgba(228,248,255,.45)');mist.addColorStop(.65,shadow?'rgba(174,109,231,.25)':'rgba(163,207,226,.25)');mist.addColorStop(1,'rgba(150,110,205,0)');
+    ctx.globalAlpha=fade;ctx.fillStyle=mist;ctx.beginPath();ctx.moveTo(0,-3);ctx.lineTo(length,-w);ctx.lineTo(length,w);ctx.lineTo(0,3);ctx.closePath();ctx.fill();
+    // Only the near side of each rotating gust is bright. Broken arcs avoid a mesh.
+    const count=quality().particles>500?6:3;
+    for(let arm=0;arm<count;arm++){
+      const phase=arm*2.399-this.age*20;
+      for(let i=1;i<=64;i++){
+        const t=i/64,prev=(i-1)/64,a=phase+t*12,pa=phase+prev*12;
+        const visible=Math.max(0,Math.cos(a));if(visible<.15)continue;
+        const r=4+Math.min(1,t*3)*w,pr=4+Math.min(1,prev*3)*w;
+        for(const [line,alpha] of [[9,.12],[2,.45],[.75,.85]]){
+          ctx.lineWidth=line;ctx.strokeStyle=line>4?(shadow?'#9958d5':'#8baeca'):(shadow?'#efdaff':'#f0fbff');
+          ctx.globalAlpha=fade*alpha*visible*Math.sin(t*Math.PI);
+          ctx.beginPath();ctx.moveTo(length*prev,Math.sin(pa)*pr);ctx.lineTo(length*t,Math.sin(a)*r);ctx.stroke();
+        }
+      }
+    }
+    for(const [line,alpha] of [[18,.15],[7,.4],[1.5,.9]]){
+      ctx.lineWidth=line;ctx.strokeStyle=shadow?'#f1d8ff':'#f0fbff';ctx.globalAlpha=fade*alpha;
+      ctx.beginPath();ctx.moveTo(0,0);ctx.bezierCurveTo(length*.3,-2,length*.6,3,length,0);ctx.stroke();
+    }
+    // Fast detached shear streaks show the direction of the blast.
+    for(let i=0;i<14;i++){
+      const t=(this.age*2.7+i/14)%1,x=t*length,y=Math.sin(i*9.1)*this.width*.7;
+      ctx.globalAlpha=fade*Math.sin(t*Math.PI)*.6;ctx.strokeStyle=shadow?'#dfb5ff':'#dbf3ff';ctx.lineWidth=.8;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(Math.min(length,x+25),y*.96);ctx.stroke();
+    }
     ctx.restore();
   }
 }

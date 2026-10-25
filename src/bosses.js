@@ -7,7 +7,7 @@ import { BOUNDS } from './arena.js';
 import { dirFromVector } from './sprite.js';
 import { quality } from './quality.js';
 import { Slipstream, PressureWave, ElementColumn, RaidAreaBurst, NovaGather } from './legendary-effects.js';
-import { drawRaidSigil, drawRaidGroundAura, drawNaturalCharge, LegendaryBeam, RaidBurst, bossMouth } from './raid-art.js';
+import { drawRaidSigil, drawRaidGroundAura, drawNaturalCharge, LegendaryBeam, PsychicBeam, AeroblastBeam, RaidBurst, bossMouth } from './raid-art.js';
 import { outlinedText } from './draw.js';
 import { sfx } from './audio.js';
 import { Ring, Pillar, ScreenDim, Falling, TidalWave, Lightning, BeamLine, EnergyAura, MegaAura, PsyDome, StormCloud, rainbowBurst, debris, dustCloud, electricBurst, waterSplash, rand } from './effects.js';
@@ -668,7 +668,7 @@ export class BossPresenter {
   // slam a fault line torn through the floor between them.
   throwAt(h, def, boss) {
     const g = this.game, fx = fxOf(h), rgb = typeRgb(h.t, def.rgb, boss.boss === 'lugia'), color = `rgb(${rgb.join(',')})`;
-    if (fx === 'psy' || (boss.boss === 'mewtwo' && (fx === 'storm' || fx === 'pillar'))) g.spawn(new LegendaryBeam(boss, h.x, h.s === 'lane' ? Math.min(BOUNDS.maxY, boss.y + 160) : h.y, color, fx === 'pillar' ? 14 : 9, .42));
+    if (fx === 'psy' || (boss.boss === 'mewtwo' && (fx === 'storm' || fx === 'pillar'))) g.spawn(new PsychicBeam(boss.x,boss.y-boss.bodyZ,h.x,h.s==='lane'?Math.min(BOUNDS.maxY,boss.y+160):h.y,fx==='pillar'?14:9,.42));
     else if (fx === 'quake' && Math.hypot(h.x - boss.x, h.y - boss.y) > 60) this.trench({ x: boss.x, y: boss.y, x2: h.x, y2: h.y }, rgb);
   }
 
@@ -679,7 +679,7 @@ export class BossPresenter {
 
   impact(h, def, boss) {
     const g = this.game, rgb = typeRgb(h.t, def.rgb, boss.boss === 'lugia'), color = `rgb(${rgb.join(',')})`;
-    if (boss.boss === 'mewtwo' && (h.s === 'circle' || h.s === 'line' || h.s === 'cross')) g.spawn(new RaidBurst(boss.boss, h.x2 ?? h.x, h.y2 ?? h.y, Math.min(170, h.r * 2 + 30)));
+    if (boss.boss === 'mewtwo' && h.s === 'circle') g.spawn(new RaidBurst(boss.boss, h.x2 ?? h.x, h.y2 ?? h.y, Math.min(170, h.r * 2 + 30)));
     if (boss.boss === 'lugia' && fxOf(h) === 'beam') shadowSplash(g, h.x2 ?? h.x, h.y2 ?? h.y);
     switch (h.k === 'cataclysm' ? 'cataclysm' : ATTACKS[h.k]?.fx) {
       case 'quake':
@@ -698,7 +698,7 @@ export class BossPresenter {
           for (const y of [190,310,430,550]) g.spawn(new Pillar(h.x,y,.55,rgb,300));
           for (const y of [200,350,500]) g.marks.energy(h.x,y,h.r,rgb);
         } else for (const y of [230,400,570]) {
-          g.spawn(new ElementColumn(h.x,y,Math.min(240,y-150),h.r*1.3,boss.boss==='lugia',.6,boss.boss==='lugia'?SHADOW_LUGIA:null));
+          g.spawn(new ElementColumn(h.x,y,Math.min(128,y-145),h.r*.9,boss.boss==='lugia',.6,boss.boss==='lugia'?SHADOW_LUGIA:null));
           g.spawn(new PressureWave(h.x,y,h.r*1.5,boss.boss==='lugia'?'water':'air',0,boss.boss==='lugia'?SHADOW_LUGIA:null));
           if (boss.boss==='lugia') shadowSplash(g,h.x,y); else g.marks.fracture(h.x,y,22);
         }
@@ -706,6 +706,12 @@ export class BossPresenter {
         g.shake(3, 0.2);
         break;
       case 'beam':
+        if(boss.boss==='mewtwo'){
+          if(h.s==='row'||h.s==='cross')g.spawn(new PsychicBeam(BOUNDS.minX-30,h.y,BOUNDS.maxX+30,h.y,h.r*.9));
+          if(h.s==='cross')g.spawn(new PsychicBeam(h.x,BOUNDS.minY-30,h.x,BOUNDS.maxY+30,h.r*.9));
+          if(h.s==='line')g.spawn(new PsychicBeam(boss.x,boss.y-boss.bodyZ,h.x2,h.y2,h.r));
+          sfx.beamFire();g.shake(4,.25);break;
+        }
         if (h.s !== 'line') g.spawn(new LegendaryBeam(boss, h.x, h.y, color, h.r, .5, boss.boss==='lugia'));
         if (h.s === 'row' || h.s === 'cross') g.spawn(new BeamLine(BOUNDS.minX - 30, h.y, BOUNDS.maxX + 30, h.y, 0.4, color, h.r * 1.4));
         if (h.s === 'row' && boss.boss === 'lugia') {
@@ -714,7 +720,8 @@ export class BossPresenter {
         }
         if (h.s === 'cross') g.spawn(new BeamLine(h.x, BOUNDS.minY - 30, h.x, BOUNDS.maxY + 30, 0.4, color, h.r * 1.4));
         if (h.s === 'line') {
-          g.spawn(new LegendaryBeam(boss, h.x2, h.y2, color, h.r * 1.5, .6, h.k === 'dragonBeam' || boss.boss==='lugia'));
+          if(h.k==='aeroblast')g.spawn(new AeroblastBeam(boss,h.x2,h.y2,h.r*1.7,.8));
+          else g.spawn(new LegendaryBeam(boss,h.x2,h.y2,color,h.r*1.5,.6,h.k==='dragonBeam'||boss.boss==='lugia'));
           this.trench(h, rgb);
         }
         sfx.beamFire();
@@ -873,7 +880,7 @@ export function drawBossGround(ctx, view, boss) {
     const blink = !landed && left < 0.45 && Math.floor(left * 14) % 2 === 0;
     ctx.save();
     ctx.beginPath();ctx.rect(BOUNDS.minX-10,BOUNDS.minY-10,BOUNDS.maxX-BOUNDS.minX+20,BOUNDS.maxY-BOUNDS.minY+20);ctx.clip();
-    const broad=h.s==='ring'||h.s==='cover';
+    const broad=h.s!=='circle';
     ctx.fillStyle = landed ? `rgba(255,255,255,${(broad?.08:.75) * flash})` : `rgba(255,${blink ? 40 : 70},50,${0.16 + 0.22 * p})`;
     ctx.strokeStyle = landed ? `rgba(255,255,255,${flash*(broad?.25:1)})` : blink ? '#ffffff' : '#ffd36a';
     ctx.lineWidth = 2;

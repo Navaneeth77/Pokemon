@@ -1,6 +1,6 @@
 import { animDuration } from './assets.js';
 import { dirFromVector } from './sprite.js';
-import { LegendaryBeam } from './raid-art.js';
+import { LegendaryBeam, AeroblastBeam } from './raid-art.js';
 import { skyLegend, CastEnergy, Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
 import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
 import { applyHit } from './combat.js';
@@ -1850,7 +1850,8 @@ const BEATS = {
     const ang = u.aimAt(t), w = o.width ?? 28, m = a.mouth(), off = o.off ?? 0;
     const nx = -Math.sin(ang) * off, ny = Math.cos(ang) * off;
     a.anim('Shoot', 1);
-    if (skyLegend(u)) g.spawn(new LegendaryBeam(u, u.x + Math.cos(ang) * 720, u.y + Math.sin(ang) * 720 - 10, '#9ed8f5', w * 1.5, o.dur ?? .6,true));
+    if(a.move===MOVES.aeroblast)g.spawn(new AeroblastBeam(u,u.x+Math.cos(ang)*720,u.y+Math.sin(ang)*720-10,w*2.4,o.dur??.8));
+    else if (skyLegend(u)) g.spawn(new LegendaryBeam(u, u.x + Math.cos(ang) * 720, u.y + Math.sin(ang) * 720 - 10, '#9ed8f5', w * 1.5, o.dur ?? .6,true));
     else g.spawn(new Beam(m.x + nx, m.y - m.z + ny, u.x + Math.cos(ang) * 720 + nx, u.y + Math.sin(ang) * 720 + ny - 10, o.dur ?? 0.6,
       { width: w, colors: [P.c[2], P.c[1], '#ffffff'] }));
     for (let d = 40; d < 700; d += 22) {
