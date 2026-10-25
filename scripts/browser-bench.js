@@ -71,6 +71,10 @@ if(['rayquaza','mewtwo','lugia'].includes(preview)){
  const step=frames=>{for(let i=0;i<frames;i++)game.update(1/60);};
  restart();
  document.querySelector('aside p').textContent='Actual raid renderer. Starts paused. Restart checks the same game instance twice.';
+ const controls=document.createElement('button');controls.textContent='HIDE CONTROLS';
+ controls.style.cssText='position:fixed;right:4px;bottom:4px;z-index:6';
+ controls.onclick=()=>{const panel=document.querySelector('aside');panel.hidden=!panel.hidden;controls.textContent=panel.hidden?'SHOW CONTROLS':'HIDE CONTROLS';};
+ document.body.append(controls);
  button.textContent='CAST ULTIMATE';button.onclick=()=>{if(raid.ultRelease)return;raid.startUlt();if(raid.ult)raid.ult.t=.8;};
  const opening=preview==='rayquaza'?'CAST METEORS':preview==='lugia'?'CAST TIDAL':'CAST ORBS';
  const followup=preview==='rayquaza'?'CAST DASH':preview==='lugia'?'CAST STORM':'CAST SLAM';

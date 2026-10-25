@@ -61,8 +61,8 @@ export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, al
 
 // A short, attached beam: the source follows the mouth instead of the floor or a stale position.
 export class LegendaryBeam {
-  constructor(boss, x, y, color, width = 20, life = .55) {
-    Object.assign(this, { boss, x, y, color, width, life, age: 0, layer: 'air' });
+  constructor(boss, x, y, color, width = 20, life = .55, pulse = false) {
+    Object.assign(this, { boss, x, y, color, width, life, pulse, age: 0, layer: 'air' });
   }
   update(dt) { this.age += dt; return this.age < this.life && this.boss.alive && !this.boss.hidden; }
   draw(ctx) {
@@ -83,7 +83,7 @@ export class LegendaryBeam {
       ctx.closePath(); ctx.fill();
     }
     ctx.globalAlpha = fade;
-    if (this.boss.boss !== 'mewtwo') {
+    if (this.boss.boss !== 'mewtwo' && !this.pulse) {
       // Broken pressure trails follow the beam, rather than portal hoops at its mouth.
       ctx.strokeStyle = core; ctx.lineWidth = 1;
       const count = quality().particles > 500 ? 7 : 3;
@@ -96,7 +96,7 @@ export class LegendaryBeam {
       }
       ctx.globalAlpha = fade;
     }
-    if (this.boss.boss === 'mewtwo' && quality().particles > 500) {
+    if ((this.pulse || this.boss.boss === 'mewtwo') && quality().particles > 500) {
       ctx.strokeStyle = this.color; ctx.lineWidth = 1.5;
       for (let i = 0; i < 4; i++) {
         const t = (p * 2 + i / 4) % 1, cx = origin.x + dx * t, cy = origin.y + dy * t;

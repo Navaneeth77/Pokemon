@@ -475,7 +475,7 @@ class BossCharge {
 
   draw(ctx) {
     const b = this.boss, k = Math.min(1, (this.age / this.life) * 1.15), [R, G, B] = this.rgb;
-    if (b.boss === 'rayquaza' || b.boss === 'lugia') {
+    if ((b.boss === 'rayquaza' && this.kind !== 'beam') || b.boss === 'lugia') {
       drawNaturalCharge(ctx, b, this.age, k, this.kind === 'beam' || this.kind === 'ultimate');
       return;
     }
@@ -674,7 +674,7 @@ export class BossPresenter {
         if (h.s === 'row' || h.s === 'cross') g.spawn(new BeamLine(BOUNDS.minX - 30, h.y, BOUNDS.maxX + 30, h.y, 0.4, color, h.r * 1.4));
         if (h.s === 'cross') g.spawn(new BeamLine(h.x, BOUNDS.minY - 30, h.x, BOUNDS.maxY + 30, 0.4, color, h.r * 1.4));
         if (h.s === 'line') {
-          g.spawn(new LegendaryBeam(boss, h.x2, h.y2, color, h.r * 1.5, .6));
+          g.spawn(new LegendaryBeam(boss, h.x2, h.y2, color, h.r * 1.5, .6, h.k === 'dragonBeam'));
           this.trench(h, rgb);
         }
         sfx.beamFire();
