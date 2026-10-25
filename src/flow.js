@@ -147,8 +147,8 @@ export class Flow {
     ];
     const menu = $('#title-menu');
     const title = this.economy?.loadout().title?.name??currentTitle();
-    menu.innerHTML = `<div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div>`
-      + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
+    menu.innerHTML = `<div class="tm-top"><div class="tm-brand"><b>POKÉMON</b><span>CHAOS ARENA · MAIN MENU</span></div><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}</span></div></div><div class="tm-grid">`
+      + items.map(([label, , sub], i) => `${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i] ? `<h3 class="tm-group">${({0:'BATTLE',3:'EXPANSION',5:'TRAINER GUILD',8:'TRAINER & TOOLS'})[i]}</h3>` : ''}<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('') + '</div>';
     const frame = this.economy?.loadout().frame??cosmeticLoadout().frame;
     if (frame) menu.querySelector('canvas').style.border = `2px solid ${frame.color}`;
     menu.querySelector('canvas').getContext('2d').drawImage(drawBust(lookById(this.save.look)), 0, 0);
@@ -174,6 +174,29 @@ export class Flow {
     if (this.screen !== 'title') return;
     const sub = document.querySelector('#title-menu .tm-item[data-i="1"] small');
     if (sub) sub.textContent = this.onlineSub();
+  }
+
+  // The menu is a grid of cards: the card whose centre is nearest in the pressed direction (wrapping
+  // from the last row to the first, and back).
+  menuNeighbour([dx, dy]) {
+    const cards = [...document.querySelectorAll('#title-menu .tm-item')], at = cards[this.menuIndex]?.getBoundingClientRect();
+    if (!at) return null;
+    const cx = at.left + at.width / 2, cy = at.top + at.height / 2;
+    let best = null, bestScore = Infinity, far = null, farScore = -Infinity;
+    cards.forEach((c, i) => {
+      if (i === this.menuIndex) return;
+      const r = c.getBoundingClientRect(), x = r.left + r.width / 2 - cx, y = r.top + r.height / 2 - cy;
+      const along = x * dx + y * dy, across = Math.abs(x * dy) + Math.abs(y * dx);
+      if (along > 4) {
+        const score = along + across * 3;
+        if (score < bestScore) [best, bestScore] = [i, score];
+      } else {
+        // Nothing further that way: wrap to the farthest card on the opposite side.
+        const s = -along - across * 3;
+        if (s > farScore) [far, farScore] = [i, s];
+      }
+    });
+    return best ?? far;
   }
 
   highlightMenu() {
@@ -925,8 +948,8 @@ export class Flow {
       }
     } else if (s === 'title') {
       const n = this.menuItems.length;
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') this.menuIndex = (this.menuIndex + 1) % n;
-      else if (e.code === 'ArrowUp' || e.code === 'KeyW') this.menuIndex = (this.menuIndex + n - 1) % n;
+      const dir = { ArrowDown: [0, 1], KeyS: [0, 1], ArrowUp: [0, -1], KeyW: [0, -1], ArrowRight: [1, 0], KeyD: [1, 0], ArrowLeft: [-1, 0], KeyA: [-1, 0] }[e.code];
+      if (dir) this.menuIndex = this.menuNeighbour(dir) ?? this.menuIndex;
       else if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
         sfx.sendOut();

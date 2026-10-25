@@ -148,3 +148,8 @@ fraction of 100 ms, but that is an estimate until it is measured.
 **Still open**
 - A hosted Upstash check of the wallet Redis path (above).
 - `docs/PERFORMANCE.md` figures were not re-run after the wallet change.
+
+**Main menu (25 Oct).** The menu was a panel floating over the title art. It is now its own full page
+(`#title-menu`: header with the trainer and coins, grouped cards, three columns on desktop, one on
+phones) and the arrow keys follow the grid (`Flow.menuNeighbour`). Checked in the preview browser at
+phone and desktop width; the menu items and their order are unchanged.

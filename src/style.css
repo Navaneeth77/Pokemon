@@ -1577,3 +1577,21 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 @media(prefers-reduced-motion:reduce){.chaos-overlay *,.chaos-toast,.coin-gain{animation:none!important;transition:none!important}}
 .item-frame canvas{width:48px;height:48px;image-rendering:pixelated}.item-frame:before{z-index:2;pointer-events:none;border-width:3px}.chaos-wallet-chip{position:relative}.reward-spark{position:absolute;left:50%;top:30%;pointer-events:none;animation:reward-spark .65s ease-out forwards;}
 @keyframes reward-spark{0%{transform:translate(0,0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(60deg);opacity:0}}
+
+/* Main menu: its own full page (the title art is not behind it) */
+#title-menu { position: fixed; inset: 0; z-index: 60; left: 0; bottom: auto; transform: none; min-width: 0; max-height: none; width: auto; overflow-y: auto; align-items: center; gap: 0;
+  padding: 58px 18px 40px; border: 0; box-shadow: none; color: #edf4ff;
+  background: radial-gradient(ellipse 70% 50% at 15% 0%, #1d3470aa, transparent 70%), radial-gradient(ellipse 60% 45% at 95% 100%, #4a2468aa, transparent 70%),
+    repeating-linear-gradient(0deg, #ffffff07 0 1px, transparent 1px 4px), #070b18; }
+#title-menu > * { width: min(1040px, 100%); flex: none; }
+.tm-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; padding-bottom: 14px; border-bottom: 2px solid #26385e; }
+.tm-brand { display: flex; flex-direction: column; line-height: 1; }
+.tm-brand b { font: 400 clamp(30px, 6vw, 52px) 'Luckiest Guy', 'Pixelify Sans', sans-serif; letter-spacing: 3px; color: #ffe08a; text-shadow: 3px 3px 0 #7b2d12, 0 0 24px #ffb84a55; }
+.tm-brand span { margin-top: 6px; font: 700 11px 'Pixelify Sans', monospace; letter-spacing: 4px; color: #8fa6ce; }
+#title-menu .tm-top .tm-who { margin: 0; flex-wrap: wrap; }
+.tm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px 14px; align-content: start; padding-top: 4px; }
+.tm-grid .tm-group { grid-column: 1 / -1; margin: 16px 0 0; padding-bottom: 5px; border-bottom: 1px solid #26385e; }
+#title-menu .tm-grid .tm-item { margin: 0; min-height: 60px; display: flex; flex-direction: column; justify-content: center; }
+#title-menu .tm-grid .tm-item.tm-main { min-height: 72px; }
+#title-menu .tm-grid .tm-item.on { transform: none; box-shadow: 0 0 0 2px #ffe08a, 0 0 22px #ffd56b55; }
+@media (max-width: 560px) { #title-menu { padding: 56px 12px 28px; } .tm-grid { grid-template-columns: 1fr; } }
