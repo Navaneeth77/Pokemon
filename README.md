@@ -80,6 +80,7 @@ Vercel serves the frontend; a persistent Node/WebSocket service runs `npm run se
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Server only | Persistent ratings; otherwise local JSON fallback |
 | `LEADERBOARD_FILE` | Server | Optional fallback JSON file path |
 | `MAX_MATCHES` | Server | Match capacity, default 3 |
+| `BOT_MATCH_AFTER_MS` | Server | Ranked Online Battles: after this long with nobody compatible, a computer trainer is matched (AI difficulty rolled from the player's online win streak; bots are not counted online and coins from them share the Bot Battles daily cap). Default 25000; `0` turns it off |
 | `MAX_RAIDS` | Server | Concurrent raid limit, default 1; a co-op raid also consumes match capacity |
 | `KEEP_AWAKE`, `KEEP_AWAKE_URL`, `RENDER_EXTERNAL_URL` | Server | Optional best-effort self-ping; `KEEP_AWAKE=0` disables it |
 | `MATCH_TEST_HP` | Local testing only | Reduced starting HP; never enable for production |

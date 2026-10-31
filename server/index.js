@@ -9,6 +9,7 @@
 //   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated)
 import './shim.js';
 import { EconomyStore } from './economy-store.js';
+import { botEntry } from './bots.js';
 import { resultSummary } from '../src/mastery.js';
 import { RaidRooms } from './raids.js';
 import { DraftRooms } from './drafts.js';
@@ -41,6 +42,9 @@ const STEP = 1 / 60;
 const WAKE_MS = 1000 / 30;
 const MAX_CATCHUP = 6; // after a stall, at most this many steps are made up at once
 const QUEUE_TIMEOUT_MS = 3 * 60_000; // nobody compatible found: tell the player, they can retry
+// Ranked Online Battles: after this long with nobody compatible, the player is matched with a computer
+// trainer (server/bots.js). BOT_MATCH_AFTER_MS=0 turns this off.
+const BOT_AFTER_MS = Number.isFinite(Number(process.env.BOT_MATCH_AFTER_MS)) && process.env.BOT_MATCH_AFTER_MS !== '' ? Number(process.env.BOT_MATCH_AFTER_MS) : 25_000;
 const LOAD_TIMEOUT_MS = 45_000; // both players must load the battle within this
 const AFK_MS = 60_000; // no input at all for this long in battle forfeits
 const MAX_BATTLE_S = 8 * 60; // then the side with more HP left wins
@@ -92,7 +96,7 @@ async function redis(cmd) {
 }
 
 const keep = (pid, r) => {
-  if (PID_RE.test(pid) && r) records.set(pid, { name: safeName(r.name), w: r.w | 0, l: r.l | 0, d: r.d | 0, rating: Number.isFinite(r.rating) ? Math.round(r.rating) : START_RATING });
+  if (PID_RE.test(pid) && r) records.set(pid, { name: safeName(r.name), w: r.w | 0, l: r.l | 0, d: r.d | 0, rating: Number.isFinite(r.rating) ? Math.round(r.rating) : START_RATING, streak: r.streak | 0 });
 };
 try {
   if (REDIS) {
@@ -194,7 +198,7 @@ function presence() {
     if (!m.side) {
       for (const e of m.entries ?? []) if (e.player.ws) put(e.player.pid, { mode: 'raid', what: 'battling' });
     } else {
-      for (const s of ['A', 'B']) put(m.side[s].player.pid, { mode: m.draftMode ? 'draft' : m.format, what: 'battling' });
+      for (const s of ['A', 'B']) if (!m.side[s].player.bot) put(m.side[s].player.pid, { mode: m.draftMode ? 'draft' : m.format, what: 'battling' });
     }
   }
   for (const r of drafts.rooms.values()) for (const p of r.players) put(p.pid, { mode: 'draft', what: 'drafting' });
@@ -286,6 +290,10 @@ class Match {
     this.arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
     this.side = { A: a, B: b };
     this.loaded = { A: false, B: false };
+    // A computer trainer as side B: always loaded, played by the engine's own AI (see begin).
+    this.bot = !!b.player.bot;
+    this.botDifficulty = b.difficulty ?? 'medium';
+    if (this.bot) this.loaded.B = true;
     this.phase = 'loading';
     this.created = Date.now();
     this.vec = { A: { x: 0, y: 0 }, B: { x: 0, y: 0 } };
@@ -349,6 +357,11 @@ class Match {
       beforePuppet: () => this.driveB(),
       afterPuppet: noop,
     };
+    if (this.bot) {
+      Object.assign(g, { difficulty: this.botDifficulty, aiConfig: null, foeCanMega: true });
+      g.online.botFoe = true; // the AI drives side B instead of a player's input
+      g.online.beforePuppet = () => null;
+    }
     g.start();
     if (TEST_HP < 1) for (const m of [...g.playerTeam.members, ...g.opponentTeam.members]) m.hp = Math.max(1, Math.round(m.maxHp * TEST_HP));
     this.game = g;
@@ -375,6 +388,7 @@ class Match {
     if (g.state === 'fighting') this.fightT += STEP;
     if (g.state === 'finale' || g.state === 'over') return this.finish(g.winner === 'player' ? 'A' : g.winner === 'opponent' ? 'B' : null, 'ko');
     const now = Date.now();
+    if (this.bot) this.active.B = now;
     if (g.state === 'fighting') {
       const afkA = now - this.active.A > AFK_MS, afkB = now - this.active.B > AFK_MS;
       if (afkA || afkB) return this.finish(afkA && afkB ? null : afkA ? 'B' : 'A', 'afk');
@@ -482,7 +496,10 @@ class Match {
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
       const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
-      if (!wasLoading && this.ranked) p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
+      if (!wasLoading && this.ranked) {
+        p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
+        p.record.streak = result === 'win' ? (p.record.streak ?? 0) + 1 : result === 'loss' ? 0 : p.record.streak ?? 0;
+      }
       p.delta = 0;
     }
     // Ratings (Elo): beating a higher-rated player earns more. A server error changes nothing.
@@ -503,7 +520,7 @@ class Match {
         p.match = null;
         p.state = 'idle';
       }
-      if(!wasLoading&&['ko','time'].includes(reason)&&this.game)economy.award(p,resultSummary(this.game,s==='A'?'player':'opponent',{id:this.id,result,reason,team:this.side[s].team}));
+      if(!wasLoading&&['ko','time'].includes(reason)&&this.game)economy.award(p,resultSummary(this.game,s==='A'?'player':'opponent',{id:this.id,result,reason,team:this.side[s].team}),Date.now(),{local:this.bot});
       sendTo(p, { t: 'end', id: this.id, ranked:this.ranked, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
     log(`match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
@@ -700,6 +717,14 @@ setInterval(() => {
       }
     }
     pair(3); pair(6);
+    // Still nobody after a while: a computer trainer steps in (if the server has room for another match).
+    if (BOT_AFTER_MS > 0) for (const f of [3, 6]) for (const e of [...queues[f]]) {
+      if (t - e.since < BOT_AFTER_MS || e.player.ws?.readyState !== 1 || matches.size >= MAX_MATCHES) continue;
+      dequeue(e.player);
+      const bot = botEntry(e, { roster: ROSTER, species: SPECIES, looks: LOOKS });
+      log(`no opponent for ${e.player.name} after ${Math.round((t - e.since) / 1000)}s: computer trainer ${bot.player.name} (${bot.difficulty})`);
+      createMatch(e, bot);
+    }
     for (const m of matches.values()) {
       if (m.phase === 'loading' && t - m.created > LOAD_TIMEOUT_MS) m.abort('load-timeout', s => m.loaded[s]);
     }

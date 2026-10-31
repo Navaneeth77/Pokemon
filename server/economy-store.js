@@ -96,13 +96,14 @@ export class EconomyStore {
     return walletView(record.wallet, now);
   }
 
-  award(player, summary, now = Date.now()) {
+  // `local` (a win against a computer trainer) counts toward the same daily cap as Bot Battles.
+  award(player, summary, now = Date.now(), { local = false } = {}) {
     const old = player?.economyAuthenticated && this.data.players[player.pid];
     if (!old) return false;
     try {
       const record = structuredClone(old);
       rollover(record.wallet, now);
-      if (!progressMatch(record.wallet, summary, now)) return false;
+      if (!progressMatch(record.wallet, summary, now, { local })) return false;
       this.save(player.pid, record);
       return true;
     } catch (e) {

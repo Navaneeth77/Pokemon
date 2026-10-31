@@ -163,3 +163,12 @@ Battles and returning, the start page still showing its logo scene, and no conso
 earlier scrolling bug (`bottom: auto` made the box as tall as its content, so nothing could scroll) was
 found and fixed that way. The preview pane's own screenshots lagged behind scrolling, so use real
 input plus DOM measurements, not that pane's screenshots, to check scrolling.
+
+**Stand-in computer trainers (31 Oct).** Ranked Online Battles players who wait `BOT_MATCH_AFTER_MS`
+(default 25 s) with nobody compatible get an ordinary match against a computer trainer
+(`server/bots.js`): a plausible name, a random look and a random legal team, played on the server by the
+Bot Battles AI (`game.online.botFoe`). Difficulty is rolled from the player's online win streak (now
+saved in their record): mostly Easy or Medium at 0, mostly Hard from 5. Nothing in the match says it's a
+bot (owner's choice). The bot's rating sits within ±60 of the player's, so the rating change looks
+normal; its record is never saved. Bots aren't counted in the online numbers, and coins from these
+wins fall under the Bot Battles daily cap. Tests: `tests/bots.test.js`.

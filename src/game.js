@@ -1162,7 +1162,8 @@ export class Game {
       p.input.x = p.input.y = 0;
     }
 
-    if (!this.online && !this.raid) this.ai.update(dt, this);
+    // The bot drives the opponent offline, and online when the match server plays a computer trainer.
+    if ((!this.online || this.online.botFoe) && !this.raid) this.ai.update(dt, this);
     const own = this.online?.beforePlayer?.();
     p.update(dt, this);
     if (own) this.online.afterPlayer(dt, own);
