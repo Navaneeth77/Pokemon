@@ -9,6 +9,8 @@ import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
 import { MOVEDEX } from './data/movedex.js';
 import { statusMove } from './effects-resolver.js';
+import { MOVE_ANIMS } from './data/move-anims.js';
+import { runSequence, tickGather } from './move-sequence.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -2955,6 +2957,24 @@ function fromDex(id, d) {
 for (const [id, d] of Object.entries(MOVEDEX)) {
   if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], mechanicsOf(d));
   else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d) };
+}
+// Moves with their own staged animation (data/move-anims.js, move-sequence.js).
+class Sequence extends MoveAction {
+  start() { runSequence(this); }
+  tick(dt) { tickGather(this, dt); }
+}
+for (const [id, r] of Object.entries(MOVE_ANIMS)) {
+  const m = MOVES[id];
+  if (!m || m.ultimate) continue;
+  for (const k of ['shot', 'beam', 'shockwave', 'melee', 'dash', 'stream']) delete m[k];
+  if (r.seq) {
+    const self = r.seq.aim === 'self', reach = self ? Math.max(...r.seq.steps.map(s => s.hit?.r ?? 0)) : 300;
+    Object.assign(m, { Action: Sequence, seq: r.seq, range: reach, minRange: self ? 0 : 30, ai: self ? 'area' : 'ranged', power: m.dex?.power ?? m.power });
+  } else if (r.stream) {
+    // A stream lands many small hits: its power is spread over about six of them.
+    const colors = r.stream.colors;
+    Object.assign(m, { Action: Stream, stream: { ...r.stream, colors: () => colors, sound: d => sfx.hydro(d) }, power: Math.round((m.dex?.power ?? m.power) / 6), range: r.stream.reach, minRange: 30, ai: 'ranged' });
+  }
 }
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
 
