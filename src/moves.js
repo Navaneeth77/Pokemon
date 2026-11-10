@@ -17,6 +17,7 @@ import { LEGEND_ULTS_2 } from './ult-legends2.js';
 import { LEGEND_ULTS_3 } from './ult-legends3.js';
 import { LEGEND_ULTS_4 } from './ult-legends4.js';
 import { FAV_ULTS } from './ult-favs.js';
+import { FAV_ULTS_2 } from './ult-favs2.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -1459,6 +1460,7 @@ const ULTS = {
   ...LEGEND_ULTS_3,
   ...LEGEND_ULTS_4,
   ...FAV_ULTS,
+  ...FAV_ULTS_2,
   blastBurn(a, g, u, t) {
     // Mega Charizard X burns with blue flame.
     const fire = flameColors(u), blue = u.species.flame === 'blue';
@@ -1932,6 +1934,9 @@ function palette(c, type) {
   const rgb = hexRgb(c[1]), dark = hexRgb(c[2]);
   return { c, rgb, dim: dark.map(v => Math.round(v * 0.35)).join(','), mark: MARK_BY_TYPE[type] ?? ((g, x, y, r) => g.marks.energy(x, y, r, rgb, 6)) };
 }
+
+// True when an ultimate has its own choreography (not just the shared signature beats below).
+export const hasChoreography = id => !!ULTS[id];
 
 function runSignature(a, g, u, t) {
   const S = a.move.sig, P = palette(isShadowLugia(u) ? SHADOW_LUGIA.colors : S.c, a.move.type);
