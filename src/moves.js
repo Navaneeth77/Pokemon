@@ -10,7 +10,7 @@ import { TYPE_COLORS } from './data/types.js';
 import { MOVEDEX } from './data/movedex.js';
 import { statusMove } from './effects-resolver.js';
 import { MOVE_ANIMS } from './data/move-anims.js';
-import { runSequence, tickGather } from './move-sequence.js';
+import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -644,6 +644,8 @@ class Shockwave extends MoveAction {
 class Utility extends MoveAction {
   start() {
     const c = this.move.util;
+    // A status move's own look (data/move-anims.js `fx`), around the user (or the foe for aimed moves).
+    if (this.move.fx) scheduleSteps(this, this.move.fx, c.kind === 'ray' ? { x: this.target.x, y: this.target.y } : { x: this.user.x, y: this.user.y });
     this.anim(c.anim ?? 'Charge', 1);
     this.at(c.at ?? 0.22, () => UTIL_FX[c.kind](this, this.game, this.user, c));
     this.at(c.end ?? 0.5, () => this.finish(0.08));
@@ -2968,6 +2970,8 @@ for (const [id, r] of Object.entries(MOVE_ANIMS)) {
   const m = MOVES[id];
   if (!m || m.ultimate) continue;
   // A strike or tackle keeps its action and takes the recipe's look.
+  if (r.fx && m.util) { m.fx = r.fx; continue; }
+  if (r.beam && m.beam) { m.beam = { ...m.beam, ...r.beam }; continue; }
   if (r.melee && m.melee) { m.melee = { ...m.melee, ...r.melee }; continue; }
   if (r.dash && m.dash) { m.dash = { ...m.dash, ...r.dash }; continue; }
   if (r.melee || r.dash) continue;

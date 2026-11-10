@@ -7,6 +7,7 @@ import '../server/shim.js';
 const { SPECIES, ROSTER } = await import('../src/data/species.js');
 const { MOVES } = await import('../src/moves.js');
 const { ABILITIES } = await import('../src/data/abilities.js');
+const { MOVE_ANIMS } = await import('../src/data/move-anims.js');
 
 const problems = [], used = new Set();
 for (const id of ROSTER) {
@@ -22,9 +23,11 @@ for (const id of ROSTER) {
     if (!mv.type || !mv.cat) problems.push(`${m}: missing type or category`);
     if (mv.cat !== 'status' && !(mv.power > 0) && !mv.dex) problems.push(`${m}: an attack without power`);
     if (mv.cat === 'status' && !mv.util && !mv.copy && !mv.guard) problems.push(`${m}: a status move without an effect`);
+    // Every move needs its own look: hand-made, or a recipe in data/move-anims.js (not the bare generated one).
+    if (mv.generated && !MOVE_ANIMS[m]) problems.push(`${m}: only the generic look (add a recipe to data/move-anims.js)`);
   }
 }
-const fromDex = [...used].filter(m => MOVES[m].dex).length;
-console.log(`${ROSTER.length} Pokémon · ${used.size} moves in use (${fromDex} with official data) · ${problems.length} problems`);
+const fromDex = [...used].filter(m => MOVES[m].dex).length, recipes = [...used].filter(m => MOVE_ANIMS[m]).length;
+console.log(`${ROSTER.length} Pokémon · ${used.size} moves in use (${fromDex} with official data, ${recipes} with a recipe, the rest hand-made) · ${problems.length} problems`);
 for (const p of problems.slice(0, 40)) console.log(' ', p);
 process.exit(problems.length ? 1 : 0);

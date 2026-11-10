@@ -29,11 +29,18 @@ import { WEATHER_TINT } from './data/move-anims.js';
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
 export function runSequence(action) {
-  const { move, user, game: g } = action, seq = move.seq, t = action.target;
+  const { move, user } = action, seq = move.seq, t = action.target;
   const spot = seq.aim === 'self' ? { x: user.x, y: user.y } : seq.aim === 'front' ? action.front(seq.dist ?? 90) : { x: t.x, y: t.y };
   action.spot = spot;
+  scheduleSteps(action, seq.steps, spot);
+  action.at(seq.end ?? 1, () => action.finish(seq.recover ?? 0.1));
+}
+
+// Runs steps around `spot` (status moves use this for their look, with no hit step).
+export function scheduleSteps(action, steps, spot) {
+  const { move, user, game: g } = action, t = action.target;
   const marks = [];
-  for (const step of seq.steps) {
+  for (const step of steps) {
     action.at(step.at ?? 0, () => {
       if (step.anim) action.anim(step.anim, step.speed ?? 1);
       if (step.gather) action.gatherUntil = { ...step.gather, end: step.gather.until ?? (step.at ?? 0) + 0.5 };
@@ -104,7 +111,6 @@ export function runSequence(action) {
       }
     });
   }
-  action.at(seq.end ?? 1, () => action.finish(seq.recover ?? 0.1));
 }
 
 // Energy streaming into the user while a sequence charges (called every frame by the Sequence action).
