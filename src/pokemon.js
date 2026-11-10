@@ -384,7 +384,7 @@ export class Pokemon {
   }
 
   drawShadow(ctx) {
-    if (this.hidden) return;
+    if (this.hidden || this.vanished) return;
     const [rx, ry] = this.species.shadow;
     const fade = this.fainted ? Math.max(0, 1 - Math.max(0, this.faintT - 0.9) / 0.9) : 1;
     const recall = this.recallT > 0 ? 1 - Math.min(1, this.recallT / RECALL_TIME) : 1;
@@ -398,7 +398,7 @@ export class Pokemon {
   }
 
   draw(ctx) {
-    if (this.hidden) return;
+    if (this.hidden || this.vanished) return;
     let alpha = this.ab.ghost > 0 ? 0.4 : 1, scale = this.drawScale ?? 1;
     let flash = Math.max(this.flash, this.appear);
     let color = this.appear > 0 ? '#ffffff' : this.flashColor;

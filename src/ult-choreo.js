@@ -14,12 +14,12 @@ import {
 } from './effects.js';
 import { sfx } from './audio.js';
 
-const clampX = x => Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, x));
-const clampY = y => Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, y));
-const css = rgb => `rgb(${rgb.join(',')})`;
+export const clampX = x => Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, x));
+export const clampY = y => Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, y));
+export const css = rgb => `rgb(${rgb.join(',')})`;
 
 // Particles drawn in from all around a point (energy gathering).
-function inward(g, x, y, z, n, r, colors, life = 0.35) {
+export function inward(g, x, y, z, n, r, colors, life = 0.35) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), d = rand(r * 0.7, r * 1.2), px = x + Math.cos(a) * d, py = y + Math.sin(a) * d * 0.6;
     g.particles.spawn({ x: px, y: py, z: z + rand(-10, 14), vx: (x - px) / life, vy: (y - py) / life, life, size: rand(2, 4), sizeEnd: 1, colors, fade: false });
@@ -27,7 +27,7 @@ function inward(g, x, y, z, n, r, colors, life = 0.35) {
 }
 
 // Particles thrown out of a point, falling back under gravity.
-function spray(g, x, y, z, n, colors, { speed = 110, up = 160, size = [2, 5], life = [0.4, 0.8], grav = 320 } = {}) {
+export function spray(g, x, y, z, n, colors, { speed = 110, up = 160, size = [2, 5], life = [0.4, 0.8], grav = 320 } = {}) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), s = rand(speed * 0.3, speed);
     g.particles.spawn({ x, y, z, vx: Math.cos(a) * s, vy: Math.sin(a) * s * 0.6, vz: rand(up * 0.3, up), gz: grav, life: rand(...life), size: rand(...size), sizeEnd: 1, colors });
@@ -35,7 +35,7 @@ function spray(g, x, y, z, n, colors, { speed = 110, up = 160, size = [2, 5], li
 }
 
 // The big landing every climax shares: layered shockwave rings, a crater, flying rock and dust, and a hit-pause.
-function crater(a, g, x, y, { r = 50, rgb, ring = '#ffffff', mark, stop = 0.12, shake = 14 } = {}) {
+export function crater(a, g, x, y, { r = 50, rgb, ring = '#ffffff', mark, stop = 0.12, shake = 14 } = {}) {
   g.spawn(new Ring(x, y, { r0: 8, r1: 440, life: 0.6, color: ring, width: 8 }));
   g.spawn(new Ring(x, y, { r0: 8, r1: 260, life: 0.5, color: css(rgb), width: 5 }));
   g.spawn(new Ring(x, y, { r0: 4, r1: 120, life: 0.35, color: '#ffffff', width: 3 }));
@@ -51,7 +51,7 @@ function crater(a, g, x, y, { r = 50, rgb, ring = '#ffffff', mark, stop = 0.12, 
 
 // Moves the user in a straight line to `to` over `dur`, trailing afterimages (and speed lines, given a colour).
 // `onStep(k)` runs every frame with the progress 0…1.
-function glide(a, g, u, to, dur, ghost, { lines, onStep } = {}) {
+export function glide(a, g, u, to, dur, ghost, { lines, onStep } = {}) {
   const from = { x: u.x, y: u.y }, ang = Math.atan2(to.y - from.y, to.x - from.x);
   let k = 0;
   u.phasing = true;
@@ -68,7 +68,7 @@ function glide(a, g, u, to, dur, ghost, { lines, onStep } = {}) {
 }
 
 // A charge through the foe: `onContact` fires once, when the user reaches it (or the end of the run).
-function charge(a, g, u, t, to, dur, ghost, onContact, lines) {
+export function charge(a, g, u, t, to, dur, ghost, onContact, lines) {
   let hit = false;
   glide(a, g, u, to, dur, ghost, {
     lines,
@@ -81,13 +81,13 @@ function charge(a, g, u, t, to, dur, ghost, onContact, lines) {
 }
 
 // A point `d` past the foe along the user's line to it.
-function through(u, t, d) {
+export function through(u, t, d) {
   const ang = u.aimAt(t), dist = u.distTo(t) + d;
   return { ang, x: clampX(u.x + Math.cos(ang) * dist), y: clampY(u.y + Math.sin(ang) * dist) };
 }
 
 // Speed lines streaming back from a charging Pokémon.
-function speedLines(g, u, ang, color) {
+export function speedLines(g, u, ang, color) {
   const nx = -Math.sin(ang), ny = Math.cos(ang);
   for (let i = 0; i < 2; i++) {
     const off = rand(-18, 18), x = u.x + nx * off, y = u.y - u.bodyZ + ny * off;

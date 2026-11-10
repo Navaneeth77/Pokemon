@@ -12,6 +12,7 @@ import { statusMove } from './effects-resolver.js';
 import { MOVE_ANIMS } from './data/move-anims.js';
 import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
 import { TYPE_ULTS } from './ult-choreo.js';
+import { LEGEND_ULTS } from './ult-legends.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -1394,7 +1395,7 @@ class Ultimate extends MoveAction {
     if (this.target.held) release(this.target);
     for (const r of this.rocks ?? []) r.dead = true;
     for (const e of this.owned) e.dead = true;
-    Object.assign(u, { phasing: false, invuln: false, zOverride: null });
+    Object.assign(u, { phasing: false, invuln: false, zOverride: null, vanished: false });
   }
 
   end(dt) {
@@ -1449,6 +1450,7 @@ class Ultimate extends MoveAction {
 
 const ULTS = {
   ...TYPE_ULTS,
+  ...LEGEND_ULTS,
   blastBurn(a, g, u, t) {
     // Mega Charizard X burns with blue flame.
     const fire = flameColors(u), blue = u.species.flame === 'blue';

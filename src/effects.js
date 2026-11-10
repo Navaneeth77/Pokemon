@@ -86,7 +86,7 @@ export class ParticleSystem {
   }
 }
 
-class Effect {
+export class Effect {
   constructor(layer, life) {
     this.layer = layer;
     this.life = life;
