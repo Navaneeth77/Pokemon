@@ -65,7 +65,7 @@ export class Pokemon {
       elementAura: null, reactionUntil: 0, reactionComboUntil: 0, reactionCount: 0,
       action: null, cooldowns: {}, busy: 0, root: 0, stagger: 0, frozen: 0, status: this.status ?? {}, sGuard: {}, buffs: {},
       combo: { n: 0, uses: 0, t: 0, chain: 0, lastRole: -1, foe: null }, chainT: 0, chainRole: -1, comboHits: 0, comboTimer: 0, escapeT: 0,
-      ab: {}, it: {}, stages: {}, seeded: null, roostT: 0, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
+      ab: {}, it: {}, stages: {}, seeded: null, roostT: 0, taunted: 0, salted: null, bound: null, substitute: false, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
       flash: 0, flashColor: '#fff', appear: 0, recallT: 0, landT: 0, zOverride: null, invuln: false, phasing: false, held: false,
       fainted: !this.alive, faintT: 0, moving: false, windT: 0, flyT: 0, auraT: 0, hidden: true,
       dodgeT: 0, dodgeInv: 0, dodgeCD: 0, dodgeDir: { x: 0, y: 1 }, ghostT: 0, buffT: 0,

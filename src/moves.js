@@ -7,6 +7,8 @@ import { applyHit } from './combat.js';
 import { itemOf, ITEMS } from './data/items.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
+import { MOVEDEX } from './data/movedex.js';
+import { statusMove } from './effects-resolver.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -689,10 +691,15 @@ const UTIL_FX = {
       g.floatText(f, 'NO EFFECT', '#c9d2de');
       return g.ui.log(`It doesn't affect ${f.species.name}…`);
     }
-    if (f.guard?.mult === 0) return g.floatText(f, 'BLOCKED!', f.guard.color);
+    if (f.guard?.mult === 0 || (f.substitute && f.shield > 0)) return g.floatText(f, 'BLOCKED!', f.guard?.color ?? '#ff9fd0');
     g.spawn(new Ring(f.x, f.y, { z: f.bodyZ, r0: 4, r1: f.radius + 14, life: 0.3, color: c.color, width: 3, layer: 'air' }));
     if (c.seed) return g.seed(f, u);
+    if (c.boosts) return g.stage(f, c.boosts, u);
     g.applyStatus(f, c.status, { source: u, dur: c.dur, toxic: c.toxic });
+  },
+  // Status moves with rules of their own (effects-resolver.js).
+  special(a, g, u) {
+    statusMove(g, u, a.move);
   },
   weather(a, g, u, c) {
     g.setWeather(c.weather, ITEMS[u.item]?.rock === c.weather ? 40 : 25);
@@ -2885,6 +2892,70 @@ export const MOVES = {
   gmaxSlam: { name: 'G-Max Slam', type: 'normal', power: 300, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
   moonblast: { name: 'Moonblast', type: 'fairy', power: 270, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
 };
+// ── The move database (data/movedex.js, from the games' data) ──
+// Every move a playable Pokémon uses. Hand-made moves keep their animation but take the official mechanics
+// (category, accuracy, priority, secondary effects, stat changes, drain, recoil, multi-hit); the rest are built
+// here from their data: delivery from what the move is (contact strikes, rushing tackles, spread shockwaves,
+// beams, projectiles, status moves), colours from its type, size and timing from its power.
+const ORB_OF = { normal: 'star', fire: 'fire', water: 'water', electric: 'electric', grass: 'grass', ice: 'ice', fighting: 'aura', poison: 'poison', ground: 'mud', flying: 'wind', psychic: 'psy', bug: 'bug', rock: 'rock', ghost: 'ghost', dragon: 'dragon', dark: 'dark', steel: 'steel', fairy: 'fairy' };
+const BIG_ORB = { fire: 'bigFire', rock: 'bigRock', fighting: 'bigAura' };
+const RUSH = /rush|tackle|blitz|charge|crash|wave crash|head|step|lunge|pounce|strike|slam|edge|dive|jet|accelerock|bolt|volt|flare/i;
+const BEAMY = /beam|cannon|ray|geyser|laser|steam|spout|storm/i;
+const SPREAD = ['allAdjacent', 'allAdjacentFoes'];
+const STATUS_OF = { par: 'para', slp: 'sleep', brn: 'burn', psn: 'poison', tox: 'poison', frz: 'freeze' };
+const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+
+function mechanicsOf(d) {
+  const flags = Object.fromEntries((d.flags ?? []).map(f => [f, true]));
+  return {
+    officialCat: d.cat, acc: d.acc, pri: d.pri, dex: d, multihit: d.multihit, critRatio: d.critRatio,
+    drain: d.drain, recoil: d.recoil, selfSwitch: d.selfSwitch, contact: !!flags.contact,
+    ...(flags.punch && { punch: true }), ...(flags.bite && { bite: true }), ...(flags.sound && { sound: true }), ...(flags.bullet && { bullet: true }),
+    ...(flags.pulse && { pulse: true }), ...(flags.slicing && { slice: true }), ...(flags.wind && { wind: true }), ...(flags.powder && { powder: true }),
+  };
+}
+
+function fromDex(id, d) {
+  const [c1, c2] = TYPE_COLORS[d.type], colors = ['#ffffff', c1, c2], rgb = hex(c1), power = d.power || 0;
+  const hits = Array.isArray(d.multihit) ? d.multihit[1] : d.multihit ?? 1, per = Math.round(power * (hits > 1 ? 1 : 1));
+  const cooldown = Math.max(1, Math.min(3.4, 0.6 + power / 55)), tag = d.cat === 'status' ? 'Status move' : `${d.cat === 'physical' ? 'Physical' : 'Special'} · ${power} power`;
+  if (d.cat === 'status') {
+    const boosts = d.boosts && (d.target === 'self' || d.target === 'adjacentAllyOrSelf' || d.target === 'allies');
+    const u = boosts ? { kind: 'stages', self: d.boosts, look: d.type }
+      : d.status ? { kind: 'ray', status: STATUS_OF[d.status], toxic: d.status === 'tox', acc: d.acc, color: c1, powder: (d.flags ?? []).includes('powder'), dur: d.status === 'slp' ? 3 : undefined }
+      : d.boosts ? { kind: 'ray', boosts: d.boosts, acc: d.acc, color: c1 }
+      : d.heal ? { kind: 'heal', pct: d.heal }
+      : { kind: 'special', id };
+    return util(d.name, d.type, Math.max(5, 4 + (d.heal ? 6 : 2)), tag, u);
+  }
+  if (SPREAD.includes(d.target)) {
+    return wave(d.name, d.type, power, cooldown, `${tag} · hits all around`, { radius: 70 + power * 0.25, colors, rgb, knockback: 120 + power, sound: d.type === 'ground' ? 'quake' : 'pulse' });
+  }
+  if (d.cat === 'physical' && (d.flags ?? []).includes('contact')) {
+    if (d.pri > 0 || RUSH.test(d.name)) {
+      return dash(d.name, d.type, per, cooldown, tag, { windup: d.pri > 0 ? 0.04 : 0.12, dist: 150 + power * 0.2, dur: 0.12, color: c1, ghost: c2, width: power >= 100 ? 5 : 4, burst: d.type, knockback: 120 + power });
+    }
+    const f = d.flags ?? [], fx = f.includes('punch') ? 'punchT' : f.includes('bite') ? 'bite' : /claw|slash|cut|scissor/i.test(d.name) ? 'claw' : 'arc';
+    const n = Math.max(1, Math.min(5, hits));
+    const hitList = Array.from({ length: n }, (_, i) => ({ delay: i * 0.1, knockback: i === n - 1 ? 120 + power : 40, hitstop: i === n - 1 ? 0.05 : 0 }));
+    return melee(d.name, d.type, n > 1 ? Math.round(per / 1) : per, cooldown, tag, { fx, colors: [c1, '#ffffff'], lunge: 42, hits: hitList, ...(f.includes('slicing') && { anim: 'Swing' }) });
+  }
+  if (d.cat === 'special' && BEAMY.test(d.name)) {
+    return {
+      name: d.name, type: d.type, power, cooldown, range: 290, minRange: 50, ai: 'ranged', tag, Action: BeamAttack,
+      beam: beam({ charge: 0.3 + power / 400, width: 9 + power / 20, visualWidth: 12 + power / 15, duration: 0.45, sound: 'beamFire', colors: [c2, c1, '#ffffff'],
+        chargeColors: ['#ffffff', c1, c2], teleColor: rgb.join(','), flash: rgb, mark: 'scorch', knockback: 120 + power }),
+    };
+  }
+  const style = power >= 100 && BIG_ORB[d.type] ? BIG_ORB[d.type] : ORB_OF[d.type];
+  const n = Math.max(1, Math.min(5, hits)), spread = n > 1 ? Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * 0.08) : undefined;
+  return shot(d.name, d.type, per, cooldown, tag, { style, ...(spread && { spread, stagger: 0.06 }), sound: d.type === 'electric' ? 'zap' : 'pulse' });
+}
+
+for (const [id, d] of Object.entries(MOVEDEX)) {
+  if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], mechanicsOf(d));
+  else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d) };
+}
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
 
 // Faster pace: every regular move recovers 30% sooner (ultimates charge a meter instead).
@@ -2892,7 +2963,7 @@ for (const m of Object.values(MOVES)) if (!m.ultimate && m.cooldown) m.cooldown 
 
 // Physical moves hit up close and knock harder; special moves work at range; status moves don't attack.
 for (const m of Object.values(MOVES)) {
-  m.cat = m.util || m.copy ? 'status' : m.shot || m.beam || m.stream || m.shockwave || m.ultimate || ['thunderbolt', 'psychic'].includes(m.id) ? 'special' : 'physical';
+  m.cat = m.officialCat ?? (m.util || m.copy ? 'status' : m.shot || m.beam || m.stream || m.shockwave || m.ultimate || ['thunderbolt', 'psychic'].includes(m.id) ? 'special' : 'physical');
 }
 // Moves that send the foe flying upward (start of an aerial combo), with launch speed.
 const LAUNCH = {

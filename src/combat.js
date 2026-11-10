@@ -1,7 +1,8 @@
 import { typeMultiplier } from './data/types.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
-import { stageOf, stageMult } from './stats.js';
+import { stageOf, stageMult, accuracyMult } from './stats.js';
+import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse } from './effects-resolver.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { prepareReaction, resolveReaction } from './elemental.js';
@@ -64,7 +65,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Accuracy (moves below 100): rolled once per move use. No Guard always hits; Compound Eyes +30%.
   if (move.acc != null && move.acc < 100 && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
     stack.accRolled = true;
-    stack.missed = Math.random() * 100 >= move.acc * (A.compoundEyes ? 1.3 : 1);
+    stack.missed = Math.random() * 100 >= move.acc * (A.compoundEyes ? 1.3 : 1) * (A.keenEye ? Math.max(1, accuracyMult(attacker, target)) : accuracyMult(attacker, target));
   }
   if (stack.missed) {
     if (!stack.missShown) {
@@ -95,7 +96,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const hitTypes = A.scrappy && (type === 'normal' || type === 'fighting') ? defTypes.filter(t => t !== 'ghost') : defTypes;
   const raw = typeMultiplier(type, hitTypes, winds);
   const calmed = winds && raw < typeMultiplier(type, defTypes);
-  let eff = soften(raw);
+  let eff = typeTweak(move, hitTypes, soften(raw));
   if (A.pierce === type && eff < 1 && eff > 0) eff = 1;
   if (A.tinted && eff < 1 && eff > 0) eff *= 2;
   // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped at 2×.
@@ -117,10 +118,10 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // matches an original type stacks a further 25%.
   const own = attacker.species.types.includes(type);
   const stab = typesOf(attacker).includes(type) || (attacker.tera && own) ? (A.stab ?? 1.2) * (attacker.tera === type && own ? 1.25 : 1) : 1;
-  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0);
+  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0);
   // Sheer Force: moves with an added effect hit harder and lose the effect.
   const sheer = !!(A.sheerForce && (move.status || move.debuff || move.statusPool || move.selfBuff || o.burnChance || o.freezeChance || o.flinchChance));
-  const power = o.power ?? move.power;
+  const power = o.power ?? movePower(game, attacker, target, move);
   // Foul Play turns the target's own attack against it.
   const atkSrc = move.foul ? target : attacker;
   // Unaware ignores the other side's stat changes.
@@ -129,7 +130,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const special = move.cat === 'special', aStat = special ? 'spa' : 'atk', dStat = special ? 'spd' : 'def';
   let aStage = D.unaware ? 0 : stageOf(atkSrc, aStat), dStage = A.unaware ? 0 : stageOf(target, dStat);
   if (crit) { aStage = Math.max(0, aStage); dStage = Math.min(0, dStage); }
-  const stats = ((special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1)) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * stageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
+  const stats = ((attackStatOf(move, atkSrc) ?? (special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1))) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * stageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
     / ((special ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')) * stageMult(dStage));
   const auraMult = [attacker, target].reduce((m, mon) => {
     const au = abilityOf(mon).aura;
@@ -206,6 +207,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
   dmg *= shielded;
   if (shielded < 0.999) game.itemTouch?.(target, 'Damage reduced!');
   if (guard) dmg *= guard.mult;
+  // Fixed-damage moves (Seismic Toss, Super Fang, Endeavor) ignore the formula.
+  const fixed = fixedDamage(game, attacker, target, move);
+  if (fixed != null) dmg = fixed;
   dmg = Math.max(1, Math.round(dmg));
   if (target.shield > 0 && !A.infiltrator) {
     const soak = Math.min(target.shield, dmg);
@@ -326,7 +330,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Secondary effects: rolled once per move use. Moves name their own; otherwise the type default.
   // Shield Dust and the Covert Cloak keep a move's added effects off it.
   const covered = D.shieldDust || J.covert;
-  if (dmg > 0 && target.alive && !stack.statusRolled && !sheer && !covered) {
+  // Moves from the database (data/movedex.js) use their own added effects (effects-resolver.js) only.
+  if (dmg > 0 && target.alive && !stack.statusRolled && !sheer && !covered && !move.dex) {
     stack.statusRolled = true;
     const serene = A.serene ? 2 : 1;
     const rolls = [];
@@ -340,7 +345,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     }
   }
 
-  if (dmg > 0 && move.debuff && target.alive && !stack.debuffed && !sheer && !covered) {
+  if (dmg > 0 && move.debuff && target.alive && !stack.debuffed && !sheer && !covered && !move.dex) {
     stack.debuffed = true;
     game.buff(target, ...move.debuff, attacker);
   }
@@ -356,6 +361,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
     stack.recoiled = true;
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');
   }
+  onHit(game, attacker, target, move, dmg, stack);
+  afterUse(game, attacker, move, stack);
+  if (target.substitute && !(target.shield > 0)) target.substitute = false;
   if (reaction) resolveReaction(game, attacker, target, reaction, dmg, applyHit);
   game.recordCombat?.('hit', attacker, target, { damage: actualDamage + barrier, move: move.id, ultimate:!!move.ultimate });
   if (o.hitstop) game.hitstop(o.hitstop);

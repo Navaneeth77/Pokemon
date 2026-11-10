@@ -21,6 +21,7 @@ import { WINGS } from './data/wings.js';
 import { addFlapAnim } from './flap.js';
 import { TYPE_COLORS } from './data/types.js';
 import { MOVES, chargedMove, adaptMove } from './moves.js';
+import { tickVolatiles, fakeOutFails } from './effects-resolver.js';
 import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
@@ -497,6 +498,16 @@ export class Game {
     const base = MOVES[id];
     if (!base || this.state !== 'fighting' || this.cinematic) return false;
     let chain = false;
+    // Taunt blocks status moves; Fake Out only works right after coming in.
+    if (!force && base.cat === 'status' && user.taunted > 0) {
+      this.floatText(user, 'TAUNTED!', '#ff7a5a');
+      return false;
+    }
+    if (!force && fakeOutFails(this, user, base)) {
+      this.floatText(user, 'IT FAILED!', '#c9d2de');
+      this.startCooldown(user, id, base.cooldown);
+      return false;
+    }
     if (force) {
       user.charging = null;
       user.cancelAction();
@@ -532,7 +543,7 @@ export class Game {
     user.action = new move.Action(move, user, this);
     this.hud.callout(user.side, chargeLevel >= 1 ? `${base.name}! MAX` : `${base.name}!`);
     this.ui.log(`${user.species.name} used ${base.name}!`, user.side);
-    if (base.selfBuff) this.buff(user, ...base.selfBuff);
+    if (base.selfBuff && !base.dex) this.buff(user, ...base.selfBuff);
     abilityOf(user).onUse?.(this, user, base);
     itemOf(user)?.onUse?.(this, user, base);
     if (user === this.player) this.ai.onThreat();
@@ -1331,6 +1342,7 @@ export class Game {
       this.updateWeather(dt);
       this.updateArenaEvents();
       this.tickSeeds(dt);
+      for (const m of [this.player, this.opponent]) if (m?.alive && !m.hidden) tickVolatiles(this, m, dt);
       this.online?.processEvents();
       if (this.story?.spare) this.checkSpare(dt);
       if (!this.practice && (this.musicT -= dt) <= 0) {

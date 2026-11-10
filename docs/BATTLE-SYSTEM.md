@@ -41,9 +41,29 @@ How it works today:
       timed ability weather, Solar Beam/Thunder/Hurricane/Blizzard weather rules, accuracy and misses;
       Chlorophyll/Swift Swim/Sand Rush/Slush Rush ×2 Speed; Castform forms (sprites + type); setup, recovery,
       Leech Seed, Toxic, Protect, Thunder Wave, sleep; acceptance tests.
-- [ ] **2. Move database + movesets**: generate movedex and Smogon movesets for all 527; effect resolver for
+- [x] **2. Move database + movesets** (done 10 Nov: `node scripts/validate-moves.mjs` → 527 Pokémon, 289 moves, 0 problems): generate movedex and Smogon movesets for all 527; effect resolver for
       every effect kind; abilities picked from the sets; Megas keep their own stats/ability.
 - [ ] **3. Animation recipes**: the stage-based recipe system and a recipe for every move used, with signature
       moves getting bespoke sequences at the Rayquaza/Lugia standard.
 - [ ] **4. Validation and polish**: validation script, visual review of representative moves per type,
       performance pass, online (server) parity.
+
+## Phase 2 design (move database + movesets)
+
+1. `scripts/build-movedex.py <cache dir>` reads Showdown's `moves.json` and the Smogon Random Battle sets
+   (gen 9 → 8 → 7, cached in the scratch `dex` folder; re-download from play.pokemonshowdown.com/data/moves.json
+   and pkmn.github.io/randbats/data/gen{9,8,7}randombattle.json) and writes:
+   - `src/data/movedex.js`: every move any roster Pokémon's set uses, as `{ name, type, cat, power, acc, pri, flags,
+     secondary, self, boosts, status, volatile, heal, drain, recoil, multihit, weather, terrain, hazard, selfSwitch }`.
+   - `src/data/smogon.js`: `SMOGON_MOVES[species] = [4 moves]` chosen from its Smogon role (signature and STAB
+     attacks first, then the role's setup/recovery/status, then coverage), alongside `SMOGON_ABILITIES`.
+2. `src/moves.js` `buildMove(id)`: any movedex move without a hand-made spec becomes an engine move: physical
+   contact → `Melee` (priority / "rush" moves → `Dash`), special → `Shot`, beam-named moves → `BeamAttack`,
+   spread moves (Earthquake, Surf, Discharge…) → `Shockwave`, status → `Utility` with resolver effects; colours from
+   the type palette, shape and timing from `src/data/move-anims.js` (per-move overrides). Hand-made moves win.
+3. Effect resolver (`src/effects-resolver.js`), called from `applyHit` (secondary: status chance, flinch, target
+   stat drops, self drops like Close Combat / Draco Meteor, drain, recoil, multihit) and from `Utility` (status
+   moves: boosts, status, heal, Rest, Wish, weather, terrain, hazards, Defog, Haze, Substitute, Taunt, Trick,
+   Protect family, pivot).
+4. Species use `SMOGON_MOVES` (four moves), keeping their ultimate; Megas inherit. Validation
+   (`scripts/validate-moves.mjs`): every moveset move exists in MOVES with mechanics and an animation recipe.

@@ -154,6 +154,7 @@ export class OpponentAI {
     if (u.kind === 'guard') return foe.action && dist < 160 && Math.random() < (this.cfg?.guard ?? 0.6) ? 4 : 0;
     // Setup while at a safe distance and not already boosted; status moves on a foe that has none.
     if (u.kind === 'stages') return dist > 100 && Object.keys(u.self).some(k => u.self[k] > 0 && (me.stages[k] ?? 0) < 2) ? 1.5 : 0;
+    if (u.kind === 'special') return dist > 100 && Math.random() < 0.5 ? 1.1 : 0;
     if (u.kind === 'ray') return dist < 280 && (u.seed ? !foe.seeded : !Object.values(foe.status).some(v => v > 0)) ? 1.6 : 0;
     // Field moves: set weather or terrain when it isn't already up; lay hazards while the foe has others to send in.
     if (u.kind === 'weather') return game.weather !== u.weather && dist > 90 ? 1.4 : 0;

@@ -12,7 +12,8 @@ import { DIMS } from './dims.js';
 import { MEGA_STATS } from './mega-stats.js';
 import { NATIONAL, OFFICIAL_ABILITIES, DEX } from './national.js';
 import { NATIONAL_DIMS } from './national-dims.js';
-import { SMOGON_ABILITIES } from './smogon.js';
+import { SMOGON_ABILITIES, SMOGON_MOVES } from './smogon.js';
+import { MOVEDEX } from './movedex.js';
 import { officialAbility, ABILITIES } from './abilities.js';
 
 const BASE = { atk: 1, def: 1, weight: 1, class: 'regular' };
@@ -186,9 +187,26 @@ const FIELD_MOVES = {
   psychicTerrain: ['indeedee', 'hatterene', 'alakazam'],
   mistyTerrain: ['florges', 'sylveon', 'weezing', 'grimmsnarl'],
 };
+// Movesets from Smogon's sets (smogon.js, built by scripts/build-movedex.py): each Pokémon's real moves. A set
+// with fewer than four usable moves keeps enough of its previous moves to fill the rest.
+// A species' own hand-made signature move (Lugia's Water Pulse…) stays, replacing its least important attack
+// (a damaging move outside its own types, else the last move).
+for (const s of LIST) {
+  const smogon = SMOGON_MOVES[s.id];
+  if (!smogon) continue;
+  const signature = s.moves.filter(m => m.startsWith(s.id));
+  const moves = [...new Set([...smogon, ...s.moves.filter(m => !signature.includes(m))])].slice(0, 4);
+  for (const sig of signature) {
+    const drop = [...moves].reverse().find(m => MOVEDEX[m] && MOVEDEX[m].cat !== 'status' && !s.types.includes(MOVEDEX[m].type)) ?? moves[moves.length - 1];
+    moves.splice(moves.indexOf(drop), 1, sig);
+  }
+  s.moves = moves;
+}
+
+// Only for Pokémon without a Smogon set: Smogon's sets already include these where they belong.
 for (const [move, ids] of Object.entries(FIELD_MOVES)) for (const id of ids) {
   const s = LIST.find(x => x.id === id);
-  if (s && !s.moves.includes(move)) s.moves = [...s.moves.slice(0, 3), move];
+  if (s && !SMOGON_MOVES[id] && !s.moves.includes(move)) s.moves = [...s.moves.slice(0, 3), move];
 }
 
 // Official abilities for every fully evolved Pokémon: the one Smogon's sets play it with (Chlorophyll for

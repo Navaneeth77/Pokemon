@@ -12,10 +12,12 @@ import { abilityOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
 
 export const STATS = ['atk', 'def', 'spa', 'spd', 'spe'];
-export const STAT_NAME = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' };
+export const STAT_NAME = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'Accuracy', evasion: 'Evasion' };
 
 export const stageMult = n => (n >= 0 ? (2 + n) / 2 : 2 / (2 - n));
 export const stageOf = (mon, stat) => mon.stages?.[stat] ?? 0;
+// Accuracy against evasion uses the games' own steps: +1 = ×4/3, −1 = ×3/4 … (±6 at most).
+export const accuracyMult = (attacker, target) => { const n = Math.max(-6, Math.min(6, stageOf(attacker, 'accuracy') - stageOf(target, 'evasion'))); return n >= 0 ? (3 + n) / 3 : 3 / (3 - n); };
 
 // The Speed number the battle uses (species Speed is on the game's walking scale, about 50–125).
 export function effectiveSpeed(mon, game) {
