@@ -89,3 +89,15 @@ test('ranked draft uses authoritative Elo; unranked queue remains a separate mod
  cs[1].send({t:'leave',id:ms[1].id});const end=await cs[0].wait('end');assert.equal(end.ranked,true);assert.ok(end.delta>0);assert.equal(end.record.w,1);
  }finally{cs.forEach(c=>c.ws.close());}
 });
+test('state updates carry stat stages separately from the stagger flag (Intimidate shows online)',async()=>{
+ const cs=await pair('stages');try{
+ cs[0].send({t:'queue',format:3,team:['gyarados','raichu','lucario'],lead:0,mega:{}});
+ cs[1].send({t:'queue',format:3,team:['charizard','snorlax','lapras'],lead:0,mega:{}});
+ const ms=await Promise.all(cs.map(c=>c.wait('matched')));assert.equal(ms[0].id,ms[1].id);
+ cs.forEach((c,i)=>c.send({t:'loaded',id:ms[i].id}));await Promise.all(cs.map(c=>c.wait('start')));
+ const sides=['A','B'],dropped=await cs[0].wait('b',m=>sides.some(k=>m.s?.[k]?.sx?.atk===-1));
+ const foe=sides.find(k=>dropped.s[k].sx?.atk===-1);
+ assert.equal(dropped.s[foe].sp,'charizard','Intimidate lowered the foe\'s Attack and the update says so');
+ for(const k of sides){assert.equal(typeof dropped.s[k].sx,'object');assert.ok(dropped.s[k].sg===0||dropped.s[k].sg===1,'sg stays the stagger flag');}
+ }finally{cs.forEach(c=>c.ws.close());}
+});

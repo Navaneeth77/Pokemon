@@ -754,7 +754,7 @@ function snapshot(team, switchCD, ack, g = null) {
   for (const [k, v] of Object.entries(p.ab)) if (v == null || typeof v !== 'object') ab[k] = v;
   return {
     i: team.index, sp:p.species.id, x: r1(p.x), y: r1(p.y), d: p.dir, fz: r1(p.z), ah: p.air ? r1(p.air.h) : 0,
-    hp: team.members.map(m => Math.ceil(Math.max(0, m.hp))), u: r1(p.ult), st: p.status, bf: p.buffs, sg: p.stages, fr: p.frozen > 0 ? r1(p.frozen) : 0,
+    hp: team.members.map(m => Math.ceil(Math.max(0, m.hp))), u: r1(p.ult), st: p.status, bf: p.buffs, sx: p.stages, fr: p.frozen > 0 ? r1(p.frozen) : 0,
     g: p.guard ? [p.guard.mult, p.guard.color, p.guard.label ?? null, !!p.guard.punish] : 0, sh: p.shield || 0, fm: p.form ?? null,
     mv: p.moving ? 1 : 0, lx: r1(p.lastMove.x), ly: r1(p.lastMove.y), sg: p.stagger > 0 ? 1 : 0,
     ch: p.charging ? [p.charging.id, r1(p.charging.t)] : 0, iv: p.invuln ? 1 : 0, ph: p.phasing ? 1 : 0, hl: p.held ? 1 : 0, ab,
