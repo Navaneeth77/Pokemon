@@ -471,3 +471,49 @@ Object.assign(MOVE_ANIMS, {
   waterPulse: volley('water', 1, { style: 'orb', rgb: [90, 170, 255], scale: 1.4, dome: 32, sound: 'splash' }),
   auraWheel: volley('electric', 1, { style: 'orb', rgb: [255, 235, 100], scale: 1.6, orbit: true, glow: true }),
 });
+
+// ── Beams and area shockwaves: an impact where they land and a wind-up as they gather ──
+for (const [id, type, o, w] of [
+  ['darkPulse', 'dark', { burst: 14, glow: true }, {}], ['dragonPulse', 'dragon', { big: true, burst: 16 }, {}], ['iceBeam', 'ice', { burst: 16, glow: true }, {}],
+  ['psybeam', 'psychic', { dome: 30, burst: 10 }, {}], ['flashCannon', 'steel', { big: true, burst: 14 }, {}], ['solarBeam', 'grass', { big: true, burst: 20 }, { until: 0.3 }],
+  ['lugiaWaterPulse', 'water', { big: true, dome: 40 }, {}], ['fickleBeam', 'dragon', { burst: 14 }, {}], ['fleurCannon', 'fairy', { big: true, burst: 22, glow: true }, { until: 0.3 }],
+  ['armorCannon', 'fire', { big: true, burst: 22 }, { until: 0.3 }], ['hydroSteam', 'water', { burst: 18, glow: true }, {}], ['teraStarstorm', 'normal', { big: true, burst: 26, glow: true }, { until: 0.35 }],
+  ['discharge', 'electric', { burst: 18 }, { until: 0.3, r: 26 }], ['heatWave', 'fire', { burst: 18 }, { until: 0.3, r: 26 }], ['sludgeWave', 'poison', { burst: 18 }, { until: 0.3, r: 26 }],
+  ['avalanche', 'ice', { big: true, burst: 18 }, { until: 0.3, r: 26 }], ['hyperVoice', 'normal', { burst: 12 }, { until: 0.25, r: 24 }], ['boomburst', 'normal', { big: true, burst: 18 }, { until: 0.3, r: 28 }],
+  ['muddyWater', 'water', { burst: 18, fx: 'debris' }, { until: 0.3, r: 26 }],
+]) look(id, { impact: impact(type, o), windup: windup(type, w) });
+
+// ── Status moves: each with its own look ──
+const shield = (colors, rgb) => ({ fx: [{ at: 0, dome: { r: 34, rgb, life: 0.9 }, rings: { colors, r: 36 } }, { at: 0.1, glow: { rgb, r: 34 } }] });
+Object.assign(MOVE_ANIMS, {
+  protect: shield([W, '#bff3ff', '#6ad0f0'], [140, 220, 255]),
+  recover: aura([W, '#9fffc8', '#46d36b'], [120, 255, 170], { up: 140, n: 16 }),
+  roost: { fx: [{ at: 0.05, glow: { rgb: [230, 240, 255], r: 30 }, burst: { colors: [W, '#e8f6ff', '#c8d8e8'], n: 14, up: 50 } }, { at: 0.2, rings: { colors: [W, '#9fffc8'], r: 30 } }] },
+  slackOff: aura([W, '#f0e8d0', '#c8b8a8'], [235, 225, 200], { up: 30, n: 8 }),
+  synthesis: aura([W, '#fff6b0', '#62b947'], [200, 240, 120], { up: 160, n: 18 }),
+  moonlight: aura([W, '#ffe8ff', '#b0a0ff'], [220, 200, 255], { up: 160, n: 18 }),
+  morningSun: aura([W, '#fff0a0', '#ffb070'], [255, 220, 140], { up: 160, n: 18 }),
+  sunnyDay: { fx: [{ at: 0, pillar: { rgb: [255, 220, 120], height: 300, life: 0.6 }, where: 'user' }, { at: 0.1, glow: { rgb: [255, 220, 120], r: 50 }, rings: { colors: [W, '#fff0a0', '#ff9a3a'], r: 70 } }] },
+  rainDance: { fx: [{ at: 0, pillar: { rgb: [120, 180, 255], height: 300, life: 0.6 }, where: 'user' }, { at: 0.1, fx: 'splash', rings: { colors: [W, '#86ccff', '#3a8ae8'], r: 70 } }] },
+  sandstorm: { fx: [{ at: 0, fx: 'wind', colors: ['#e8d8b0', '#c8b080'], n: 30 }, { at: 0.1, rings: { colors: [W, '#e8d8b0', '#a88a4a'], r: 70 } }] },
+  snowscape: { fx: [{ at: 0, fx: 'ice' }, { at: 0.1, rings: { colors: [W, '#e0f4ff', '#9fd8ff'], r: 70 }, burst: { colors: [W, '#e0f4ff'], n: 24, up: 160 } }] },
+  willOWisp: { fx: [{ at: 0, orbit: { colors: ['#e8e0ff', '#7a6aff', '#3a2a90'], until: 0.25, r: 22 } }] },
+  thunderWave: { fx: [{ at: 0.2, fx: 'sparks', n: 12 }] },
+  toxic: { fx: [{ at: 0.2, burst: { colors: ['#e0a0f0', '#a040a0', '#5a1f5a'], n: 14, up: 80 } }] },
+  sleepPowder: { fx: [{ at: 0.2, burst: { colors: [W, '#d8c8f0', '#a08ae8'], n: 22, up: 50 } }] },
+  spore: { fx: [{ at: 0.2, burst: { colors: [W, '#f0e8c0', '#c8b070'], n: 24, up: 50 } }] },
+  leechSeed: { fx: [{ at: 0.2, fx: 'leaves', n: 10 }] },
+  stickyWeb: { fx: [{ at: 0, orbit: { colors: [W, '#e8f0f0'], until: 0.25, r: 20 } }] },
+  spikes: { fx: [{ at: 0, burst: { colors: ['#a08050', '#5a4a3a'], n: 10, up: 160 }, where: 'user' }] },
+  toxicSpikes: { fx: [{ at: 0, burst: { colors: ['#e0a0f0', '#a848a8'], n: 10, up: 160 }, where: 'user' }] },
+  stealthRock: { fx: [{ at: 0, burst: { colors: ['#e8dcc0', '#a08a60'], n: 12, up: 180 }, where: 'user', fx: 'debris' }] },
+  swordsDance: { fx: [{ at: 0.1, slash: { colors: ['#dfe7f2', W], n: 4, radius: 26 }, where: 'user' }] },
+  nastyPlot: { fx: [{ at: 0.1, glow: { rgb: [110, 60, 170], r: 30 } }, { at: 0.2, burst: { colors: ['#c8a0ff', '#6a3a8a'], n: 12, up: 100 } }] },
+  calmMind: { fx: [{ at: 0.05, dome: { r: 30, rgb: [255, 140, 210], life: 0.6 } }] },
+  bulkUp: { fx: [{ at: 0.1, rings: { colors: ['#ff9a5a', '#c8402c'], r: 36 }, shake: [3, 0.2] }] },
+  quiverDance: { fx: [{ at: 0.05, orbit: { colors: [W, '#f0ffd0', '#a8d848'], until: 0.6, r: 26 } }] },
+  dragonDance: { fx: [{ at: 0.05, orbit: { colors: [W, '#b090ff', '#5a3ad8'], until: 0.65, r: 28 } }] },
+  shellSmash: { fx: [{ at: 0.1, fx: 'debris', n: 14 }, { at: 0.15, rings: { colors: [W, '#e8dcc0'], r: 40 }, flash: 0.04 }] },
+  ironDefense: { fx: [{ at: 0.05, fx: 'metal' }, { at: 0.1, dome: { r: 30, rgb: [220, 230, 245], life: 0.5 } }] },
+  agility: { fx: [{ at: 0.05, afterimage: { n: 4, color: '#ffd0f0' } }] },
+});
