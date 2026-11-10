@@ -43,7 +43,7 @@ How it works today:
       Leech Seed, Toxic, Protect, Thunder Wave, sleep; acceptance tests.
 - [x] **2. Move database + movesets** (done 10 Nov: `node scripts/validate-moves.mjs` → 527 Pokémon, 289 moves, 0 problems): generate movedex and Smogon movesets for all 527; effect resolver for
       every effect kind; abilities picked from the sets; Megas keep their own stats/ability.
-- [~] **3. Animation recipes**: the stage-based recipe system and a recipe for every move used, with signature
+- [x] **3. Animation recipes** (done 11 Nov): the stage-based recipe system and a recipe for every move used, with signature
       moves getting bespoke sequences at the Rayquaza/Lugia standard.
       - 10 Nov: step-sequence system (`src/move-sequence.js`, recipes in `src/data/move-anims.js`); every move in use has a recipe or a
         hand-made look. Batches A/B/C: impacts and wind-ups for all strikes and tackles, every older projectile as a full sequence, beams,
@@ -52,14 +52,15 @@ How it works today:
         `src/ult-legends.js` (box legends), `ult-legends2.js` (Solgaleo … Darkrai), `ult-legends3.js` (Regis, Latis, Raikou, Suicune, Mew),
         `ult-legends4.js` (mythicals). Each keeps its old mechanics and damage (checked against 20–60-run averages), and every one is
         checked for leftover effects and stuck states.
-      - Next: the 21 remaining fan-favourite signatures (Venusaur, Blastoise, Infernape, Scizor, Zoroark, Sylveon, Lapras, Aegislash,
-        Umbreon, Espeon, Gallade, Togekiss, Swampert, Weavile, Talonflame, Alakazam, Milotic, Haxorus, Hydreigon, Porygon-Z), then the
-        visual review below.
+      - 11 Nov: the fan-favourite signatures in `src/ult-favs.js` and `ult-favs2.js`. `scripts/validate-moves.mjs` now fails if an
+        ultimate in use has only the shared beats: 89 ultimates in use, all choreographed (Aeroblast is hand-made through Lugia's own
+        effects inside its beats).
 - [ ] **4. Validation and polish**: validation script, visual review of representative moves per type,
       performance pass, online (server) parity.
       - Done so far: `scripts/validate-moves.mjs`; online stat stages fixed (they shared the `sg` key with the stagger flag; now `sx`,
-        with a network test). Visual review done for the type ultimates and legendary batch 1; batches 2–4 still need a look in the
-        browser (contact sheets).
+        with a network test). Visual review done for the type ultimates and legendary batch 1; legendary batches 2–4 and
+        the fan-favourite batches 5–6 render every frame without errors and leave nothing behind (checked in the browser), but still
+        need a look by eye (contact sheets) — the Browser pane was hidden overnight.
 
 ## Phase 2 design (move database + movesets)
 
