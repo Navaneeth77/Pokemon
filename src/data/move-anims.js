@@ -408,3 +408,66 @@ for (const [id, type, o, w] of [
   ['flipTurn', 'water', { burst: 12 }, { after: true }], ['liquidation', 'water', { burst: 16 }], ['aquaJet', 'water', { burst: 10 }, { after: true }], ['aquaTail', 'water', { big: true, slash: 1 }],
   ['waveCrash', 'water', { big: true, burst: 22 }, { until: 0.25 }], ['crabhammer', 'water', { big: true, burst: 14 }], ['fishiousRend', 'water', { slash: 2, burst: 12 }], ['aquaStep', 'water', { burst: 12 }], ['jetPunch', 'water', { burst: 10 }, { after: true }],
 ]) look(id, { impact: impact(type, o), ...(w && { windup: windup(type, w) }) });
+
+// ── Projectiles: every older projectile move becomes a full sequence ──
+// A volley of `n` projectiles. Multi-hit moves land a hit per projectile; with `single`, the volley is one
+// move's worth of damage landing with the last projectile (the others are its look).
+function volley(type, n, o = {}) {
+  const e = EL[type], c = o.charge ?? 0.2, d = o.dur ?? 0.28, gap = o.gap ?? 0.07;
+  const steps = [{ at: 0, anim: 'Charge', gather: { colors: e.colors, until: c, radius: o.radius ?? 28 }, ...(o.orbit && { orbit: { colors: e.colors, until: c, r: 22 } }) }];
+  for (let i = 0; i < n; i++) {
+    steps.push({ at: c + i * gap, ...(i === 0 && { anim: 'Shoot' }), missile: { style: o.style ?? 'orb', dur: d, rgb: o.rgb ?? e.rgb, scale: o.scale ?? 1.1 } });
+    steps.push({ at: c + i * gap + d, ...(i === n - 1 && { fx: o.fx ?? e.fx, rings: { colors: e.colors, r: o.r ?? 32 }, ...(e.mark && { mark: e.mark, markRgb: e.rgb, markSize: o.markSize ?? 18 }), ...(o.shake && { shake: o.shake }), ...(o.glow && { glow: { at: 'spot', rgb: e.rgb, r: 30 } }), ...(o.dome && { dome: { r: o.dome, rgb: e.rgb, life: 0.4 } }), ...(o.sound && { sound: o.sound }) }), ...((!o.single || i === n - 1) && { hit: { r: o.hitR ?? 26, knockback: i === n - 1 ? o.kb ?? 160 : 40, stagger: o.stagger ?? 0.3 } }) });
+  }
+  return { seq: { aim: 'target', end: c + (n - 1) * gap + d + 0.25, steps } };
+}
+
+Object.assign(MOVE_ANIMS, {
+  signalBeam: volley('bug', 1, { style: 'orb', rgb: [210, 255, 120], glow: true, scale: 1.3 }),
+  pinMissile: volley('bug', 5, { style: 'crystal', rgb: [220, 240, 140], gap: 0.05, dur: 0.2, scale: 0.8 }),
+  scaleShot: volley('dragon', 4, { style: 'crystal', rgb: [170, 140, 255], gap: 0.06, dur: 0.22, scale: 0.9 }),
+  auraSphere: volley('fighting', 1, { style: 'orb', rgb: [90, 150, 255], scale: 1.7, charge: 0.35, orbit: true, glow: true, shake: [6, 0.25], sound: 'pulse', kb: 200 }),
+  fireBlast: volley('fire', 1, { style: 'flame', rgb: [255, 120, 40], scale: 2.2, charge: 0.4, orbit: true, shake: [9, 0.35], sound: 'explosion', markSize: 30, kb: 220, r: 50 }),
+  moonblastShot: volley('fairy', 1, { style: 'orb', rgb: [255, 180, 220], scale: 1.6, charge: 0.35, glow: true, dome: 36 }),
+  airSlash: volley('flying', 2, { single: true, style: 'crystal', rgb: [235, 248, 255], gap: 0.09, dur: 0.2, scale: 1.5, sound: 'airSlash' }),
+  poltergeist: volley('ghost', 1, { style: 'boulder', rgb: [150, 110, 200], scale: 1.6, charge: 0.4, glow: true, shake: [7, 0.3], kb: 210 }),
+  leafStorm: volley('grass', 6, { single: true, style: 'seed', rgb: [150, 230, 100], gap: 0.06, dur: 0.3, charge: 0.3, orbit: true, r: 44 }),
+  gigaDrain: { seq: { aim: 'target', end: 1, steps: [
+    { at: 0, anim: 'Charge', orbit: { colors: EL.grass.colors, until: 0.25, r: 22 } },
+    { at: 0.25, anim: 'Shoot', missile: { style: 'seed', dur: 0.25, rgb: [140, 220, 90], scale: 1.2 } },
+    { at: 0.5, fx: 'leaves', rings: { colors: EL.grass.colors, r: 30 }, tether: { rgb: [140, 230, 110], life: 0.5 }, hit: { r: 26, knockback: 120 } },
+  ] } },
+  energyBall: volley('grass', 1, { style: 'orb', rgb: [140, 230, 90], scale: 1.5, charge: 0.3, glow: true }),
+  seedBomb: volley('grass', 1, { style: 'seed', rgb: [140, 200, 80], scale: 1.6, shake: [5, 0.2], sound: 'explosion' }),
+  ivyCudgel: volley('grass', 1, { style: 'boulder', rgb: [90, 180, 70], scale: 1.5, shake: [6, 0.25], kb: 200 }),
+  mudShot: volley('ground', 1, { style: 'bomb', rgb: [150, 110, 60], scale: 1.2 }),
+  iceShard: volley('ice', 1, { style: 'crystal', rgb: [200, 240, 255], charge: 0.04, dur: 0.16, scale: 1.1 }),
+  icicleCrash: { seq: { aim: 'target', end: 1, steps: [
+    { at: 0, anim: 'Attack' },
+    { at: 0.1, telegraph: { r: 28, color: '#c8f2ff', life: 0.5 } },
+    { at: 0.25, meteors: { n: 3, style: 'crystal', spread: 20, dur: 0.4, rgb: [200, 240, 255] } },
+    { at: 0.65, fx: 'ice', mark: 'frost', markSize: 24, shake: [6, 0.25], hit: { r: 30, knockback: 190 } },
+  ] } },
+  triAttack: { seq: { aim: 'target', end: 0.8, steps: [
+    { at: 0, anim: 'Charge', gather: { colors: [W, '#ffb070', '#9be6ff', '#fff27a'], until: 0.25 } },
+    { at: 0.25, anim: 'Shoot', missile: { style: 'orb', dur: 0.3, rgb: [255, 140, 60] } },
+    { at: 0.3, missile: { style: 'orb', dur: 0.3, rgb: [150, 230, 255] } },
+    { at: 0.35, missile: { style: 'orb', dur: 0.3, rgb: [255, 235, 100] } },
+    { at: 0.65, rings: { colors: ['#ffb070', '#9be6ff', '#fff27a'], r: 36 }, hit: { r: 26, knockback: 150 } },
+  ] } },
+  swift: volley('normal', 3, { style: 'orb', rgb: [255, 240, 140], gap: 0.06, dur: 0.24 }),
+  psyshock: volley('psychic', 2, { single: true, style: 'orb', rgb: [255, 130, 200], gap: 0.08, glow: true }),
+  psychoCut: volley('psychic', 1, { style: 'crystal', rgb: [255, 140, 210], scale: 1.8, charge: 0.1, dur: 0.18, sound: 'airSlash' }),
+  extrasensory: volley('psychic', 1, { style: 'orb', rgb: [255, 120, 200], scale: 1.4, charge: 0.3, dome: 34 }),
+  rockTomb: { seq: { aim: 'target', end: 0.9, steps: [
+    { at: 0, anim: 'Attack' },
+    { at: 0.1, telegraph: { r: 24, color: '#e8dcc0', life: 0.45 } },
+    { at: 0.2, meteors: { n: 3, style: 'rock', spread: 14, dur: 0.38 } },
+    { at: 0.58, spikes: { n: 4, style: 'rock', spread: 16 }, shake: [5, 0.2], hit: { r: 26, knockback: 120, stagger: 0.5 } },
+  ] } },
+  rockBlast: volley('rock', 3, { style: 'boulder', rgb: [200, 180, 140], gap: 0.1, dur: 0.26 }),
+  ancientPower: volley('rock', 1, { style: 'boulder', rgb: [220, 190, 140], scale: 1.8, charge: 0.35, orbit: true, glow: true, shake: [6, 0.25] }),
+  powerGem: volley('rock', 3, { single: true, style: 'crystal', rgb: [255, 170, 210], gap: 0.05, dur: 0.22 }),
+  waterPulse: volley('water', 1, { style: 'orb', rgb: [90, 170, 255], scale: 1.4, dome: 32, sound: 'splash' }),
+  auraWheel: volley('electric', 1, { style: 'orb', rgb: [255, 235, 100], scale: 1.6, orbit: true, glow: true }),
+});
