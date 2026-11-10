@@ -2,6 +2,8 @@ import { AnimatedSprite, dirFromVector } from './sprite.js';
 import { BOUNDS } from './arena.js';
 import { Afterimage, FloatText } from './effects.js';
 import { abilityOf } from './data/abilities.js';
+import { itemOf } from './data/items.js';
+import { TYPE_COLORS } from './data/types.js';
 import { skyLegend } from './legendary-effects.js';
 import { tickStatus, statusSpeed, tickBuffs, buffMult } from './status.js';
 
@@ -12,6 +14,7 @@ const DODGE_INVULN = 0.28;
 export const DODGE_COOLDOWN = 1.6;
 export const CHARGE_MAX = 1.2; // seconds of holding for a fully charged attack
 const BUFF_WISP = ['#ffffff', '#ffe680', '#ff9a5a', '#7ab8ff'];
+const TERA_TINT = Object.fromEntries(Object.entries(TYPE_COLORS).map(([t, [c]]) => [t, c]));
 
 export class Pokemon {
   constructor(species, spriteSet, side) {
@@ -61,7 +64,7 @@ export class Pokemon {
       elementAura: null, reactionUntil: 0, reactionComboUntil: 0, reactionCount: 0,
       action: null, cooldowns: {}, busy: 0, root: 0, stagger: 0, frozen: 0, status: this.status ?? {}, sGuard: {}, buffs: {},
       combo: { n: 0, uses: 0, t: 0, chain: 0, lastRole: -1, foe: null }, chainT: 0, chainRole: -1, comboHits: 0, comboTimer: 0, escapeT: 0,
-      ab: {}, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
+      ab: {}, it: {}, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
       flash: 0, flashColor: '#fff', appear: 0, recallT: 0, landT: 0, zOverride: null, invuln: false, phasing: false, held: false,
       fainted: !this.alive, faintT: 0, moving: false, windT: 0, flyT: 0, auraT: 0, hidden: true,
       dodgeT: 0, dodgeInv: 0, dodgeCD: 0, dodgeDir: { x: 0, y: 1 }, ghostT: 0, buffT: 0,
@@ -252,8 +255,10 @@ export class Pokemon {
     this.flash = Math.max(0, this.flash - dt * 5);
     this.appear = Math.max(0, this.appear - dt * 2.5);
     this.landT = Math.max(0, this.landT - dt);
+    this.abilityOff = Math.max(0, this.abilityOff - dt);
     const ab = abilityOf(this);
-    const cdRate = (ab.cdRate ?? 1) * (this.foe && !this.foe.hidden && this.foe.alive ? abilityOf(this.foe).foeCdRate ?? 1 : 1);
+    const held = itemOf(this);
+    const cdRate = (ab.cdRate ?? 1) * (held?.cdRate ?? 1) * (this.foe && !this.foe.hidden && this.foe.alive ? abilityOf(this.foe).foeCdRate ?? 1 : 1);
     for (const id in this.cooldowns) this.cooldowns[id] = Math.max(0, this.cooldowns[id] - dt * cdRate);
 
     this.x += this.vx * dt;
@@ -313,6 +318,7 @@ export class Pokemon {
       tickStatus(game, this, dt);
       if (!this.alive) return;
       ab.tick?.(game, this, dt);
+      held?.tick?.(game, this, dt);
     }
     if (this.charging) game.updateCharge(this, dt);
 
@@ -328,7 +334,7 @@ export class Pokemon {
       // Normalised so diagonals are no faster than straight movement.
       const nx = this.input.x / Math.max(1, len), ny = this.input.y / Math.max(1, len);
       const speed = this.species.speed * (this.action ? 0.55 : 1) * (this.buffT > 0 ? 1.3 : 1) * buffMult(this, 'spd')
-        * statusSpeed(this) * (ab.speedMult?.(this) ?? 1) * (this.charging ? 0.4 : 1);
+        * statusSpeed(this) * (ab.speedMult?.(this, game) ?? 1) * (itemOf(this)?.speedMult?.() ?? 1) * (this.charging ? 0.4 : 1);
       this.x += nx * speed * dt;
       this.y += ny * speed * dt;
       this.lastMove.x = nx / Math.hypot(nx, ny);
@@ -427,10 +433,33 @@ export class Pokemon {
     // except during send-out/recall/Mega Evolution where a full silhouette is intended.
     const cap = this.appear > 0.05 || this.recallT > 0 ? 1 : 0.65;
     this.sprite.draw(ctx, this.x, this.y - this.lift + sink, this.dir, { alpha, scale, flash: Math.min(flash, cap), flashColor: color });
+    if (this.tera) this.drawTera(ctx, alpha, scale, sink);
     if (this.guard) this.drawGuard(ctx);
     if (this.frozen > 0) this.drawIce(ctx);
     if (this.status.sleep > 0) this.drawSleep(ctx);
     if (this.charging) this.drawCharge(ctx);
+  }
+
+  // Terastallized: a shimmering crystal sheen in the Tera type's colour over the sprite, and the Tera
+  // jewel floating above its head.
+  drawTera(ctx, alpha, scale, sink) {
+    const t = performance.now() / 1000, color = TERA_TINT[this.tera] ?? '#ffffff';
+    this.sprite.draw(ctx, this.x, this.y - this.lift + sink, this.dir, { alpha: alpha * (0.32 + 0.1 * Math.sin(t * 3)), scale, flash: 0.75, flashColor: color });
+    // Beside its head, so the status tags above it never cover the jewel.
+    const x = this.x - this.radius - 6, y = this.y - this.lift - this.species.headZ + 2 + Math.sin(t * 2.4) * 1.5, r = 5.5;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(i * Math.PI / 3 + Math.PI / 6) * r, y + Math.sin(i * Math.PI / 3 + Math.PI / 6) * r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillRect(x - 1.5, y - 3, 1.5, 3);
+    ctx.restore();
   }
 
   // Protective bubble while King's Shield / Quick Guard is up.

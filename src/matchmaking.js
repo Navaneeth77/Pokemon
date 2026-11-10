@@ -474,6 +474,7 @@ export class Matchmaker {
     this.setState('matched');
     sfx.megaBurst?.();
     try {
+      Object.assign(this.game, { kits: m.me.kit ?? {}, foeKits: m.foe.kit ?? {} });
       await Promise.all([this.game.ensureSprites([...m.me.team, ...m.foe.team, ...(m.allyTeam ?? [])], m.raid), preloadRaidArt(m.raid)]);
     } catch (err) {
       console.error(err);
@@ -496,6 +497,7 @@ export class Matchmaker {
     g.opponentSelection = [...m.foe.team];
     g.foeLead = m.foe.lead;
     g.foeMegaPicks = { ...m.foe.mega };
+    Object.assign(g, { kits: m.me.kit ?? {}, foeKits: m.foe.kit ?? {} });
     g.arenaId = m.arena;
     g.gold.name = safeName(m.foe.name);
     g.gold.setPalette(frontPalette(lookById(m.foe.look)));
@@ -678,6 +680,9 @@ export class Matchmaker {
       } else if (e.t === 'mega') {
         if (e.c) mon.megaChoice = e.c;
         g.megaEvolve(mon, true);
+      } else if (e.t === 'tera') {
+        if (e.ty) mon.teraType = e.ty;
+        g.terastallize(mon, true);
       } else if (e.t === 'switch') {
         if (loc === 'player' && this.pred) Object.assign(this.pred, { moves: [], dodge: 0, charge: null, released: null, buffer: null });
         g.remoteSwitch(e.i, loc);
@@ -788,6 +793,8 @@ export class Matchmaker {
     if (mon && s.sp && s.sp !== mon.species.id && SPECIES[s.sp]?.megaOf === mon.baseSpecies.id) {
       const form=SPECIES[s.sp];mon.megaEvolve(form,g.sprites[form.sprite]);
     }
+    if (mon && s.te && !mon.tera && !g.terastallize(mon, true)) mon.tera = s.te;
+    if (mon && 'it' in s) mon.item = s.it || null;
     if (mon !== team.active || mon.hidden || mon.fainted) return;
     if (mon.ult < 100 && s.u >= 100) g.onUltReady(mon);
     mon.ult = s.u;

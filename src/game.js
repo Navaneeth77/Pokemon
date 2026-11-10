@@ -10,11 +10,11 @@ import { SPECIES, DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species
 import { bossSpritesFor } from './data/skins.js';
 import { reactionBetween } from './reactions.js';
 import { abilityOf, typesOf } from './data/abilities.js';
+import { ITEMS, itemOf, cleanKit, randomKit } from './data/items.js';
 import { applyStatus, addBuff, benchStatus } from './status.js';
-import { comboRole, soften } from './combat.js';
+import { comboRole, soften, grounded } from './combat.js';
 import { typeMultiplier } from './data/types.js';
 import { Showcase, Finale } from './cinema.js';
-import { FinalHitReplay } from './final-hit-replay.js';
 import { outlinedText } from './draw.js';
 import { loadSpecies, measureDims } from './assets.js';
 import { WINGS } from './data/wings.js';
@@ -26,7 +26,7 @@ import { Input } from './input.js';
 import { Hud } from './hud.js';
 import {
   ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst,
-  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash,
+  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst,
 } from './effects.js';
 import { initAudio, sfx } from './audio.js';
 import { music, ARENA_TRACK, RAID_TRACKS } from './music.js';
@@ -37,6 +37,9 @@ export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y:
 const ease = t => 1 - (1 - t) * (1 - t);
 const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
+// Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
+const traps = (by, foe) => { const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
+const TERRAIN_COLOR = { electric: '#ffd84a', grassy: '#5fd04a', psychic: '#ff6ad0', misty: '#ffb0e0' };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Moves Copy can't take: ultimates are excluded separately; these depend on the user's own form.
@@ -59,7 +62,7 @@ export function prepareSprites(sprites, ids) {
   for (const s of Object.values(SPECIES)) {
     if (s.bodyZ == null && ids.includes(s.sprite) && sprites[s.sprite]) Object.assign(s, measureDims(sprites[s.sprite]));
   }
-  for (const [id, cfg] of Object.entries(WINGS)) if (ids.includes(id) && sprites[id]) addFlapAnim(sprites[id], cfg);
+  for (const k of ids) if (WINGS[k.split('~')[0]] && sprites[k]) addFlapAnim(sprites[k], WINGS[k.split('~')[0]]);
 }
 
 export class Game {
@@ -77,7 +80,13 @@ export class Game {
     this.hud = new Hud(this);
     this.red = new Trainer('red', 'Red', 180, 598);
     this.gold = new Trainer('gold', 'Gold', 180, 104);
-    this.makeTeam = (ids, side, trainer) => new Team(side, trainer, ids.map(id => new Pokemon(SPECIES[id], sprites[SPECIES[id].sprite], side)));
+    // Each Pokémon's kit (data/items.js): its held item, Tera type and, if owned, its shiny colours.
+    this.makeTeam = (ids, side, trainer, kits = {}) => new Team(side, trainer, ids.map(id => {
+      const s = SPECIES[id], k = cleanKit(s, kits[id], () => true), shiny = k.shiny && sprites[`${s.sprite}~shiny`];
+      const mon = new Pokemon(s, shiny || sprites[s.sprite], side);
+      Object.assign(mon, { item: k.item, teraType: k.tera, shiny: !!shiny });
+      return mon;
+    }));
     this.selection = [...DEFAULT_TEAM];
     this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
     this.opponentSelection = [...OPPONENT_TEAM];
@@ -117,7 +126,6 @@ export class Game {
   reset() {
     this.bossFx?.ultimateVisual?.action.cancel();
     this.bossFx = null;
-    if (!this.headless) (this.finishReplay ??= new FinalHitReplay()).clear();
     this.summary = newSummary(this);
     this.time = 0;
     this.effects = [];
@@ -136,7 +144,7 @@ export class Game {
       hitstopT: 0, lastHitstop: -1, shakeT: 0, shakeDur: 1, shakeMag: 0, slowT: 0, flashT: 0, endT: 0,
       winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, foeSwitchCD: 0, switching: false,
       switchMenu: false, windsOn: false, winds: null, punchT: 0, punchDur: 1, punchAmt: 0, punchAt: null,
-      weather: null, weatherT: 0, finale: null, showcase: null, popT: new Map(), lastUsed: { player: null, opponent: null },
+      weather: null, weatherT: 0, timedWeather: null, terrain: null, finale: null, showcase: null, popT: new Map(), lastUsed: { player: null, opponent: null },
       musicT: 0, legendT: 0,
     });
     this.ui.showSwitchMenu(false);
@@ -178,8 +186,10 @@ export class Game {
     this.practice = false;
   }
 
+  // Shiny Pokémon (in either side's kits) also get their recoloured sheets.
   async ensureSprites(ids, bossId) {
-    const need = [...new Set([...spritesFor(ids), ...bossSpritesFor(bossId)])].filter(k => !this.sprites[k]);
+    const shiny = ids.filter(id => SPECIES[id] && (this.kits?.[id]?.shiny || this.foeKits?.[id]?.shiny)).map(id => `${SPECIES[id].sprite}~shiny`);
+    const need = [...new Set([...spritesFor(ids), ...shiny, ...bossSpritesFor(bossId)])].filter(k => !this.sprites[k]);
     if (!need.length) return;
     Object.assign(this.sprites, await loadSpecies(need));
     prepareSprites(this.sprites, need);
@@ -206,8 +216,10 @@ export class Game {
         this.gold.setPalette(this.foeTrainer?.palette ?? {});
       }
     }
-    this.playerTeam = this.makeTeam(this.selection, 'player', this.red);
-    this.opponentTeam = this.makeTeam(this.opponentSelection, 'opponent', this.gold);
+    // Computer trainers carry sensible items; online and in raids each side brings its own kits.
+    if (!this.online && !this.raid && !practice) this.foeKits = Object.fromEntries(this.opponentSelection.map(id => [id, randomKit(SPECIES[id])]));
+    this.playerTeam = this.makeTeam(this.selection, 'player', this.red, practice ? {} : this.kits ?? {});
+    this.opponentTeam = this.makeTeam(this.opponentSelection, 'opponent', this.gold, practice ? {} : this.foeKits ?? {});
     // Online, the opposing team is the other player's: their game drives it (see online.js).
     // Online: Pokémon whose outcomes another machine decides are "remote" here (they only animate).
     // On the match server (online.authority) nothing is remote; with a match server every client Pokémon is.
@@ -314,6 +326,7 @@ export class Game {
     }
     this.later(0.35, () => {
       if (!mon.hidden && mon.alive) abilityOf(mon).onEnter?.(this, mon);
+      if (!mon.hidden && mon.alive) itemOf(mon)?.onEnter?.(this, mon);
     });
     const player = mon.side === 'player';
     this.spawn(new FloatText(mon.x, mon.y + (player ? 26 : 18), `Go, ${mon.species.name}!`, player ? '#ff8a3d' : '#f5c542', 8, 1.5));
@@ -343,7 +356,7 @@ export class Game {
     const team = this.playerTeam, cur = team.active, next = team.members[index];
     if (this.state !== 'fighting' || !next || !next.alive || next === cur) return false;
     if (!forced && (this.switching || this.cinematic || this.switchCD > 0 || cur.recallT > 0 || cur.held || this.ultActive())) return false;
-    if (!forced && cur.alive && abilityOf(this.opponent).shadowTag && !this.opponent.hidden && this.opponent.alive) {
+    if (!forced && cur.alive && traps(this.opponent, cur) && !this.opponent.hidden && this.opponent.alive) {
       this.abilityPop(this.opponent, "Can't escape!");
       return false;
     }
@@ -431,7 +444,7 @@ export class Game {
     const team = this.opponentTeam, cur = team.active, next = team.members[index];
     if (this.state !== 'fighting' || !next || !next.alive || next === cur) return false;
     if (this.foeSwitchCD > 0 || this.cinematic || cur.recallT > 0 || cur.held || this.ultActive() || cur.hidden) return false;
-    if (cur.alive && abilityOf(this.player).shadowTag && !this.player.hidden && this.player.alive) {
+    if (cur.alive && traps(this.player, cur) && !this.player.hidden && this.player.alive) {
       this.abilityPop(this.player, "Can't escape!");
       return false;
     }
@@ -470,6 +483,7 @@ export class Game {
     if (base.ultimate) {
       user.ult = 0;
       abilityOf(user).onUse?.(this, user, base);
+      itemOf(user)?.onUse?.(this, user, base);
       this.startUltCutscene(user, base);
       if (user.foe?.alive && !user.foe.hidden) abilityOf(user.foe).onFoeUlt?.(this, user.foe);
       this.netSend(user, { t: 'move', id });
@@ -489,6 +503,7 @@ export class Game {
     this.ui.log(`${user.species.name} used ${base.name}!`, user.side);
     if (base.selfBuff) this.buff(user, ...base.selfBuff);
     abilityOf(user).onUse?.(this, user, base);
+    itemOf(user)?.onUse?.(this, user, base);
     if (user === this.player) this.ai.onThreat();
     this.netSend(user, { t: 'move', id, l: chargeLevel });
     return true;
@@ -594,22 +609,80 @@ export class Game {
   }
 
   // ── Ability, status and buff plumbing used by abilities.js, status.js and moves ──
+  // An ability taking effect: the games' ability banner on the Pokémon's side of the screen, a flare of the
+  // ability's colour around the Pokémon and its effect in words above it.
   abilityPop(mon, text) {
     const ab = abilityOf(mon), key = mon, now = performance.now();
     this.ui.log(`${mon.species.name}'s ${ab.name}: ${text}`, mon.side);
     if (now - (this.popT.get(key) ?? 0) < 700) return;
     this.popT.set(key, now);
-    this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 26, ab.name.toUpperCase(), '#ffd84a', 7, 1.3));
+    const color = ab.color ?? TYPE_COLORS[typesOf(mon)[0]][0];
+    if (!mon.hidden) this.spawn(new AbilityFlare(mon, color));
     this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 17, text, '#ffffff', 6, 1.3));
-    this.hud.ability(mon.side, ab.name, text);
+    this.hud.ability(mon.side, ab.name, text, mon.species.name, color);
+  }
+
+  // A held item taking effect: the same banner as an ability, naming the item. `quiet` skips the log.
+  itemPop(mon, text, quiet = false) {
+    const item = ITEMS[mon.item];
+    if (!item) return;
+    if (!quiet) this.ui.log(`${mon.species.name}'s ${item.name}: ${text}`, mon.side);
+    const color = item.color ?? TYPE_COLORS[item.type ?? typesOf(mon)[0]][0];
+    if (!mon.hidden) this.spawn(new AbilityFlare(mon, color));
+    this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 17, text, '#ffffff', 6, 1.3));
+    this.hud.ability(mon.side, item.name, text, mon.species.name, color);
+  }
+
+  itemTouch(mon, text) {
+    if (this.time - (mon.itTouch ?? -9) < 3) return;
+    mon.itTouch = this.time;
+    this.itemPop(mon, text, true);
+  }
+
+  // A one-use item is gone for the rest of the battle (Unburden reacts; Harvest may bring a berry back).
+  useUpItem(mon) {
+    if (!mon.item || mon.remote) return;
+    mon.usedItem = mon.item;
+    mon.item = null;
+    abilityOf(mon).onItemLost?.(this, mon);
+  }
+
+  eatBerry(mon, effect) {
+    if (!ITEMS[mon.item]?.berry || mon.remote) return;
+    this.itemPop(mon, `It ate its ${ITEMS[mon.item].name}!`);
+    effect();
+    abilityOf(mon).onBerry?.(this, mon, mon.item);
+    this.useUpItem(mon);
+  }
+
+  // Knock Off (and Pickpocket): the item flies off; Sticky Hold keeps it.
+  knockOffItem(mon, by, steal = false) {
+    if (!mon.item || mon.remote) return false;
+    if (abilityOf(mon).stickyHold) {
+      this.abilityPop(mon, 'Its item is stuck fast!');
+      return false;
+    }
+    const name = ITEMS[mon.item]?.name ?? 'item';
+    if (steal && by && !by.item) by.item = mon.item;
+    this.floatText(mon, steal ? `${name} STOLEN!` : `${name} KNOCKED OFF!`, '#ffd84a');
+    this.ui.log(`${mon.species.name}'s ${name} was ${steal ? 'stolen' : 'knocked off'}!`, mon.side);
+    this.useUpItem(mon);
+    return true;
+  }
+
+  // A passive ability doing its work (a damage boost, a reduction): announced at most every 3s per Pokémon.
+  abilityTouch(mon, text) {
+    if (this.time - (mon.abTouch ?? -9) < 3) return;
+    mon.abTouch = this.time;
+    this.abilityPop(mon, text);
   }
 
   floatText(mon, text, color) {
     this.spawn(new FloatText(mon.x + rand(-4, 4), mon.y - mon.headZ - 14, text, color, 7));
   }
 
-  buff(mon, stat, mult, dur) {
-    return addBuff(this, mon, stat, mult, dur);
+  buff(mon, stat, mult, dur, source) {
+    return addBuff(this, mon, stat, mult, dur, source);
   }
 
   applyStatus(mon, name, opts) {
@@ -854,7 +927,38 @@ export class Game {
     if (this.story && !this.story.playerMega) return; // story: the Mega Ring comes with the eighth badge
     initAudio();
     // Pressed mid-attack: wait for the attack to finish instead of ignoring the press.
-    if (!this.megaEvolve(this.player) && this.player.species.mega?.length && !this.playerTeam.megaUsed) this.megaQueued = 0.8;
+    if (!this.gimmick(this.player) && !this.playerTeam.megaUsed) this.megaQueued = 0.8;
+  }
+
+  // The once-per-battle power-up on the M key: Mega Evolution for a Pokémon that has a Mega form,
+  // otherwise Terastallization. A team gets one of the two per battle.
+  gimmick(mon, force = false) {
+    return mon.species.mega?.length || mon.isMega ? this.megaEvolve(mon, force) : this.terastallize(mon, force);
+  }
+
+  canTera(mon) {
+    return !this.raid && !mon.isMega && !mon.tera && !!mon.teraType;
+  }
+
+  // Terastallization: the Pokémon turns to crystal and becomes purely its Tera type for the rest of the
+  // battle, keeping its same-type bonus for its original types (see combat.js).
+  terastallize(mon, force = false) {
+    const team = this.teamOf(mon);
+    if (this.state !== 'fighting' || this.cinematic || !this.canTera(mon)) return false;
+    if (!force && (this.switching || team.megaUsed || !mon.canAct())) return false;
+    team.megaUsed = true;
+    mon.tera = mon.teraType;
+    this.netSend(mon, { t: 'tera', ty: mon.tera });
+    const [c1, c2] = TYPE_COLORS[mon.tera];
+    this.spawn(new TeraBurst(mon, c1, c2));
+    this.spawn(new Ring(mon.x, mon.y, { r0: 8, r1: 70, life: 0.5, color: c1, width: 4 }));
+    this.hud.callout(mon.side, `Tera ${mon.tera.toUpperCase()}!`);
+    this.ui.log(`${mon.species.name} terastallized into the ${mon.tera[0].toUpperCase()}${mon.tera.slice(1)} type!`, mon.side);
+    this.shake(4, 0.3);
+    this.flash(0.04);
+    sfx.megaBurst();
+    this.recordCombat('mega', mon);
+    return true;
   }
 
   // One Mega Evolution per trainer per battle. The battle pauses briefly while the camera zooms in.
@@ -996,6 +1100,8 @@ export class Game {
     const team = this.teamOf(mon), next = net ? (net.last ? -1 : 0) : team.nextAlive();
     this.netSend(mon, { t: 'faint', i: team.members.indexOf(mon), mv: move?.id, last: next < 0 });
     this.recordCombat('faint', mon, by);
+    abilityOf(mon).onFaint?.(this, mon, by, move);
+    if (by && by !== mon && by.alive && !by.hidden) abilityOf(by).onKO?.(this, by, mon);
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
@@ -1148,7 +1254,7 @@ export class Game {
       p.input.y = v.y;
       if (this.megaQueued > 0) {
         this.megaQueued -= dt;
-        if (this.megaEvolve(p)) this.megaQueued = 0;
+        if (this.gimmick(p)) this.megaQueued = 0;
       }
       if (this.buffered) {
         this.buffered.t -= dt;
@@ -1215,30 +1321,73 @@ export class Game {
     }
   }
 
-  // Weather from the abilities of the Pokémon on the field; the most recent arrival wins ties.
+  // Weather: set by abilities while their Pokémon is on the field (the most recent arrival wins), or for a
+  // while by a move or an ability like Sand Spit, which overrides an ability's weather set before it.
+  // Air Lock and Cloud Nine cancel all of it while they are out.
+  setWeather(w, dur) {
+    this.timedWeather = { w, t: dur, at: this.time };
+  }
+
+  // Terrains (Electric, Grassy, Psychic, Misty) cover the arena for a while; see combat.js and status.js.
+  setTerrain(kind, dur = 20) {
+    if (this.terrain?.kind !== kind) {
+      const label = `${kind.toUpperCase()} TERRAIN!`;
+      this.hud.showBanner(label, { color: TERRAIN_COLOR[kind], y: 300, life: 1.2, size: 15 });
+      this.ui.log(`The arena became ${kind} terrain!`);
+    }
+    this.terrain = { kind, t: dur };
+  }
+
   updateWeather(dt) {
-    const src = [this.player, this.opponent].filter(m => m.alive && !m.hidden && abilityOf(m).weather && abilityOf(m).weather !== 'delta')
-      .sort((a, b) => (b.enteredAt ?? 0) - (a.enteredAt ?? 0))[0];
-    const w = src ? abilityOf(src).weather : null;
+    const field = [this.player, this.opponent].filter(m => m?.alive && !m.hidden);
+    const src = field.filter(m => abilityOf(m).weather && abilityOf(m).weather !== 'delta').sort((a, b) => (b.enteredAt ?? 0) - (a.enteredAt ?? 0))[0];
+    if (this.timedWeather && (this.timedWeather.t -= dt) <= 0) this.timedWeather = null;
+    const tw = this.timedWeather;
+    let w = tw && (!src || tw.at >= (src.enteredAt ?? 0)) ? tw.w : src ? abilityOf(src).weather : null;
+    if (w && field.some(m => abilityOf(m).noWeather)) w = null;
     if (w !== this.weather && w) {
-      const label = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!' }[w];
+      const label = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!', snow: 'It started to snow!' }[w];
       this.hud.showBanner(label.toUpperCase(), { color: '#ffffff', y: 300, life: 1.2, size: 15 });
       this.ui.log(label);
     }
     this.weather = w;
+    if (this.terrain && (this.terrain.t -= dt) <= 0) {
+      this.ui.log('The terrain returned to normal.');
+      this.terrain = null;
+    }
+    // Grassy Terrain mends grounded Pokémon a little every 1.5s.
+    if (this.terrain?.kind === 'grassy' && (this.terrainT = (this.terrainT ?? 0) + dt) >= 1.5) {
+      this.terrainT = 0;
+      for (const m of field) if (grounded(m) && m.hp < m.maxHp) this.heal(m, m.maxHp * 0.015);
+    }
     if (!w) return;
-    const n = w === 'rain' ? 4 : w === 'sand' ? 3 : 0;
+    const n = w === 'rain' ? 4 : w === 'sand' ? 3 : w === 'snow' ? 2 : 0;
     for (let i = 0; i < n; i++) {
       if (w === 'rain') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: 120, vx: -40, vz: -420, life: 0.28, size: 1.5, colors: ['#bfe6ff', '#8fc8f0'] });
+      else if (w === 'snow') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: rand(60, 120), vx: rand(-20, 10), vz: rand(-60, -40), life: 1.6, size: rand(1.5, 2.5), colors: ['#ffffff', '#e0f4ff'] });
       else this.particles.spawn({ x: rand(-40, 360), y: rand(60, 640), z: rand(2, 40), vx: rand(160, 240), vy: rand(-10, 20), life: 0.5, size: rand(1.5, 2.5), colors: ['#e8d8b0', '#c8b080'] });
     }
     if (w === 'sand' && (this.weatherT += dt) >= 1.5) {
       this.weatherT = 0;
-      for (const m of [this.player, this.opponent]) {
-        const immune = typesOf(m).some(t => t === 'rock' || t === 'ground' || t === 'steel') || abilityOf(m).id === 'sandStream';
-        if (!immune && m.alive && !m.hidden) this.dotDamage(m, 0.01, '#c8b080');
+      for (const m of field) {
+        const ab = abilityOf(m), immune = typesOf(m).some(t => t === 'rock' || t === 'ground' || t === 'steel') || ab.sandProof || ab.weather === 'sand';
+        if (!immune) this.dotDamage(m, 0.01, '#c8b080');
       }
     }
+    for (const m of field) abilityOf(m).weatherTick?.(this, m, dt, w);
+  }
+
+  // A terrain tints the arena floor in its colour, with faint motes drifting up from it.
+  drawTerrain(ctx) {
+    const t = this.terrain;
+    if (!t) return;
+    const fade = Math.min(1, t.t / 1.5);
+    ctx.save();
+    ctx.globalAlpha = 0.16 * fade;
+    ctx.fillStyle = TERRAIN_COLOR[t.kind];
+    ctx.fillRect(0, 60, WORLD_W, WORLD_H - 60);
+    ctx.restore();
+    if (Math.random() < 0.35 * fade) this.particles.spawn({ x: rand(0, WORLD_W), y: rand(80, WORLD_H), z: 1, vz: rand(14, 26), life: 1.2, size: rand(1.5, 2.5), sizeEnd: 0.5, colors: ['#ffffff', TERRAIN_COLOR[t.kind]] });
   }
 
   // Attacks meeting attacks: element reactions decide the winner first (fire melts ice, water douses
@@ -1515,6 +1664,7 @@ export class Game {
       Math.round((v.oy + WORLD_H / 2 - cam.cy * cam.zoom + sy) * k));
     this.arena.drawBackdrop(ctx);
     this.arena.drawGround(ctx);
+    this.drawTerrain(ctx);
     if (cam.dim > 0) {
       ctx.fillStyle = `rgba(14,10,30,${cam.dim})`;
       ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
@@ -1550,7 +1700,6 @@ export class Game {
     this.raidCards?.forEach((c, slot) => this.drawUltCard(ctx, { ...c, slot }));
     if (this.showcase) this.showcase.draw(ctx);
     if (this.finale) this.finale.draw(ctx);
-    if (!this.headless && (this.state === 'fighting' || (this.state === 'finale' && this.finale?.finisher && this.finale.t < .25))) this.finishReplay?.capture(this);
   }
 
   resize() {

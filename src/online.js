@@ -2,6 +2,8 @@ import { appendBattleEvents } from './event-buffer.js';
 import { Peer } from 'peerjs';
 import { MOVES } from './moves.js';
 import { SPECIES, isPlayable } from './data/species.js';
+import { cleanKit } from './data/items.js';
+import { SHINY } from './data/national-dims.js';
 import { TYPE_COLORS } from './data/types.js';
 import { lookById, frontPalette } from './trainers.js';
 import { nameAllowed, safeName } from './names.js';
@@ -267,7 +269,8 @@ export class Online {
         return;
       case 'ready':
         if(!Array.isArray(m.team)||m.team.length!==this.room?.format||new Set(m.team).size!==m.team.length||!m.team.every(isPlayable)){this.flow.onlineError('Your friend sent an ineligible team. Both players should refresh.');return;}
-        this.them = { team: m.team, lead: m.lead, mega: m.mega ?? {} };
+        // Their kits: unknown items and types are dropped; shiny is cosmetic.
+        this.them = { team: m.team, lead: m.lead, mega: m.mega ?? {}, kit: Object.fromEntries(m.team.map(id => [id, cleanKit(SPECIES[id], m.kit?.[id], sid => SHINY.includes(sid))])) };
         this.flow.onlineUpdate();
         this.checkStart();
         return;
@@ -281,7 +284,7 @@ export class Online {
         return;
       default:
         // Battle actions: replayed in order once the battle is running and no cutscene is playing.
-        if (this.inBattle && ['move', 'dodge', 'mega', 'switch', 'faint', 'cancel'].includes(m.t)) this.queue=appendBattleEvents(this.queue,[m]);
+        if (this.inBattle && ['move', 'dodge', 'mega', 'tera', 'switch', 'faint', 'cancel'].includes(m.t)) this.queue=appendBattleEvents(this.queue,[m]);
     }
   }
 
@@ -293,9 +296,9 @@ export class Online {
   }
 
   // ── Team select: both press READY, both load sprites, then the battle starts on both screens ──
-  ready(team, lead, mega) {
+  ready(team, lead, mega, kit = {}) {
     if (this.me) return;
-    this.me = { team: [...team], lead, mega: { ...mega } };
+    this.me = { team: [...team], lead, mega: { ...mega }, kit };
     this.send({ t: 'ready', ...this.me });
     this.flow.onlineUpdate();
     this.checkStart();
@@ -306,6 +309,7 @@ export class Online {
     this.loading = true;
     this.flow.onlineUpdate();
     try {
+      Object.assign(this.game, { kits: this.me.kit, foeKits: this.them.kit });
       await this.game.ensureSprites([...this.me.team, ...this.them.team]);
     } catch (err) {
       console.error(err);
@@ -329,6 +333,7 @@ export class Online {
     g.opponentSelection = them.team.filter(id => SPECIES[id]);
     g.foeLead = Math.min(Math.max(0, them.lead | 0), g.opponentSelection.length - 1);
     g.foeMegaPicks = { ...them.mega };
+    Object.assign(g, { kits: me.kit, foeKits: them.kit });
     g.arenaId = this.room.arena;
     g.gold.name = this.friend.name;
     g.gold.setPalette(frontPalette(lookById(this.friend.look)));
@@ -424,6 +429,9 @@ export class Online {
       } else if (e.t === 'mega') {
         if (e.c) mon.megaChoice = e.c;
         g.megaEvolve(mon, true);
+      } else if (e.t === 'tera') {
+        if (e.ty) mon.teraType = e.ty;
+        g.terastallize(mon, true);
       } else if (e.t === 'switch') g.remoteSwitch(e.i);
       else if (e.t === 'faint') {
         const m = g.opponentTeam.members[e.i] ?? mon;

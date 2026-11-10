@@ -292,12 +292,10 @@ test('raid cinematics: player winds up without freezing the raid; legendary visu
   windup.update(.71); assert.notEqual(g.player.action, windup); assert.equal(g.player.action.move, move);
  }
 });
-test('event replay is bounded and boss damage received is included in summaries', () => {
+test('boss damage received is included in summaries', () => {
  const g = battle(); g.opponent.boss = 'rayquaza';
  g.recordCombat('hit', g.opponent, g.player, {damage: 77, move: 'boss-ultimate'});
- for (let i = 0; i < 650; i++) g.recordCombat('move', g.player, null, {id: 'flamethrower'});
  const summary = resultSummary(g);
- assert.equal(summary.events.length, 600); assert.equal(summary.droppedEvents, 51);
  assert.equal(summary.species[g.player.baseSpecies.id].received, 77);
 });
 

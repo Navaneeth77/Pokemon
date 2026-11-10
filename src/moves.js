@@ -2378,6 +2378,67 @@ const NEW_MOVES = {
   discharge: wave('Discharge', 'electric', 90, 2.6, 'Electric burst · may paralyze', {
     radius: 90, colors: ['#ffffff', '#fff27a', '#e0b000'], rgb: [255, 230, 90], mark: (g, x, y, R) => g.marks.burn(x, y, R * 0.35), knockback: 150, sound: 'thunderbolt',
   }, { status: ['para', 0.25] }),
+
+  // ── National Dex additions: fuller pools for every type ──
+  rockBlast: shot('Rock Blast', 'rock', 30, 1.6, '3 boulders in a row', { style: 'rock', spread: [-0.06, 0, 0.06], stagger: 0.08, sound: 'shard' }),
+  rockTomb: shot('Rock Tomb', 'rock', 60, 1.6, 'Boulder · slows', { style: 'bigRock', sound: 'quake' }, { status: ['slow', 0.6] }),
+  ancientPower: shot('Ancient Power', 'rock', 70, 2, 'Ancient stone · raises attack', { style: 'bigRock', sound: 'quake' }, { selfBuff: ['atk', 1.1, 4] }),
+  headSmash: dash('Head Smash', 'rock', 130, 3, 'Skull charge · heavy recoil', { windup: 0.18, dist: 160, dur: 0.15, color: '#d8c8a0', ghost: '#a08a60', width: 5, knockback: 260 }, { recoil: 0.2 }),
+  earthPower: wave('Earth Power', 'ground', 90, 2.6, 'The ground erupts · lowers defense', {
+    radius: 85, colors: ['#f0d8a0', '#c89850', '#6a4a20'], rgb: [210, 160, 90], mark: (g, x, y, R) => g.marks.fracture(x, y, R * 0.45, 7), knockback: 190, sound: 'quake',
+  }, { debuff: ['def', 0.85, 4] }),
+  bulldoze: wave('Bulldoze', 'ground', 60, 2, 'Tremor · slows', {
+    radius: 80, colors: ['#e8d0a0', '#a08050', '#5a4020'], rgb: [190, 150, 90], mark: (g, x, y, R) => g.marks.fracture(x, y, R * 0.35, 5), knockback: 140, sound: 'quake',
+  }, { status: ['slow', 0.7] }),
+  drillRun: dash('Drill Run', 'ground', 80, 1.6, 'Drilling charge', { dist: 160, color: '#e8d0a0', ghost: '#8a6630', width: 4, knockback: 170 }),
+  highHorsepower: melee('High Horsepower', 'ground', 95, 1.9, 'Heavy stomp', { fx: 'punchT', colors: ['#a08050', '#f0d8a0'], lunge: 36, hits: [{ knockback: 210, stagger: 0.4, hitstop: 0.06 }] }),
+  sludgeWave: wave('Sludge Wave', 'poison', 95, 2.8, 'Toxic wave · may poison', {
+    radius: 90, colors: ['#e0a0f0', '#a040a0', '#5a1f5a'], rgb: [170, 70, 190], mark: (g, x, y, R) => g.marks.energy(x, y, R * 0.45, [160, 60, 170], 5), knockback: 170, sound: 'splash',
+  }, { status: ['poison', 0.3] }),
+  crossPoison: melee('Cross Poison', 'poison', 70, 1.4, 'Toxic slash · high crit', { anim: 'Swing', colors: ['#a848a8', '#f0c0ff'], lunge: 44, critChance: 0.25 }, { status: ['poison', 0.1] }),
+  poisonFang: melee('Poison Fang', 'poison', 60, 1.3, 'Bite · often poisons', { fx: 'bite', lunge: 38 }, { status: ['poison', 0.5] }),
+  acidSpray: shot('Acid Spray', 'poison', 40, 1.4, 'Acid · lowers defense', { style: 'poison', spread: [-0.08, 0.08], stagger: 0.05, sound: 'splash' }, { debuff: ['def', 0.8, 5] }),
+  leechLife: melee('Leech Life', 'bug', 80, 1.6, 'Bite · drains HP', { fx: 'bite', lunge: 40 }, { drain: 0.5 }),
+  signalBeam: shot('Signal Beam', 'bug', 75, 1.6, 'Flickering orb · may stun', { style: 'bug' }, { status: ['stun', 0.1] }),
+  pinMissile: shot('Pin Missile', 'bug', 22, 1.4, '5 needles', { style: 'needle', spread: [-0.16, -0.08, 0, 0.08, 0.16], stagger: 0.04, sound: 'shard' }),
+  firstImpression: dash('First Impression', 'bug', 90, 2.2, 'Lightning ambush', { windup: 0.04, dist: 150, dur: 0.09, color: '#d8f080', ghost: '#88c040', knockback: 180 }),
+  metalClaw: melee('Metal Claw', 'steel', 60, 1, 'Fast claw · raises attack', { fx: 'claw', lunge: 44 }, { selfBuff: ['atk', 1.1, 3] }),
+  smartStrike: melee('Smart Strike', 'steel', 70, 1.2, 'Precise horn jab', { colors: ['#c8d0e0', '#ffffff'], lunge: 46 }),
+  steelWing: dash('Steel Wing', 'steel', 75, 1.6, 'Steel-wing dive', { dist: 160, color: '#e0e8f0', ghost: '#a0a8b8', knockback: 170 }),
+  magnetBomb: shot('Magnet Bomb', 'steel', 60, 1.4, 'Homing steel bomb', { style: 'steel', sound: 'shard' }),
+  hurricane: shot('Hurricane', 'flying', 110, 3, 'Cyclone · may stun', { style: 'wind', sound: 'wind' }, { status: ['stun', 0.15] }),
+  wingAttack: melee('Wing Attack', 'flying', 60, 1.1, 'Wing slap', { anim: 'Swing', colors: ['#cfeaff', '#ffffff'], lunge: 44 }),
+  acrobatics: dash('Acrobatics', 'flying', 80, 1.4, 'Acrobatic strike', { dist: 150, color: '#e8f6ff', ghost: '#cfeaff', knockback: 150 }),
+  iceSpinner: melee('Ice Spinner', 'ice', 80, 1.5, 'Spinning ice kick', { anim: 'Rotate', colors: ['#9be6ff', '#ffffff'], lunge: 36 }),
+  icicleCrash: shot('Icicle Crash', 'ice', 85, 2.2, 'Volley of icicles', { style: 'ice', spread: [-0.1, 0, 0.1], stagger: 0.05, sound: 'ice' }, { status: ['freeze', 0.08] }),
+  avalanche: wave('Avalanche', 'ice', 90, 2.8, 'Snow burst · may freeze', {
+    radius: 85, colors: ['#ffffff', '#c8f2ff', '#7ab8e8'], rgb: [180, 230, 255], mark: (g, x, y, R) => g.marks.frost(x, y, R * 0.4), knockback: 180, sound: 'ice',
+  }, { status: ['freeze', 0.1] }),
+  dragonDarts: shot('Dragon Darts', 'dragon', 50, 1.4, 'Twin darts', { style: 'dragon', spread: [-0.06, 0.06], stagger: 0.06 }),
+  scaleShot: shot('Scale Shot', 'dragon', 25, 1.6, 'Scale volley · raises speed', { style: 'dragon', spread: [-0.15, -0.05, 0.05, 0.15], stagger: 0.04, sound: 'shard' }, { selfBuff: ['spd', 1.15, 3] }),
+  drainingKiss: melee('Draining Kiss', 'fairy', 50, 1.3, 'Kiss · drains HP', { colors: ['#f080b0', '#ffe0f0'], lunge: 40 }, { drain: 0.75 }),
+  spiritBreak: melee('Spirit Break', 'fairy', 75, 1.6, 'Smash · lowers attack', { fx: 'punchT', colors: ['#f080b0', '#ffe0f0'], lunge: 40 }, { debuff: ['atk', 0.85, 4] }),
+  phantomForce: dash('Phantom Force', 'ghost', 90, 2.4, 'Vanish and strike', { windup: 0.2, dist: 180, dur: 0.12, through: true, color: '#9a7ac8', ghost: '#45346a', knockback: 180 }),
+  poltergeist: shot('Poltergeist', 'ghost', 110, 2.8, 'Haunted missile', { style: 'ghost', sound: 'roar' }),
+  wildCharge: dash('Wild Charge', 'electric', 90, 2, 'Electric tackle · recoil', { dist: 160, color: '#fff27a', ghost: '#ffe066', burst: 'electric', knockback: 200 }, { recoil: 0.1 }),
+  electroBall: shot('Electro Ball', 'electric', 70, 1.4, 'Fast electric orb', { style: 'electric', sound: 'zap' }),
+  doubleEdge: dash('Double-Edge', 'normal', 110, 2.6, 'Reckless tackle · recoil', { dist: 160, color: '#ffffff', ghost: '#d8d8c0', width: 5, knockback: 230 }, { recoil: 0.15 }),
+  boomburst: wave('Boomburst', 'normal', 110, 3.2, 'Deafening blast', { radius: 105, colors: ['#ffffff', '#f0f0d8', '#a8a878'], rgb: [240, 240, 220], knockback: 220, sound: 'roar' }),
+  slash: melee('Slash', 'normal', 70, 1.1, 'Slash · high crit', { anim: 'Swing', colors: ['#ffffff', '#e8e8d0'], lunge: 44, critChance: 0.25 }),
+  psychicFangs: melee('Psychic Fangs', 'psychic', 85, 1.6, 'Psychic bite', { fx: 'bite', lunge: 40 }, { debuff: ['def', 0.9, 3] }),
+  drainPunch: melee('Drain Punch', 'fighting', 75, 1.6, 'Punch · drains HP', { fx: 'punchT', colors: ['#c8402c', '#9fffc8'], lunge: 40 }, { punch: true, drain: 0.5 }),
+  brickBreak: melee('Brick Break', 'fighting', 75, 1.3, 'Karate chop', { colors: ['#c8402c', '#ffd0b0'], lunge: 42 }),
+  focusBlast: shot('Focus Blast', 'fighting', 120, 3, 'Aura bomb · lowers defense', { style: 'bigAura', sound: 'explosion' }, { debuff: ['def', 0.85, 4] }),
+  liquidation: melee('Liquidation', 'water', 85, 1.6, 'Water strike · lowers defense', { colors: ['#3a8ae8', '#d4f1ff'], lunge: 42 }, { debuff: ['def', 0.85, 4] }),
+  muddyWater: wave('Muddy Water', 'water', 90, 2.8, 'Muddy surge · may slow', {
+    radius: 90, colors: ['#d8b878', '#5aa6f0', '#3a6a90'], rgb: [120, 150, 170], mark: (g, x, y, R) => g.marks.wet(x, y, R * 0.45), knockback: 170, sound: 'splash',
+  }, { status: ['slow', 0.3] }),
+  seedBomb: shot('Seed Bomb', 'grass', 80, 1.6, 'Exploding seed', { style: 'grass' }),
+  gigaDrain: shot('Giga Drain', 'grass', 75, 1.8, 'Draining orb', { style: 'leaf', sound: 'shard' }, { drain: 0.5 }),
+  woodHammer: melee('Wood Hammer', 'grass', 120, 2.6, 'Log smash · recoil', { fx: 'punchT', colors: ['#8a6630', '#e0ffc0'], lunge: 34, hits: [{ knockback: 230, stagger: 0.4, hitstop: 0.07 }] }, { recoil: 0.15 }),
+  powerWhip: melee('Power Whip', 'grass', 110, 2.4, 'Vine lash', { anim: 'Swing', colors: ['#62b947', '#e0ffc0'], lunge: 46, spread: 3 }),
+  knockOff: melee('Knock Off', 'dark', 75, 1.5, "Slap · knocks away the foe's held item", { fx: 'dark', lunge: 42 }, { knockOff: true }),
+  throatChop: melee('Throat Chop', 'dark', 80, 1.5, 'Chop · may stun', { fx: 'dark', lunge: 42 }, { status: ['stun', 0.1] }),
 };
 
 const util = (name, type, cooldown, tag, u, more = {}) => ({ name, type, power: 0, cooldown, range: 999, minRange: 0, ai: 'self', tag, Action: Utility, util: u, ...more });
@@ -2721,13 +2782,24 @@ for (const m of Object.values(MOVES)) {
 const LAUNCH = {
   aerialAce: 230, ironTail: 220, aquaTail: 200, hammerArm: 240, dragonTail: 160, breakingSwipe: 170, sacredSword: 200, blazeKick: 190, extremeSpeed: 180,
   megahorn: 240, waterfall: 260, closeCombat: 150, playRough: 150, xScissor: 170, ironHead: 180, zenHeadbutt: 170, bodySlam: 200, earthquake: 230, voltTackle: 200,
-  flareBlitz: 220, dragonRush: 220, drillPeck: 190, braveBird: 200, uTurn: 160, firePunch: 170, thunderPunch: 170, icePunch: 170, shadowPunch: 150,
+  flareBlitz: 220, dragonRush: 220, headSmash: 230, highHorsepower: 190, woodHammer: 210, doubleEdge: 200, iceSpinner: 160, drillPeck: 190, braveBird: 200, uTurn: 160, firePunch: 170, thunderPunch: 170, icePunch: 170, shadowPunch: 150,
 };
 for (const [id, v] of Object.entries(LAUNCH)) MOVES[id].launch = v;
 // Moves that can follow a juggled foe into the air.
-for (const id of ['aerialAce', 'braveBird', 'drillPeck', 'uTurn', 'extremeSpeed', 'quickAttack', 'xScissor', 'shadowSneak', 'machPunch', 'aquaJet', 'voltSwitch', 'suckerPunch']) MOVES[id].aerial = true;
+for (const id of ['aerialAce', 'acrobatics', 'steelWing', 'braveBird', 'drillPeck', 'uTurn', 'extremeSpeed', 'quickAttack', 'xScissor', 'shadowSneak', 'machPunch', 'aquaJet', 'voltSwitch', 'suckerPunch']) MOVES[id].aerial = true;
+// Move families that abilities care about: sound (Soundproof, Punk Rock), balls and bombs (Bulletproof),
+// pulses (Mega Launcher), bites (Strong Jaw), priority strikes (Armor Tail, Dazzling) and wind (Wind Rider).
+const FAMILY = {
+  sound: ['hyperVoice', 'boomburst'],
+  bullet: ['shadowBall', 'energyBall', 'sludgeBomb', 'seedBomb', 'focusBlast', 'electroBall', 'magnetBomb', 'auraSphere', 'rockBlast', 'fireBlast'],
+  pulse: ['waterPulse', 'darkPulse', 'dragonPulse', 'auraSphere', 'lugiaWaterPulse'],
+  bite: ['crunch', 'iceFang', 'poisonFang', 'psychicFangs'],
+  priority: ['quickAttack', 'aquaJet', 'machPunch', 'bulletPunch', 'shadowSneak', 'suckerPunch', 'iceShard', 'firstImpression', 'extremeSpeed'],
+  wind: ['hurricane', 'heatWave', 'airSlash'],
+};
+for (const [tag, ids] of Object.entries(FAMILY)) for (const id of ids) if (MOVES[id]) MOVES[id][tag] = true;
 // Slicing moves (Gallade's Sharpness).
-for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw']) MOVES[id].slice = true;
+for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw', 'crossPoison', 'slash', 'smartStrike', 'wingAttack']) MOVES[id].slice = true;
 // Moves that drag the foe toward the user instead of pushing it away.
 for (const id of ['psychoCut', 'shadowSneak', 'hex']) MOVES[id].pull = true;
 

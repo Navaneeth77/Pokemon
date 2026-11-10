@@ -9,6 +9,8 @@
 //   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated)
 import './shim.js';
 import { EconomyStore } from './economy-store.js';
+import { cleanKit } from '../src/data/items.js';
+import { SHINY } from '../src/data/national-dims.js';
 import { botEntry } from './bots.js';
 import { resultSummary } from '../src/mastery.js';
 import { RaidRooms } from './raids.js';
@@ -64,7 +66,7 @@ const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queu
 const queues = { 3: [], 6: [] }; // waiting entries per format, oldest first
 const matches = new Map();
 const MAX_MATCHES = Math.max(1, Math.min(32, Number(process.env.MAX_MATCHES) || 3));
-const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES);
+const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES, (team, kits) => validKits(team, kits));
 setInterval(() => drafts.tick(Date.now()), 1000).unref();
 // Online results and ratings (Elo, starting at 1000). Kept in Upstash Redis when
 // UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set, so they survive restarts and redeploys;
@@ -227,6 +229,8 @@ function sendTo(player, msg) {
   send(player?.ws, msg);
 }
 
+const SHINY_SET = new Set(SHINY);
+
 // ── Validation: nothing from a client is trusted ──
 function validTeam(m) {
   const format = m.format === 6 ? 6 : m.format === 3 ? 3 : 0;
@@ -238,7 +242,12 @@ function validTeam(m) {
     const pick = m.mega?.[id];
     if (typeof pick === 'string' && SPECIES[id].mega?.includes(pick)) mega[id] = pick;
   }
-  return { format, team, lead, mega };
+  return { format, team, lead, mega, kit: validKits(team, m.kit) };
+}
+
+// Held items and Tera types are checked against the game's lists; shiny is cosmetic and passed through.
+function validKits(team, kits) {
+  return Object.fromEntries(team.map(id => [id, cleanKit(SPECIES[id], kits?.[id], () => SHINY_SET.has(id))]));
 }
 
 // ── Queue ──
@@ -320,8 +329,8 @@ class Match {
       const me = this.side[s], foe = this.side[this.other(s)];
       sendTo(me.player, {
         t: 'matched', draftMode: this.draftMode, ranked:this.ranked, id: this.id, you: s, format: this.format, arena: this.arena,
-        me: { team: me.team, lead: me.lead, mega: me.mega },
-        foe: { name: foe.player.name, look: foe.player.look, team: foe.team, lead: foe.lead, mega: foe.mega },
+        me: { team: me.team, lead: me.lead, mega: me.mega, kit: me.kit },
+        foe: { name: foe.player.name, look: foe.player.look, team: foe.team, lead: foe.lead, mega: foe.mega, kit: foe.kit },
       });
     }
   }
@@ -345,6 +354,8 @@ class Match {
     g.opponentSelection = [...B.team];
     g.foeLead = B.lead;
     g.foeMegaPicks = { ...B.mega };
+    g.kits = A.kit ?? {};
+    g.foeKits = B.kit ?? {};
     g.arenaId = this.arena;
     g.red.name = A.player.name;
     g.gold.name = B.player.name;
@@ -437,7 +448,7 @@ class Match {
     }
     if (fighting && this.megaQueuedB > 0) {
       this.megaQueuedB -= STEP;
-      if (g.megaEvolve(o)) this.megaQueuedB = 0;
+      if (g.gimmick(o)) this.megaQueuedB = 0;
     }
     return null;
   }
@@ -479,7 +490,7 @@ class Match {
       g.dodge(o, held ? -v.x : o.x - p.x || 0.01, held ? -v.y : o.y - p.y || -1);
     } else if (k === 'ult') g.useMove(o, o.species.ultimate);
     else if (k === 'mega') {
-      if (!g.megaEvolve(o) && o.species.mega?.length && !g.opponentTeam.megaUsed) this.megaQueuedB = 0.8;
+      if (!g.gimmick(o) && !g.opponentTeam.megaUsed) this.megaQueuedB = 0.8;
     } else if (k === 'switch' && i >= 0 && i < this.format) {
       this.bufB = null;
       g.switchFoe(i);
@@ -539,7 +550,7 @@ class Match {
       p.state = 'idle';
       const again = requeue(s) && p.ws?.readyState === 1;
       sendTo(p, { t: 'aborted', id: this.id, reason, requeued: again });
-      if (again) enqueue(p, { format: e.format, team: e.team, lead: e.lead, mega: e.mega }, e.since, true);
+      if (again) enqueue(p, { format: e.format, team: e.team, lead: e.lead, mega: e.mega, kit: e.kit }, e.since, true);
     }
     log(`match ${this.id} aborted (${reason})`);
   }
@@ -561,7 +572,7 @@ function snapshot(team, switchCD, ack) {
     mv: p.moving ? 1 : 0, lx: r1(p.lastMove.x), ly: r1(p.lastMove.y), sg: p.stagger > 0 ? 1 : 0,
     ch: p.charging ? [p.charging.id, r1(p.charging.t)] : 0, iv: p.invuln ? 1 : 0, ph: p.phasing ? 1 : 0, hl: p.held ? 1 : 0, ab,
     mu: team.megaUsed ? 1 : 0, sw: r1(switchCD ?? 0), cd: Object.fromEntries(Object.entries(p.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => [k, r1(v)])),
-    q: ack || 0, ea: p.elementAura ?? null,
+    q: ack || 0, ea: p.elementAura ?? null, te: p.tera ?? 0, it: p.item ?? 0,
   };
 }
 

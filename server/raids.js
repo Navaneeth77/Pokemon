@@ -46,7 +46,7 @@ class RaidSession {
   }
   intro(player = null) {
     this.members.forEach((m,i)=> { if(player && this.entries[i].player!==player)return; this.manager.send(this.entries[i].player,{t:'matched',id:this.id,you:'A',format:m.format,arena:m.arena,raid:this.entries[i].boss,difficulty:this.entries[0].difficulty,allyTeam:this.entries[1-i].team,
-      me:{team:this.entries[i].team,lead:this.entries[i].lead,mega:this.entries[i].mega},foe:{name:BOSSES[this.entries[i].boss].name,team:[this.entries[i].boss],lead:0,mega:{}}}); });
+      me:{team:this.entries[i].team,lead:this.entries[i].lead,mega:this.entries[i].mega,kit:this.entries[i].kit},foe:{name:BOSSES[this.entries[i].boss].name,team:[this.entries[i].boss],lead:0,mega:{}}}); });
   }
   begin() {
     for(const m of this.members){m.begin();const g=m.game;g.showcase=null;g.state='fighting';g.timers=[];for(const p of [g.player,g.opponent]){p.hidden=false;p.appear=0;}g.gold.hidden=true;}

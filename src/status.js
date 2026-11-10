@@ -1,5 +1,6 @@
-import { FloatText, iceShatter, electricBurst, rand } from './effects.js';
+import { FloatText, StatArrows, iceShatter, electricBurst, rand } from './effects.js';
 import { abilityOf, typesOf } from './data/abilities.js';
+import { itemOf } from './data/items.js';
 
 // Status conditions. Durations refresh rather than stack; `guard` is a grace period after the
 // status ends during which it can't be re-applied, so freezes, stuns and sleep can't chain-lock.
@@ -29,8 +30,10 @@ function text(game, mon, str, color, size = 7) {
 export function applyStatus(game, mon, name, { dur, source } = {}) {
   const S = STATUS[name], ab = abilityOf(mon);
   if (!S || !mon.alive || mon.hidden || mon.remote) return false;
-  if (S.immune?.some(t => typesOf(mon).includes(t)) || ab.immune?.includes(name)) {
-    text(game, mon, 'IMMUNE', '#c9d2de', 6);
+  const corrodes = name === 'poison' && source && abilityOf(source).corrosion;
+  if ((!corrodes && S.immune?.some(t => typesOf(mon).includes(t))) || ab.immune?.includes(name) || ab.blockStatus?.(game, mon, name)) {
+    if (ab.immune?.includes(name) || ab.blockStatus) game.abilityPop(mon, `It can't be ${STATUS[name].word.toLowerCase().replace('!', '')}`);
+    else text(game, mon, 'IMMUNE', '#c9d2de', 6);
     return false;
   }
   if (mon.sGuard[name] > 0 || (name === 'freeze' && mon.frozen > 0)) {
@@ -41,7 +44,7 @@ export function applyStatus(game, mon, name, { dur, source } = {}) {
     game.abilityPop(mon, 'Bounced it back!');
     return applyStatus(game, source, name, { dur });
   }
-  const d = (dur ?? S.dur) * (ab.statusMult ?? 1) * (mon.boss ? 0.3 : 1);
+  const d = (dur ?? S.dur) * (ab.statusMult ?? 1) * (ab.statusDur?.(name) ?? 1) * (mon.boss ? 0.3 : 1);
   if (name === 'freeze') {
     mon.freeze(d);
     iceShatter(game, mon.x, mon.y, mon.bodyZ);
@@ -63,6 +66,8 @@ export function applyStatus(game, mon, name, { dur, source } = {}) {
   text(game, mon, S.word, S.color, 8);
   game.ui.log(`${mon.species.name} ${S.verb}`, mon.side);
   if (name === 'poison' && source && abilityOf(source).puppeteer) applyStatus(game, mon, 'slow', { source });
+  ab.onStatus?.(game, mon, name, source);
+  itemOf(mon)?.onStatus?.(game, mon, name, source);
   return true;
 }
 
@@ -77,7 +82,8 @@ export function tickStatus(game, mon, dt) {
       st[`${name}T`] = (st[`${name}T`] ?? S.every) - dt;
       if (st[`${name}T`] <= 0) {
         st[`${name}T`] = S.every;
-        game.dotDamage(mon, S.dot, S.color);
+        if (name === 'poison' && abilityOf(mon).poisonHeal) game.heal(mon, mon.maxHp * S.dot * 1.5);
+        else game.dotDamage(mon, S.dot, S.color);
         if (!mon.alive) return;
       }
     }
@@ -120,15 +126,34 @@ export function statusPills(mon) {
 }
 
 // Temporary stat changes (atk / def / spd). A new change on the same stat replaces the old one.
-export function addBuff(game, mon, stat, mult, dur) {
+// `source` is the Pokémon lowering it (Intimidate, a move's debuff), for abilities that react to that.
+export function addBuff(game, mon, stat, mult, dur, source = null) {
   if (mon.remote) return false; // online: the owner's game applies it and sends the result
-  if (mult < 1 && abilityOf(mon).noDebuff) {
-    game.abilityPop(mon, "Stats can't be lowered!");
-    return false;
+  const ab = abilityOf(mon);
+  if (ab.contrary) mult = 1 / mult;
+  if (ab.simple) mult = mult >= 1 ? 1 + (mult - 1) * 2 : mult * mult;
+  if (mult < 1) {
+    if (itemOf(mon)?.noDebuff) {
+      game.itemPop(mon, "The Clear Amulet kept its stats up!");
+      return false;
+    }
+    if (ab.noDebuff || ab.keepStat === stat) {
+      game.abilityPop(mon, "Stats can't be lowered!");
+      return false;
+    }
+    if (ab.mirror && source && source !== mon && source.alive && !source.hidden) {
+      game.abilityPop(mon, 'Reflected the stat drop!');
+      return addBuff(game, source, stat, mult, dur);
+    }
   }
   mon.buffs[stat] = { m: mult, t: dur };
   const label = { atk: 'ATK', def: 'DEF', spd: 'SPD' }[stat];
   text(game, mon, `${label} ${mult >= 1 ? '▲' : '▼'}`, mult >= 1 ? '#ffe680' : '#9fb8ff', 7);
+  if (!mon.hidden) game.spawn(new StatArrows(mon, stat, mult >= 1));
+  if (mult < 1 && source && source !== mon) {
+    ab.onDebuffed?.(game, mon, source);
+    itemOf(mon)?.onDebuffed?.(game, mon, source);
+  }
   return true;
 }
 

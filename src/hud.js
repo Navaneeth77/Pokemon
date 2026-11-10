@@ -25,8 +25,8 @@ export class Hud {
   }
 
   // Short ability notification under a side's panel.
-  ability(side, name, text) {
-    this.notes[side] = { text: `${name}: ${text}`, t: 0 };
+  ability(side, name, text, mon = '', color = '#ffd84a') {
+    this.notes[side] = { name, text, mon, color, t: 0 };
   }
 
   combo(side, text, big) {
@@ -49,7 +49,7 @@ export class Hud {
     }
     for (const k in this.glow) this.glow[k] = Math.max(0, this.glow[k] - dt * 1.5);
     for (const box of [this.notes, this.combos]) {
-      for (const k in box) if (box[k] && (box[k].t += dt) > 1.8) box[k] = null;
+      for (const k in box) if (box[k] && (box[k].t += dt) > (box === this.notes ? 2 : 1.8)) box[k] = null;
     }
     if (this.banner && (this.banner.t += dt) > this.banner.life) this.banner = null;
     for (const m of [this.game.player, this.game.opponent]) {
@@ -199,15 +199,31 @@ export class Hud {
     outlinedText(ctx, dl, dx + dw / 2, 59.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: dcd > 0 ? '#c9d2de' : '#ffffff' });
   }
 
+  // The games' ability banner: slides in from the Pokémon's side of the screen with whose ability it is,
+  // the ability's name in its colour and what it did.
   drawNote(ctx, n, right) {
-    const alpha = n.t > 1.5 ? Math.max(0, 1 - (n.t - 1.5) / 0.3) : Math.min(1, n.t / 0.12);
-    ctx.font = '700 6.5px "Pixelify Sans"';
-    const text = n.text.length > 46 ? `${n.text.slice(0, 45)}…` : n.text;
-    const w = Math.ceil(ctx.measureText(text).width) + 12, x = right ? WORLD_W - 6 - w : 6;
+    const alpha = n.t > 1.7 ? Math.max(0, 1 - (n.t - 1.7) / 0.3) : 1, slide = 1 - Math.min(1, n.t / 0.16) ** 2;
+    ctx.font = '400 11px "Luckiest Guy"';
+    const title = n.name.toUpperCase(), text = n.text.length > 40 ? `${n.text.slice(0, 39)}…` : n.text;
+    const nameW = ctx.measureText(title).width;
+    ctx.font = '700 6px "Pixelify Sans"';
+    const w = Math.ceil(Math.max(nameW, ctx.measureText(text).width, 60)) + 22, h = 31;
+    const x = (right ? WORLD_W - w : 0) + (right ? 1 : -1) * slide * w, y = 80;
+    // A slanted inner edge, like the games' banner.
+    const pts = right ? [[x - 8, y], [x + w, y], [x + w, y + h], [x, y + h]] : [[x, y], [x + w + 8, y], [x + w, y + h], [x, y + h]];
     ctx.save();
     ctx.globalAlpha = alpha;
-    roundRect(ctx, x, 82, w, 11, 5.5, 'rgba(40,30,8,0.9)', '#ffd84a', 0.8);
-    outlinedText(ctx, text, x + w / 2, 89.8, { size: 6.5, align: 'center', color: '#ffe9a8', lw: 0 });
+    ctx.beginPath();
+    pts.forEach(([px, py], i) => ctx[i ? 'lineTo' : 'moveTo'](px, py));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(16,12,28,0.92)';
+    ctx.fill();
+    ctx.fillStyle = n.color;
+    ctx.fillRect(right ? x + w - 4 : x, y, 4, h);
+    const tx = right ? x + w - 10 : x + 10, align = right ? 'right' : 'left';
+    outlinedText(ctx, `${n.mon.toUpperCase()}'S`, tx, y + 8, { size: 6, align, color: '#c9c2dc', lw: 0 });
+    outlinedText(ctx, title, tx, y + 19, { family: 'Luckiest Guy', weight: 400, size: 11, align, color: n.color, stroke: '#140c20', lw: 2.5 });
+    outlinedText(ctx, text, tx, y + 27.5, { size: 6, align, color: '#ffffff', lw: 0 });
     ctx.restore();
   }
 
@@ -235,13 +251,19 @@ export class Hud {
 
   drawWeather(ctx) {
     const g = this.game;
-    const label = g.deltaStream ? 'STRONG WINDS' : { rain: 'RAIN', sun: 'HARSH SUN', sand: 'SANDSTORM' }[g.weather];
-    if (!label) return;
-    const color = g.deltaStream ? '#2f9e95' : { rain: '#3a6ad0', sun: '#d8781a', sand: '#a88a4a' }[g.weather];
+    const chips = [];
+    const label = g.deltaStream ? 'STRONG WINDS' : { rain: 'RAIN', sun: 'HARSH SUN', sand: 'SANDSTORM', snow: 'SNOW' }[g.weather];
+    if (label) chips.push([label, g.deltaStream ? '#2f9e95' : { rain: '#3a6ad0', sun: '#d8781a', sand: '#a88a4a', snow: '#6a9ac8' }[g.weather]]);
+    if (g.terrain) chips.push([`${g.terrain.kind.toUpperCase()} TERRAIN ${Math.ceil(g.terrain.t)}`, { electric: '#c8a018', grassy: '#3f9a2c', psychic: '#c03a98', misty: '#d070a8' }[g.terrain.kind]]);
+    if (!chips.length) return;
     ctx.font = '400 7px "Luckiest Guy"';
-    const w = Math.ceil(ctx.measureText(label).width) + 12;
-    roundRect(ctx, WORLD_W / 2 - w / 2, 66, w, 11, 5.5, color, 'rgba(255,255,255,0.2)', 0.8);
-    outlinedText(ctx, label, WORLD_W / 2, 74.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
+    const ws = chips.map(([t]) => Math.ceil(ctx.measureText(t).width) + 12), total = ws.reduce((a, b) => a + b, 0) + (chips.length - 1) * 4;
+    let x = WORLD_W / 2 - total / 2;
+    chips.forEach(([text, color], i) => {
+      roundRect(ctx, x, 66, ws[i], 11, 5.5, color, 'rgba(255,255,255,0.2)', 0.8);
+      outlinedText(ctx, text, x + ws[i] / 2, 74.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
+      x += ws[i] + 4;
+    });
   }
 
   // Small status / boost / ability tags above each Pokémon on the field.

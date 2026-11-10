@@ -107,10 +107,48 @@ export async function addExtraAnims(id, set) {
   } catch { /* extras are optional */ }
 }
 
+// Shiny sheets: the normal sheets recoloured through the species' shiny palette (public/sprites/<id>/
+// shiny.json, normal colour → shiny colour, measured from SpriteCollab's shiny sheet).
+function recolor(img, palette) {
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (!px[i + 3]) continue;
+    const to = palette.get((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+    if (to === undefined) continue;
+    px[i] = to >> 16;
+    px[i + 1] = (to >> 8) & 255;
+    px[i + 2] = to & 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  return c;
+}
+
+async function loadShinySet(id) {
+  const [set, res] = await Promise.all([loadSpriteSet(id), fetch(`/sprites/${id}/shiny.json`)]);
+  if (!res.ok) throw new Error(`No shiny colours for ${id}`);
+  const palette = new Map(Object.entries(await res.json()).map(([a, b]) => [parseInt(a, 16), parseInt(b, 16)]));
+  const sheets = new Map(), anims = {};
+  for (const [name, a] of Object.entries(set.anims)) {
+    if (!sheets.has(a.image)) sheets.set(a.image, recolor(a.image, palette));
+    anims[name] = { ...a, image: sheets.get(a.image) };
+  }
+  // The portrait is shown in <img> tags too, so it stays an image.
+  const portrait = new Image();
+  portrait.src = recolor(set.portrait, palette).toDataURL();
+  try { await portrait.decode?.(); } catch {}
+  return { anims, portrait };
+}
+
 const spriteCache = new Map();
 export async function loadSpecies(ids) {
   const sets = await Promise.all(ids.map(id=>{
-    if(!spriteCache.has(id))spriteCache.set(id,loadSpriteSet(id).catch(err=>{spriteCache.delete(id);throw err;}));
+    const load = id.endsWith('~shiny') ? () => loadShinySet(id.slice(0, -6)) : () => loadSpriteSet(id);
+    if(!spriteCache.has(id))spriteCache.set(id,load().catch(err=>{spriteCache.delete(id);throw err;}));
     return spriteCache.get(id);
   }));
   return Object.fromEntries(ids.map((id, i) => [id, sets[i]]));

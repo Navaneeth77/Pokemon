@@ -1268,3 +1268,154 @@ export class PsyDome extends Effect {
     ctx.stroke();
   }
 }
+
+// An ability taking effect: a hexagonal ring of the ability's colour opens around the Pokémon while
+// motes rise through it, following the Pokémon as it moves.
+export class AbilityFlare extends Effect {
+  constructor(mon, color) {
+    super('air', 0.75);
+    this.mon = mon;
+    this.color = color;
+    this.motes = Array.from({ length: quality().particles > 500 ? 10 : 5 }, (_, i) => ({ a: (i / 10) * Math.PI * 2 + rand(0, 0.5), d: rand(0.5, 1), v: rand(30, 55), s: rand(1.5, 2.5) }));
+  }
+
+  draw(ctx) {
+    const m = this.mon, t = this.age / this.life, e = 1 - (1 - t) ** 3;
+    const r = (m.radius + 6) + 10 * e, y = m.y - m.bodyZ;
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 2.5 * (1 - t) + 0.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + t * 0.8;
+      ctx[i ? 'lineTo' : 'moveTo'](m.x + Math.cos(a) * r, y + Math.sin(a) * r * 0.55);
+    }
+    ctx.stroke();
+    ctx.fillStyle = this.color;
+    for (const p of this.motes) {
+      const px = m.x + Math.cos(p.a) * m.radius * p.d, py = m.y - p.v * this.age * 1.4 - m.bodyZ * 0.4 + Math.sin(p.a) * 4;
+      ctx.fillRect(px - p.s / 2, py - p.s / 2, p.s, p.s);
+    }
+    ctx.restore();
+  }
+}
+
+// Stat changes the way the main series shows them: chevrons streaming up through the Pokémon for a
+// rise, down for a fall, tinted by the stat.
+const STAT_TINT = { atk: '#ff7a4a', def: '#4aa8ff', spd: '#ff6ad0' };
+export class StatArrows extends Effect {
+  constructor(mon, stat, up) {
+    super('top', 0.8);
+    Object.assign(this, { mon, up, color: up ? STAT_TINT[stat] ?? '#ffd84a' : '#7a8cff' });
+    this.rows = Array.from({ length: 6 }, (_, i) => ({ x: rand(-1, 1), off: i / 6 }));
+  }
+
+  draw(ctx) {
+    const m = this.mon, t = this.age / this.life, h = m.headZ + 10;
+    ctx.save();
+    ctx.globalAlpha = t < 0.15 ? t / 0.15 : t > 0.7 ? (1 - t) / 0.3 : 1;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 2;
+    for (const r of this.rows) {
+      const k = (r.off + t * 1.4) % 1, z = this.up ? k * h : (1 - k) * h, x = m.x + r.x * m.radius, y = m.y - z, w = 4, d = this.up ? -3 : 3;
+      ctx.beginPath();
+      ctx.moveTo(x - w, y - d);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x + w, y - d);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// An attack passing harmlessly by (Levitate, Soundproof, Bulletproof…): a ripple across the Pokémon.
+export class Ripple extends Effect {
+  constructor(mon, color = '#bff3ff') {
+    super('air', 0.45);
+    Object.assign(this, { mon, color });
+  }
+
+  draw(ctx) {
+    const m = this.mon, t = this.age / this.life;
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 2; i++) {
+      const r = m.radius * (0.8 + t * 1.2 + i * 0.35);
+      ctx.beginPath();
+      ctx.ellipse(m.x, m.y - m.bodyZ, r, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// Intimidate: two red eyes flash over the user and a shock line runs to the foe.
+export class Glare extends Effect {
+  constructor(from, to) {
+    super('top', 0.7);
+    Object.assign(this, { from, to });
+  }
+
+  draw(ctx) {
+    const a = this.from, b = this.to, t = this.age / this.life, k = Math.min(1, t / 0.2);
+    ctx.save();
+    ctx.globalAlpha = t < 0.7 ? 1 : (1 - t) / 0.3;
+    ctx.fillStyle = '#ff3a3a';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(a.x + s * 4, a.y - a.headZ - 2, 3.5 * k, 1.4 * k, s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (t > 0.15) {
+      const p = Math.min(1, (t - 0.15) / 0.25);
+      ctx.strokeStyle = 'rgba(255,80,80,0.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - a.headZ);
+      ctx.lineTo(a.x + (b.x - a.x) * p, a.y - a.headZ + (b.y - b.headZ - a.y + a.headZ) * p);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// Terastallization: crystal shards burst out of the Pokémon and a prism hexagon flashes over it.
+export class TeraBurst extends Effect {
+  constructor(mon, c1, c2) {
+    super('air', 0.9);
+    Object.assign(this, { mon, c1, c2 });
+    this.shards = Array.from({ length: quality().particles > 500 ? 14 : 8 }, () => ({ a: rand(0, Math.PI * 2), v: rand(60, 120), s: rand(2.5, 5), spin: rand(-6, 6) }));
+  }
+
+  draw(ctx) {
+    const m = this.mon, t = this.age / this.life, y = m.y - m.bodyZ;
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    for (const p of this.shards) {
+      const d = p.v * this.age, x = m.x + Math.cos(p.a) * d, sy = y + Math.sin(p.a) * d * 0.6 - 30 * this.age;
+      ctx.save();
+      ctx.translate(x, sy);
+      ctx.rotate(p.spin * this.age);
+      ctx.fillStyle = Math.random() < 0.5 ? this.c1 : '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(0, -p.s);
+      ctx.lineTo(p.s * 0.6, 0);
+      ctx.lineTo(0, p.s);
+      ctx.lineTo(-p.s * 0.6, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    const r = m.radius + 8 + 26 * t;
+    ctx.strokeStyle = this.c2 ?? this.c1;
+    ctx.lineWidth = 3 * (1 - t) + 0.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) ctx[i ? 'lineTo' : 'moveTo'](m.x + Math.cos(i * Math.PI / 3) * r, y + Math.sin(i * Math.PI / 3) * r * 0.6);
+    ctx.stroke();
+    ctx.restore();
+  }
+}

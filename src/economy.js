@@ -1,4 +1,5 @@
 import { ROSTER, SPECIES, isPlayable } from './data/species.js';
+import { SHINY } from './data/national-dims.js';
 export const ECONOMY_VERSION=1;
 export const ECONOMY={firstWin:40,dailyBonus:100,weeklyReward:250,weeklyWins:5,minSeconds:20,minDamage:250,localDailyMatches:8,milestones:{1:50,10:150,25:250},history:50};
 export const CATALOG=[
@@ -13,7 +14,13 @@ export const CATALOG=[
  {id:'pose-roar',kind:'pose',name:'Victory Roar',desc:'Use Roar in the victory sequence on species that support it.',price:360,rarity:'Rare',anim:'Roar',color:'#ffae8b'},
  {id:'ultimate-astral',kind:'ultimate',name:'Astral Overdrive',desc:'A violet starburst when you begin an ultimate. Existing attack animations and damage stay unchanged.',price:600,rarity:'Epic',color:'#c9a5ff'},
 ];
-export const itemById=id=>CATALOG.find(i=>i.id===id);
+// Shiny colours for every fully evolved Pokémon that has them: bought once, then switched on per Pokémon in
+// the team builder (its kit). Cosmetic only.
+for(const id of SHINY)if(isPlayable(id)){const s=SPECIES[id],legend=s.class!=='regular';
+ CATALOG.push({id:`shiny-${id}`,kind:'shiny',species:id,name:`Shiny ${s.name}`,desc:`${s.name}'s rare shiny colours. Switch them on for ${s.name} in the team builder (✦). Your opponents see them online too. No stat changes.`,price:legend?600:300,rarity:legend?'Epic':'Rare',color:'#ffe066'});}
+const BY_ID=new Map(CATALOG.map(i=>[i.id,i]));
+export const itemById=id=>BY_ID.get(id);
+export const ownsShiny=(w,id)=>!!w?.owned?.includes(`shiny-${id}`);
 const DAY=86400000;
 export const dayKey=now=>new Date(now).toISOString().slice(0,10);
 export const nextDaily=now=>(Math.floor(now/DAY)+1)*DAY;

@@ -2,12 +2,14 @@ import { randomInt, randomBytes } from 'node:crypto';
 import { Draft } from '../src/draft-rules.js';
 import { ROSTER, SPECIES } from '../src/data/species.js';
 export class DraftRooms {
-  constructor(send, start, capacity) { Object.assign(this, { send, start, capacity, waiting: [], rooms: new Map() }); }
+  // `kits` checks the held items / Tera types a player brings for whatever they end up drafting.
+  constructor(send, start, capacity, kits = () => ({})) { Object.assign(this, { send, start, capacity, kits, waiting: [], rooms: new Map() }); }
   handle(p, m) {
     if (m.t === 'draft-queue') {
       if (p.state !== 'idle') return true;
       if (!['snake', 'trade'].includes(m.mode) || ![3, 6].includes(m.format) || (m.mode === 'trade' && m.format !== 6)) return true;
       const ranked = m.ranked === true, roster = m.roster === 'all' ? 'all' : 'regular';
+      p.draftKits = m.kits && typeof m.kits === 'object' ? m.kits : null;
       const other = this.waiting.find(e => e.mode === m.mode && e.format === m.format && e.ranked === ranked && e.roster === roster && e.p !== p);
       if (other && !this.capacity()) { this.send(p, { t: 'error', message: 'Server at capacity. Please retry shortly.' }); return true; }
       p.state = 'draft';
@@ -36,7 +38,7 @@ export class DraftRooms {
     if (r.draft.phase !== 'done') return;
     this.rooms.delete(r.id);
     if (!this.capacity()) { for (const p of r.players) { p.state = 'idle'; this.send(p, { t: 'draft-cancelled', message: 'Server is at capacity. Please retry.' }); } return; }
-    const entries = r.players.map((player, s) => ({ player, format: r.draft.format, team: r.draft.teams[s], lead: 0, mega: {}, draftMode: r.draft.mode, ranked:r.ranked }));
+    const entries = r.players.map((player, s) => ({ player, format: r.draft.format, team: r.draft.teams[s], lead: 0, mega: {}, kit: this.kits(r.draft.teams[s], player.draftKits), draftMode: r.draft.mode, ranked:r.ranked }));
     this.start(...entries);
   }
   leave(p) {

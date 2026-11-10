@@ -8,9 +8,14 @@ const CAT = { physical: 'Physical', special: 'Special', status: 'Status' };
 import { ABILITIES } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
+import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
+import { ownsShiny, itemById } from './economy.js';
+import { SHINY } from './data/national-dims.js';
 
 const $ = sel => document.querySelector(sel);
 const TEAMS_KEY = 'msb.teams';
+const KITS_KEY = 'msb.kits'; // each Pokémon's held item, Tera type and shiny switch, by species
+const SHINY_SET = new Set(SHINY);
 const hpColor = r => (r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
 const portrait = s => `/sprites/${s.sprite}/portrait.png`;
 const typeChips = types => types.map(t => `<i style="background:${TYPE_COLORS[t][0]}">${t}</i>`).join('');
@@ -30,6 +35,7 @@ export class UI {
     this.cards = [];
     this.selection = []; // nothing is picked for you: the team starts empty
     this.megaPick = {};
+    try { this.kits = JSON.parse(localStorage.getItem(KITS_KEY)) ?? {}; } catch { this.kits = {}; }
     this.lead = 0;
     this.filter = 'all';
     this.foes = [...OPPONENT_TEAM];
@@ -95,20 +101,21 @@ export class UI {
     this.game.flow?.enterFullscreen();
     if (this.online) {
       // Online: lock in the team; the battle starts once both players are ready.
-      this.game.flow.online.ready(this.selection, this.lead, this.megaPick);
+      this.game.flow.online.ready(this.selection, this.lead, this.megaPick, this.teamKits());
       return;
     }
     if (this.queue) {
       // Matchmaking: queue with this team; the match server finds the opponent.
       const mega = {};
       for (const id of this.selection) if (SPECIES[id].mega?.length) mega[id] = this.megaPick[id] ?? SPECIES[id].mega[0];
-      this.game.flow.mm.find({ format: this.format, team: [...this.selection], lead: this.lead, mega });
+      this.game.flow.mm.find({ format: this.format, team: [...this.selection], lead: this.lead, mega, kit: this.teamKits() });
       return;
     }
     this.loading = true;
     btn.disabled = true;
     btn.textContent = 'Loading…';
     try {
+      this.game.kits = this.teamKits();
       await this.game.ensureSprites([...this.selection, ...this.foes]);
       this.game.selection = [...this.selection];
       this.game.opponentSelection = [...this.foes];
@@ -389,6 +396,57 @@ export class UI {
     this.renderSelection();
   }
 
+  // ── Kits: held item, Tera type and shiny colours (bought in the Trainer Guild shop), per species ──
+  ownsShiny(id) {
+    return SHINY_SET.has(id) && ownsShiny(this.game?.flow?.economy?.wallet, id);
+  }
+
+  kitOf(id) {
+    return cleanKit(SPECIES[id], this.kits[id], sid => this.ownsShiny(sid));
+  }
+
+  teamKits(ids = this.selection) {
+    return Object.fromEntries(ids.map(id => [id, this.kitOf(id)]));
+  }
+
+  setKit(id, patch) {
+    this.kits[id] = { ...this.kitOf(id), ...patch };
+    try { localStorage.setItem(KITS_KEY, JSON.stringify(this.kits)); } catch { /* storage full or blocked */ }
+    this.renderSelection();
+  }
+
+  // The kit editor: one Pokémon's ability (official), held item, Tera type and shiny switch.
+  openKit(id) {
+    document.querySelector('.kit-overlay')?.remove();
+    const s = SPECIES[id], ab = ABILITIES[s.ability], overlay = document.createElement('div');
+    overlay.className = 'kit-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', `${s.name}'s kit`);
+    const draw = () => {
+      const k = this.kitOf(id), owned = this.ownsShiny(id), price = itemById(`shiny-${id}`)?.price;
+      overlay.innerHTML = `<section class="kit-panel">
+        <header><img src="${portrait(s)}" alt=""><div><h2>${s.name}</h2><p><b>${esc(ab?.name ?? '')}</b> · ${esc(ab?.desc ?? '')}</p></div><button class="kit-x" aria-label="Close">×</button></header>
+        <h3>HELD ITEM <small>${k.item ? esc(ITEMS[k.item].desc) : 'Holds nothing.'}</small></h3>
+        <div class="kit-items"><button data-item="" class="${k.item ? '' : 'on'}">None</button>${ITEM_LIST.map(i => `<button data-item="${i}" class="${k.item === i ? 'on' : ''}" title="${esc(ITEMS[i].desc)}">${ITEMS[i].name}</button>`).join('')}</div>
+        <h3>TERA TYPE <small>Press M in battle to Terastallize (once per battle, instead of a Mega Evolution).</small></h3>
+        <div class="kit-tera">${TERA_TYPES.map(t => `<button data-tera="${t}" class="${k.tera === t ? 'on' : ''}" style="--tc:${TYPE_COLORS[t][0]}">${t}</button>`).join('')}</div>
+        <h3>SHINY</h3>
+        ${!SHINY_SET.has(id) ? '<p class="kit-note">No shiny colours exist for this Pokémon yet.</p>'
+          : owned ? `<button class="kit-shiny ${k.shiny ? 'on' : ''}" data-shiny>✦ ${k.shiny ? 'SHINY ON' : 'SHINY OFF'}</button>`
+          : `<p class="kit-note">Buy Shiny ${s.name} in the Trainer Guild shop (${price} Chaos Coins), then switch it on here.</p>`}
+      </section>`;
+      overlay.querySelector('.kit-x').onclick = () => overlay.remove();
+      overlay.querySelectorAll('[data-item]').forEach(b => (b.onclick = () => { this.setKit(id, { item: b.dataset.item || null }); draw(); }));
+      overlay.querySelectorAll('[data-tera]').forEach(b => (b.onclick = () => { this.setKit(id, { tera: b.dataset.tera }); draw(); }));
+      overlay.querySelector('[data-shiny]')?.addEventListener('click', () => { this.setKit(id, { shiny: !k.shiny }); draw(); });
+    };
+    draw();
+    overlay.addEventListener('click', e => e.target === overlay && overlay.remove());
+    overlay.addEventListener('keydown', e => e.key === 'Escape' && overlay.remove());
+    document.body.appendChild(overlay);
+    overlay.querySelector('.kit-x').focus();
+  }
+
   // ── Saved teams: kept in this browser (localStorage), up to 20 ──
   loadTeams() {
     try {
@@ -617,6 +675,13 @@ export class UI {
     bar.querySelector('[data-a="leave"]').addEventListener('click', () => this.game.flow?.leaveOnline());
   }
 
+  // Under each team member: its held item, Tera type and shiny star; tapping any of them opens its kit.
+  kitChips(id) {
+    const k = this.kitOf(id);
+    return `<span class="kit-chips" data-kit="${id}" title="Item, Tera type and shiny">`
+      + `<em>${k.item ? esc(ITEMS[k.item].name) : '+ ITEM'}</em><em class="tera" style="--tc:${TYPE_COLORS[k.tera][0]}">${k.tera.slice(0, 3).toUpperCase()}</em>${k.shiny ? '<em class="sh">✦</em>' : ''}</span>`;
+  }
+
   renderSelection() {
     if (this.foeBasis !== this.foeKey()) this.rollFoes();
     const full = this.selection.length >= this.format;
@@ -643,7 +708,7 @@ export class UI {
         : '';
       return `<button class="slot${i === this.lead ? ' lead' : ''}" data-i="${i}" title="${i === this.lead ? 'Leads the battle' : 'Tap to lead with this one'}">`
         + `${i === this.lead ? '<b class="lead-tag">LEAD</b>' : ''}<i class="rm" data-rm="${i}" title="Remove ${s.name}">×</i>`
-        + `<img src="${portrait(s)}" alt=""><span>${s.name}</span>${xy}</button>`;
+        + `<img src="${portrait(s)}" alt=""><span>${s.name}</span>${xy}${this.kitChips(id)}</button>`;
     }).join('');
     box.querySelectorAll('button.slot').forEach(b => b.addEventListener('click', () => {
       this.lead = +b.dataset.i;
@@ -652,6 +717,10 @@ export class UI {
     box.querySelectorAll('.rm').forEach(x => x.addEventListener('click', ev => {
       ev.stopPropagation();
       this.removeAt(+x.dataset.rm);
+    }));
+    box.querySelectorAll('[data-kit]').forEach(e => e.addEventListener('click', ev => {
+      ev.stopPropagation();
+      this.openKit(e.dataset.kit);
     }));
     box.querySelectorAll('.xy em').forEach(e => e.addEventListener('click', ev => {
       ev.stopPropagation();
@@ -874,16 +943,20 @@ export class UI {
       this.abilityBox.innerHTML = `<b>${a.name}</b><span>${esc(a.desc)}</span>`;
     }
 
-    const used = game.playerTeam.megaUsed, megas = p.species.mega ?? [];
-    const mega = (!megas.length && !p.isMega) || (game.story && !game.story.playerMega) ? 'hidden' : used || p.isMega ? 'used' : !locked && !game.cinematic ? 'ready' : 'locked';
-    const megaKey = `${mega}|${p.species.id}|${p.megaChoice}`;
+    // The M button: Mega Evolution for Pokémon with a Mega form, Terastallization for everyone else.
+    const used = game.playerTeam.megaUsed, megas = p.species.mega ?? [], tera = !megas.length && !p.isMega;
+    const mega = (tera && !p.teraType && !p.tera) || game.raid || (game.story && !game.story.playerMega) ? 'hidden' : used || p.isMega || p.tera ? 'used' : !locked && !game.cinematic ? 'ready' : 'locked';
+    const megaKey = `${mega}|${p.species.id}|${p.megaChoice}|${p.tera}`;
     if (megaKey !== this.megaState) {
       this.megaState = megaKey;
-      this.megaBtn.className = `mega-btn ${mega}`;
+      this.megaBtn.className = `mega-btn ${mega}${tera ? ' tera' : ''}`;
+      this.megaBtn.querySelector('.name').textContent = tera ? 'Terastallize' : 'Mega Evolve';
       const target = megas.length ? SPECIES[megas.includes(p.megaChoice) ? p.megaChoice : megas[0]] : null;
       this.megaBtn.querySelector('.meta').textContent = mega === 'hidden' ? ''
+        : p.tera ? `${p.species.name} is ${p.tera.toUpperCase()} type now`
         : p.isMega ? `${p.baseSpecies.name} has Mega Evolved · ${ABILITIES[p.species.ability].name}`
         : used ? 'Already used this battle (one per team)'
+        : tera ? `Once per battle · becomes pure ${p.teraType.toUpperCase()} type (keeps its own type bonus)`
         : `Once per battle · becomes ${target.name} (${ABILITIES[target.ability].name})`;
     }
 

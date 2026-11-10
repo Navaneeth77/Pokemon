@@ -2,11 +2,12 @@ import { CATALOG, ECONOMY, itemById } from './economy.js';
 import { Ring } from './effects.js';
 import { SPECIES } from './data/species.js';
 import { AnimatedSprite } from './sprite.js';
+import { loadSpecies } from './assets.js';
 import { drawBust, lookById } from './trainers.js';
 import { drawCosmeticAura, CosmeticStarburst } from './economy-art.js';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
 const coin='<i class="chaos-coin" aria-hidden="true"></i>';
-const labels={frame:'Frames',title:'Titles',aura:'Auras',effect:'Arrivals',pose:'Victory poses',ultimate:'Ultimate effects'};
+const labels={frame:'Frames',title:'Titles',aura:'Auras',effect:'Arrivals',pose:'Victory poses',ultimate:'Ultimate effects',shiny:'Shiny Pokémon'};
 const portrait=id=>`/sprites/${SPECIES[id].sprite}/portrait.png`;
 export class EconomyUI {
  constructor(flow){this.flow=flow;this.client=flow.economy;this.category='all';this.selected=CATALOG[0].id;
@@ -54,21 +55,39 @@ export class EconomyUI {
  shop(w,collection){
   const items=collection?CATALOG.filter(i=>w.owned.includes(i.id)):CATALOG;
   const kinds=[...new Set(items.map(i=>i.kind))];if(this.category!=='all'&&!kinds.includes(this.category))this.category='all';
-  const shown=items.filter(i=>this.category==='all'||i.kind===this.category);
+  // Shiny Pokémon have a tab of their own with a search box (there are hundreds); FEATURED leaves them out.
+  const q=(this.shinyQuery??'').toLowerCase();
+  const shown=items.filter(i=>(this.category==='all'?i.kind!=='shiny'||collection:i.kind===this.category)&&(i.kind!=='shiny'||!q||i.name.toLowerCase().includes(q))).slice(0,this.category==='shiny'?120:Infinity);
   if(!shown.some(i=>i.id===this.selected))this.selected=shown[0]?.id;
-  this.content.innerHTML=`<div class="shop-tabs" aria-label="Cosmetic categories"><button data-category="all" aria-pressed="${this.category==='all'}">${collection?'ALL OWNED':'FEATURED'}</button>${kinds.map(k=>`<button data-category="${k}" aria-pressed="${this.category===k}">${labels[k].toUpperCase()}</button>`).join('')}</div><div class="shop-layout"><div class="shop-gallery">${shown.map(i=>{const owned=w.owned.includes(i.id),equipped=w.equipped[i.kind]===i.id;return `<button class="shop-tile ${i.id===this.selected?'selected':''}" data-item="${i.id}" style="--item-color:${i.color}"><div class="item-symbol item-${i.kind}">${i.kind==='frame'?`<canvas width="24" height="24" data-frame-art aria-label="Trainer frame preview"></canvas>`:i.kind==='title'?`<b>${esc(i.name)}</b>`:`<img src="${portrait('charizard')}" alt="">`}</div><small>${i.rarity.toUpperCase()} · ${labels[i.kind].toUpperCase()}</small><b>${i.name}</b><span>${equipped?'EQUIPPED':owned?'OWNED':coin+i.price}</span></button>`;}).join('')||`<div class="chaos-empty"><img src="${portrait('dragonite')}" alt="Dragonite"><h2>Your collection starts here</h2><p>Earn coins on the mission board, then choose your first signature cosmetic.</p><button class="px-btn" data-browse>BROWSE THE SHOP</button></div>`}</div><aside class="shop-detail"></aside></div>`;
+  this.content.innerHTML=`<div class="shop-tabs" aria-label="Cosmetic categories"><button data-category="all" aria-pressed="${this.category==='all'}">${collection?'ALL OWNED':'FEATURED'}</button>${kinds.map(k=>`<button data-category="${k}" aria-pressed="${this.category===k}">${labels[k].toUpperCase()}</button>`).join('')}</div>${this.category==='shiny'?`<input class="shiny-search" type="search" placeholder="Search Pokémon…" aria-label="Search shiny Pokémon" value="${esc(this.shinyQuery??'')}">`:''}<div class="shop-layout"><div class="shop-gallery">${shown.map(i=>{const owned=w.owned.includes(i.id),equipped=w.equipped[i.kind]===i.id;return `<button class="shop-tile ${i.id===this.selected?'selected':''}" data-item="${i.id}" style="--item-color:${i.color}"><div class="item-symbol item-${i.kind}">${i.kind==='frame'?`<canvas width="24" height="24" data-frame-art aria-label="Trainer frame preview"></canvas>`:i.kind==='title'?`<b>${esc(i.name)}</b>`:i.kind==='shiny'?`<img src="${portrait(i.species)}" alt="" loading="lazy"><em class="shiny-star">✦</em>`:`<img src="${portrait('charizard')}" alt="">`}</div><small>${i.rarity.toUpperCase()} · ${labels[i.kind].toUpperCase()}</small><b>${i.name}</b><span>${equipped?'EQUIPPED':owned?'OWNED':coin+i.price}</span></button>`;}).join('')||`<div class="chaos-empty"><img src="${portrait('dragonite')}" alt="Dragonite"><h2>Your collection starts here</h2><p>Earn coins on the mission board, then choose your first signature cosmetic.</p><button class="px-btn" data-browse>BROWSE THE SHOP</button></div>`}</div><aside class="shop-detail"></aside></div>`;
   this.content.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{this.category=b.dataset.category;this.shop(w,collection);});
   this.content.querySelectorAll('[data-item]').forEach(b=>b.onclick=()=>{this.selected=b.dataset.item;this.shop(w,collection);if(innerWidth<720)this.content.querySelector('.shop-detail').scrollIntoView({block:'start',behavior:'smooth'});});
   this.content.querySelector('[data-browse]')?.addEventListener('click',()=>this.open('shop'));
+  const search=this.content.querySelector('.shiny-search');
+  if(search){search.oninput=()=>{this.shinyQuery=search.value;const at=search.selectionStart;this.shop(w,collection);const again=this.content.querySelector('.shiny-search');again.focus();again.setSelectionRange(at,at);};}
   this.content.querySelectorAll('[data-frame-art]').forEach(canvas=>canvas.getContext('2d').drawImage(drawBust(lookById(this.flow.save.look)),0,0));
   if(this.selected)this.detail(itemById(this.selected),w);
  }
  detail(item,w){const owned=w.owned.includes(item.id),equipped=w.equipped[item.kind]===item.id,short=Math.max(0,item.price-w.balance);
-  const box=this.content.querySelector('.shop-detail');box.innerHTML=`<div class="shop-preview" style="--item-color:${item.color}"><span>LIVE COSMETIC PREVIEW</span><canvas width="240" height="190" aria-label="${esc(item.name)} preview"></canvas><small>${labels[item.kind].toUpperCase()}</small></div><div class="shop-description"><small>${item.rarity.toUpperCase()} / ${labels[item.kind].toUpperCase()}</small><h2>${item.name}</h2><p>${item.desc}</p><strong>${coin}${item.price}</strong><p class="ownership">${equipped?'CURRENTLY EQUIPPED':owned?'PERMANENTLY OWNED':short?`${short} more coins needed`:'READY TO COLLECT'}</p><button class="px-btn primary" data-purchase ${!owned&&short?'disabled':''}>${owned?equipped?'UNEQUIP':'EQUIP COSMETIC':'PURCHASE'}</button><small>Owned in your ${this.client.scope==='local'?'local browser save':'anonymous online wallet'}. No stat changes.</small></div>`;
-  box.querySelector('[data-purchase]').onclick=()=>owned?this.act(equipped?'unequip':'equip',item.id):this.confirm(item,w);
+  const box=this.content.querySelector('.shop-detail');box.innerHTML=`<div class="shop-preview" style="--item-color:${item.color}"><span>LIVE COSMETIC PREVIEW</span><canvas width="240" height="190" aria-label="${esc(item.name)} preview"></canvas><small>${labels[item.kind].toUpperCase()}</small></div><div class="shop-description"><small>${item.rarity.toUpperCase()} / ${labels[item.kind].toUpperCase()}</small><h2>${item.name}</h2><p>${item.desc}</p><strong>${coin}${item.price}</strong><p class="ownership">${equipped?'CURRENTLY EQUIPPED':owned?'PERMANENTLY OWNED':short?`${short} more coins needed`:'READY TO COLLECT'}</p>${item.kind==='shiny'&&owned?'<p>Turn it on with the ✦ button on this Pokémon in the team builder.</p>':`<button class="px-btn primary" data-purchase ${!owned&&short?'disabled':''}>${owned?equipped?'UNEQUIP':'EQUIP COSMETIC':'PURCHASE'}</button>`}<small>Owned in your ${this.client.scope==='local'?'local browser save':'anonymous online wallet'}. No stat changes.</small></div>`;
+  const buy=box.querySelector('[data-purchase]');if(buy)buy.onclick=()=>owned?this.act(equipped?'unequip':'equip',item.id):this.confirm(item,w);
   this.preview(box.querySelector('canvas'),item);
  }
- preview(canvas,item){const ctx=canvas.getContext('2d'),set=this.flow.game.sprites[item.id==='pose-roar'?'rayquaza':'charizard']??this.flow.game.sprites.charizard,sprite=new AnimatedSprite(set);sprite.play(item.kind==='pose'&&sprite.has(item.anim)?item.anim:'Idle',{loop:true,force:true});
+ // A shiny's preview shows the real recoloured sprite beside its usual colours.
+ async shinyPreview(canvas,item){
+  const s=SPECIES[item.species],ctx=canvas.getContext('2d');ctx.fillStyle='#111627';ctx.fillRect(0,0,240,190);
+  let sets;try{sets=await loadSpecies([s.sprite,`${s.sprite}~shiny`]);}catch{return;}
+  const normal=new AnimatedSprite(sets[s.sprite]),shiny=new AnimatedSprite(sets[`${s.sprite}~shiny`]),start=performance.now();let last=start;
+  for(const sp of [normal,shiny])sp.play('Idle',{loop:true,force:true});
+  const draw=now=>{if(!canvas.isConnected)return;ctx.imageSmoothingEnabled=false;ctx.fillStyle='#111627';ctx.fillRect(0,0,240,190);
+   const dt=Math.min(.05,(now-last)/1000);last=now;normal.update(dt);shiny.update(dt);
+   ctx.globalAlpha=.55;normal.draw(ctx,64,140,0,{scale:1.6});ctx.globalAlpha=1;shiny.draw(ctx,166,140,0,{scale:2});
+   ctx.fillStyle='#ffe066';for(let i=0;i<5;i++){const a=(now/700+i*1.26)%6.28;ctx.fillRect(166+Math.cos(a)*34,100+Math.sin(a)*22,2,2);}
+   ctx.font='10px "Pixelify Sans"';ctx.textAlign='center';ctx.fillStyle='#9aa4c0';ctx.fillText('USUAL',64,176);ctx.fillStyle='#ffe066';ctx.fillText('✦ SHINY',166,176);
+   requestAnimationFrame(draw);};
+  requestAnimationFrame(draw);
+ }
+ preview(canvas,item){if(item.kind==='shiny')return this.shinyPreview(canvas,item);const ctx=canvas.getContext('2d'),set=this.flow.game.sprites[item.id==='pose-roar'?'rayquaza':'charizard']??this.flow.game.sprites.charizard,sprite=new AnimatedSprite(set);sprite.play(item.kind==='pose'&&sprite.has(item.anim)?item.anim:'Idle',{loop:true,force:true});
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,start=performance.now();let last=start;
   const actor={x:120,y:145,bodyZ:25},bust=drawBust(lookById(this.flow.save.look));
   const draw=now=>{if(!canvas.isConnected)return;const t=(now-start)/1000;ctx.clearRect(0,0,240,190);ctx.imageSmoothingEnabled=false;

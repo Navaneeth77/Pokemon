@@ -15,7 +15,7 @@ const summary=(id='m1',extra={})=>({id,result:'win',reason:'ko',duration:70,team
 const wallet=()=>rollover(freshWallet(pid,now),now);
 function finishBoard(w){for(let i=0;i<3;i++)progressMatch(w,summary('board'+i,{team:[...ROSTER],species:Object.fromEntries(ROSTER.map(id=>[id,{damage:800,reactions:3,ultimateHits:3,faints:0}]))}),now);}
 test('canonical eligibility excludes nonfinal stages, preserves regional exceptions and eligible Mega forms',()=>{
- assert.equal(ALL_BASE_SPECIES.length,220);assert.equal(ROSTER.length,137);assert.ok(ROSTER.every(isFinalSpecies));
+ assert.ok(ALL_BASE_SPECIES.length>=600);assert.ok(ROSTER.length>=520);assert.ok(ROSTER.every(isFinalSpecies));
  for(const id of ['pikachu','eevee','scyther','primeape','chansey','onix','porygon','magneton'])assert.equal(isPlayable(id),false,id);
  for(const id of ['charizard','raichu','lapras','farfetchd','mrMime','heracross','mewtwo','rayquaza','mew','porygonZ'])if(SPECIES[id])assert.ok(isPlayable(id),id);
  for(const id of ROSTER)for(const form of SPECIES[id].mega??[])assert.equal(SPECIES[form].megaOf,id);

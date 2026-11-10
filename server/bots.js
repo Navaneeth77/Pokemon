@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { randomKit } from '../src/data/items.js';
 
 // Stand-in opponents for ranked Online Battles. When nobody compatible has queued for a while, the
 // server starts an ordinary match against a computer-controlled trainer (see server/index.js). It plays
@@ -33,6 +34,7 @@ export function botEntry(human, { roster, species, looks, rand = Math.random }) 
   const name = botName(rand), rating = Math.round((human.player.record?.rating ?? 1000) + (rand() - 0.5) * 120);
   return {
     format: human.format, team, lead: Math.floor(rand() * team.length), mega, since: Date.now(),
+    kit: Object.fromEntries(team.map(id => [id, randomKit(species[id], rand)])),
     difficulty: botDifficulty(human.player.record?.streak ?? 0, rand),
     player: {
       pid: `bot-${crypto.randomBytes(6).toString('hex')}`, name, look: looks[Math.floor(rand() * looks.length)]?.id ?? null,

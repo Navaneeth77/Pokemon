@@ -11,7 +11,11 @@
 export const isContact = m => !!(m.melee || m.dash || m.slam || m.contact) || m.id === 'waterfall' || m.id === 'iceFang';
 export const isRanged = m => !!(m.shot || m.beam || m.stream || m.shockwave) || m.ai === 'ranged';
 export const isPunch = m => m.melee?.fx === 'punch' || !!m.punch;
-export const typesOf = mon => mon.typeOverride ?? mon.species.types;
+// A Terastallized Pokémon is purely its Tera type (until an ability changes its type again).
+export const typesOf = mon => mon.typeOverride ?? (mon.tera ? [mon.tera] : mon.species.types);
+
+import { OFFICIAL } from './abilities-official.js';
+import { Ripple, Glare } from '../effects.js';
 
 const dec = (me, k, dt) => (me.ab[k] = Math.max(0, (me.ab[k] ?? 0) - dt));
 const typeBoost = (type, mult) => ({ dealMult: (g, me, foe, move, i) => (i.type === type ? mult : 1) });
@@ -174,14 +178,11 @@ export const ABILITIES = {
   pressure: { name: 'Pressure', desc: "Its overwhelming presence makes the foe's moves recharge 20% slower.", foeCdRate: 0.8 },
   innerFocus: { name: 'Inner Focus', desc: "Can't be stunned or flinched, and its charged attacks can't be interrupted.", immune: ['stun'], noFlinch: true, chargeGuard: true },
   clearBody: { name: 'Clear Body', desc: "Immune to Slow and Paralysis, and its stats can't be lowered.", immune: ['slow', 'para'], noDebuff: true },
-  sandStream: {
-    name: 'Sand Stream', desc: 'Whips up a sandstorm that chips foes that are not Rock, Ground or Steel. Takes 15% less damage.',
-    weather: 'sand', takeMult: () => 0.85,
-  },
+  sandStream: { name: 'Sand Stream', desc: 'Whips up a sandstorm while on the field: it chips Pokémon that are not Rock, Ground or Steel and toughens Rock types.', weather: 'sand' },
   adaptability: { name: 'Adaptability', desc: 'Same-type moves get a 1.5× bonus instead of 1.2×.', stab: 1.5 },
   thickFat: {
-    name: 'Thick Fat', desc: 'Takes 40% less Fire and Ice damage, and 15% less while standing still.',
-    takeMult: (g, me, atk, move, i) => (i.type === 'fire' || i.type === 'ice' ? 0.6 : 1) * (!me.moving && !me.action ? 0.85 : 1),
+    name: 'Thick Fat', desc: 'Takes half damage from Fire and Ice moves.', guardText: 'The fat soaked the hit!',
+    takeMult: (g, me, atk, move, i) => (i.type === 'fire' || i.type === 'ice' ? 0.5 : 1),
   },
   psychicVeil: {
     name: 'Psychic Veil', desc: 'When the foe closes in or starts an ultimate, raises a barrier: −35% damage for 2.5s (10s cooldown).',
@@ -210,10 +211,20 @@ export const ABILITIES = {
   torrent: { name: 'Torrent', ...pinch('water', 'TORRENT', '#5a8ef0') },
   ironFist: { name: 'Iron Fist', desc: 'Punching moves hit 25% harder.', dealMult: (g, me, foe, move) => (isPunch(move) ? 1.25 : 1) },
   intimidate: {
-    name: 'Intimidate', desc: "On entry, lowers the foe's attack by 20% for 6s.",
+    name: 'Intimidate', desc: "On entry, glares at the foe: its attack falls 20% for 6s.", color: '#ff4a4a',
     onEnter(g, me) {
-      if (!me.foe?.alive || me.foe.hidden) return;
-      if (g.buff(me.foe, 'atk', 0.8, 6)) g.abilityPop(me, "Foe's attack fell!");
+      const f = me.foe;
+      if (!f?.alive || f.hidden) return;
+      g.abilityPop(me, 'It glared at the foe!');
+      g.spawn(new Glare(me, f));
+      const fa = abilityOf(f);
+      if (fa.guardDog) {
+        g.buff(f, 'atk', 1.2, 6);
+        return g.abilityPop(f, 'Attack rose instead!');
+      }
+      if (fa.noIntimidate) return g.abilityPop(f, "It wasn't intimidated!");
+      g.buff(f, 'atk', 0.8, 6, me);
+      fa.onIntimidated?.(g, f);
     },
   },
   technician: { name: 'Technician', desc: 'Moves with 65 power or less hit 50% harder.', dealMult: (g, me, foe, move) => (move.power <= 65 && !move.ultimate ? 1.5 : 1) },
@@ -274,8 +285,8 @@ export const ABILITIES = {
   temporalFlow: { name: 'Temporal Flow', desc: 'Bends time: its move cooldowns recover 25% faster.', cdRate: 1.25 },
   spatialStep: { name: 'Spatial Step', desc: 'Warps space when dodging: dodges recharge 40% faster and go 40% further.', dodgeCdMult: 0.6, dodgeDist: 1.4 },
   distortion: { name: 'Distortion', desc: 'Distorted space shields it: takes 25% less damage from ranged attacks.', takeMult: (g, me, atk, move) => (isRanged(move) ? 0.75 : 1) },
-  turboblaze: { name: 'Turboblaze', desc: 'Its Fire moves ignore type resistances.', pierce: 'fire' },
-  teravolt: { name: 'Teravolt', desc: 'Its Electric moves ignore type resistances.', pierce: 'electric' },
+  turboblaze: { name: 'Turboblaze', desc: "Its attacks ignore the foe's defensive abilities.", moldBreaker: true, color: '#ff7a2a', onEnter: (g, me) => g.abilityPop(me, 'It is radiating a blazing aura!') },
+  teravolt: { name: 'Teravolt', desc: "Its attacks ignore the foe's defensive abilities.", moldBreaker: true, color: '#7ab8ff', onEnter: (g, me) => g.abilityPop(me, 'It is radiating a bursting aura!') },
   fairyAura: { name: 'Fairy Aura', desc: 'Every Fairy move on the field hits 33% harder.', aura: { type: 'fairy', mult: 1.33 } },
   darkAura: { name: 'Dark Aura', desc: 'Every Dark move on the field hits 33% harder.', aura: { type: 'dark', mult: 1.33 } },
   fullMetalBody: { name: 'Full Metal Body', desc: "Its stats can't be lowered and it can't be stunned.", noDebuff: true, immune: ['stun'] },
@@ -321,7 +332,15 @@ export const ABILITIES = {
   solidRock: { name: 'Solid Rock', desc: 'Super-effective hits deal 25% less damage.', takeMult: (g, me, atk, move, i) => (i.eff > 1 ? 0.75 : 1) },
   frostArmor: { name: 'Frost Armor', desc: 'Attackers that make contact are slowed for 3s.', ...contactStatus('slow', 1, 'Chilled the attacker!') },
   ironWill: { name: 'Iron Will', desc: 'Barely budges: 70% less knockback and half the stagger from hits.', kbMult: 0.3, staggerMult: 0.5 },
-  levitate: { name: 'Levitate', desc: 'Floats above the ground: Ground moves deal 70% less damage.', takeMult: (g, me, atk, move, i) => (i.type === 'ground' ? 0.3 : 1) },
+  levitate: {
+    name: 'Levitate', desc: 'Floats above the ground: Ground moves pass harmlessly beneath it, and terrains don\'t touch it.', levitating: true,
+    absorb(g, me, atk, move, i) {
+      if (i.type !== 'ground') return false;
+      g.spawn(new Ripple(me));
+      g.abilityPop(me, 'It floats above the attack!');
+      return 'NO EFFECT';
+    },
+  },
   lusterSight: { name: 'Luster Sight', desc: 'Its ranged moves get +15% critical-hit chance.', crit: move => (isRanged(move) ? 0.15 : 0) },
   transistor: { name: 'Transistor', desc: 'Its Electric moves hit 30% harder.', ...typeBoost('electric', 1.3) },
   dragonsMaw: { name: "Dragon's Maw", desc: 'Its Dragon moves hit 30% harder.', ...typeBoost('dragon', 1.3) },
@@ -483,7 +502,7 @@ export const ABILITIES = {
     name: 'Marvel Scale', desc: 'Takes 30% less damage while it has a status condition.',
     takeMult: (g, me) => (me.frozen > 0 || ['burn', 'poison', 'para', 'slow', 'stun', 'sleep'].some(k => me.status[k] > 0) ? 0.7 : 1),
   },
-  moldBreaker: { name: 'Mold Breaker', desc: "Its attacks ignore the foe's defensive abilities.", moldBreaker: true },
+  moldBreaker: { name: 'Mold Breaker', desc: "Its attacks ignore the foe's defensive abilities.", moldBreaker: true, onEnter: (g, me) => g.abilityPop(me, 'It breaks the mold!') },
   triFury: {
     name: 'Tri-Fury', desc: 'Every third attack it uses is unleashed by all three heads: +40% damage.',
     onUse(g, me, move) {
@@ -500,9 +519,22 @@ export const ABILITIES = {
   },
 };
 
+Object.assign(ABILITIES, OFFICIAL);
+
 const NONE = { name: '—', desc: '' };
 for (const [id, a] of Object.entries(ABILITIES)) a.id = id;
 
+// Neutralizing Gas and Mummy switch abilities off; Trace swaps one in.
 export function abilityOf(mon) {
-  return (mon && ABILITIES[mon.species.ability]) || NONE;
+  if (!mon) return NONE;
+  const foe = mon.foe, gas = foe?.alive && !foe.hidden && ABILITIES[foe.species.ability]?.gas;
+  if (mon.abilityOff > 0 || (gas && !ABILITIES[mon.species.ability]?.gas)) return NONE;
+  return ABILITIES[mon.abilityOverride ?? mon.species.ability] || NONE;
+}
+
+// The ability a species uses: the first of its official abilities this game implements, skipping ones
+// that hardly matter in battle (Run Away, Keen Eye…) when it has a better one.
+export function officialAbility(list) {
+  const have = list.filter(id => ABILITIES[id]);
+  return have.find(id => !ABILITIES[id].weak) ?? have[0] ?? null;
 }

@@ -145,9 +145,10 @@ export class ExpansionUI {
         if (!this.raidPending) return;
         if(!this.mm.features?.includes('raids')) throw new Error('The match server needs the expansion update. Solo raids are available.');
         this.mm.state = 'raid';
-        this.mm.send({ t: 'raid-queue', ...setup, format: ui.format, team: ui.selection, lead: ui.lead, mega: ui.megaPick });
+        this.mm.send({ t: 'raid-queue', ...setup, format: ui.format, team: ui.selection, lead: ui.lead, mega: ui.megaPick, kit: ui.teamKits() });
         return;
       }
+      g.kits = ui.teamKits();
       await Promise.all([g.ensureSprites([...ui.selection, setup.boss], setup.boss), preloadRaidArt(setup.boss)]);
       Object.assign(g, { selection: [...ui.selection], lead: ui.lead, megaPicks: { ...ui.megaPick }, opponentSelection: [setup.boss], arenaId: BOSSES[setup.boss].arena, online: null, story: null });
       ui.raidSetup = null;
@@ -176,30 +177,6 @@ export class ExpansionUI {
   }
   // Pokémon Mastery: the trainer profile, badges (choose one as your title), every species you've
   // used with its level and records, and recent matches.
-  replay(match) {
-    if (!match) return;
-    const events = (match.events ?? []).slice(0, 600);
-    const duration = Math.max(1, match.duration ?? 0, events.at(-1)?.t ?? 0);
-    const el = this.open('EVENT REPLAY', `<p>Recorded combat events · ${match.verified ? 'server verified' : 'local battle'}. This is a timeline, not deterministic battle playback. Replays never award XP.</p>
-      <button class="px-btn" data-play>PLAY</button><button class="px-btn" data-back>BACK TO MASTERY</button>
-      <label>Time <output>0.0s</output><input aria-label="Replay time" type="range" min="0" max="${duration}" step="0.1" value="0"></label>
-      <ol class="replay-events"></ol>${match.droppedEvents ? '<p>Event limit reached: the first 600 events are available.</p>' : ''}`);
-    const slider = el.querySelector('input'), output = el.querySelector('output'), list = el.querySelector('ol'), play = el.querySelector('[data-play]');
-    let playing = false, last = -1;
-    const draw = () => {
-      const t = +slider.value; output.textContent = `${t.toFixed(1)}s / ${duration}s`;
-      const shown = events.filter(e => e.t <= t).slice(-40);
-      const n = shown.at(-1)?.n ?? -1;
-      if (n === last) return; last = n;
-      list.innerHTML = shown.map(e => `<li><time>${e.t.toFixed(1)}s</time> ${e.side === match.replaySide ? 'YOU' : 'FOE'} · ${esc(SPECIES[e.actor]?.name ?? e.actor)} · ${esc(e.kind)} ${esc(MOVES[e.move]?.name ?? e.move ?? e.reaction ?? '')}${e.damage != null ? ` · ${e.damage} damage` : ''}</li>`).join('');
-      list.scrollTop = list.scrollHeight;
-    };
-    slider.oninput = draw;
-    play.onclick = () => { if (+slider.value >= duration) slider.value = 0; playing = !playing; play.textContent = playing ? 'PAUSE' : 'PLAY'; draw(); };
-    el.querySelector('[data-back]').onclick = () => this.mastery();
-    this.timer = setInterval(() => { if (!playing) return; slider.value = Math.min(duration, +slider.value + .1); draw(); if (+slider.value >= duration) { playing = false; play.textContent = 'PLAY'; } }, 100);
-    draw();
-  }
 
   mastery(selected = null, compare = null) {
     const data=readMastery(),stats=profileStats(data),earned=new Set(earnedBadges(data).map(b=>b.id));
@@ -225,14 +202,13 @@ export class ExpansionUI {
       ${selected?`<label>COMPARE WITH <select data-compare><option value="">Choose Pokémon</option>${ROSTER.filter(id=>id!==selected).map(id=>`<option value="${id}" ${compare===id?'selected':''}>${name(id)}</option>`).join('')}</select></label><div class="mastery-compare">${detail(selected)}${compare?detail(compare):''}</div>`:''}
       <h3>ALL POKÉMON</h3><label>Search <input type="search" data-mastery-search placeholder="Pokémon name or type"></label><label>Sort <select data-sort><option value="xp">Mastery</option><option value="name">Name</option><option value="wins">Wins</option><option value="damage">Damage</option></select></label>
       <div class="exp-pool mastery-roster">${rows.map(([id,r])=>`<button data-species="${id}" data-name="${name(id).toLowerCase()} ${SPECIES[id].types.join(' ')}" data-xp="${r.xp}" data-wins="${r.wins??0}" data-damage="${r.damage??0}" class="${id===selected?'on':''}"><div class="exp-mon"><img loading="lazy" src="${portrait(id)}" alt=""><b>${name(id)}</b><small>Level ${level(r.xp)} · ${r.wins??0}W</small></div></button>`).join('')}</div>
-      <h3>RECENT MATCHES</h3>${data.matches.map(m=>`<details><summary>${esc(m.result.toUpperCase())} · ${esc(m.mode)} · ${m.duration}s · ${m.verified?'server verified':'this browser'}</summary>${m.events?.length?`<button class="px-btn small" data-replay="${esc(m.id)}">EVENT REPLAY</button>`:''}<p>${Object.entries(m.species).filter(([id])=>SPECIES[id]).map(([id,r])=>`${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('')||'<p>No matches yet.</p>'}`);
+      <h3>RECENT MATCHES</h3>${data.matches.map(m=>`<details><summary>${esc(m.result.toUpperCase())} · ${esc(m.mode)} · ${m.duration}s · ${m.verified?'server verified':'this browser'}</summary><p>${Object.entries(m.species).filter(([id])=>SPECIES[id]).map(([id,r])=>`${name(id)}: ${Math.round(r.damage)} damage, ${r.kos} KOs, ${r.reactions} reactions`).join('<br>')}</p></details>`).join('')||'<p>No matches yet.</p>'}`);
     el.querySelectorAll('[data-species]').forEach(b=>b.onclick=()=>this.mastery(b.dataset.species));
     el.querySelector('[data-mastery-search]').oninput=e=>{for(const b of el.querySelectorAll('[data-species]'))b.hidden=!b.dataset.name.includes(e.target.value.toLowerCase());};
     el.querySelector('[data-sort]').onchange=e=>{const key=e.target.value,box=el.querySelector('.mastery-roster');[...box.children].sort((a,b)=>key==='name'?a.dataset.name.localeCompare(b.dataset.name):+b.dataset[key]-+a.dataset[key]).forEach(b=>box.append(b));};
     const selector=el.querySelector('[data-compare]');if(selector)selector.onchange=()=>this.mastery(selected,selector.value||null);
     el.querySelectorAll('[data-cosmetic]').forEach(s=>s.onchange=()=>{equipCosmetic(s.dataset.cosmetic,s.value);this.flow.game.cosmetics=cosmeticLoadout();});
     el.querySelectorAll('[data-title]:not([disabled])').forEach(b=>b.onclick=()=>{setTitle(data.title===b.dataset.title?null:b.dataset.title);this.mastery(selected,compare);});
-    el.querySelectorAll('[data-replay]').forEach(b=>b.onclick=()=>this.replay(data.matches.find(m=>m.id===b.dataset.replay)));
   }
 
   settings() {
@@ -268,7 +244,7 @@ export class ExpansionUI {
         if (!this.drafting) return;
         if(!this.mm.features?.includes('drafts')) throw new Error('The match server needs the expansion update for drafts.');
         this.mm.state = 'draft';
-        this.mm.send({ t: 'draft-queue', mode: b.dataset.mode, format: +b.dataset.size, ranked:el.querySelector('[data-ranked]').value==='yes', roster:el.querySelector('[data-roster]').value });
+        this.mm.send({ t: 'draft-queue', mode: b.dataset.mode, format: +b.dataset.size, ranked:el.querySelector('[data-ranked]').value==='yes', roster:el.querySelector('[data-roster]').value, kits: this.flow.ui.kits });
       } catch (err) { if (this.el) this.el.querySelector('.exp-status').textContent = err.message || 'Could not connect. Close and retry; bot battles remain available.'; this.drafting = false; this.mm.state = 'idle'; }
     });
   }

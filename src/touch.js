@@ -162,7 +162,10 @@ export class TouchControls {
     this.dodge.querySelector('small').textContent = dcd > 0 ? `${dcd.toFixed(1)}s` : 'ready';
     this.dodge.style.setProperty('--cd', `${Math.max(0, Math.min(100, (dcd / 1.2) * 100))}%`);
     this.dodge.classList.toggle('cool', dcd > 0);
-    this.mega.classList.toggle('hidden', !p.species.mega?.length || p.isMega || g.playerTeam.megaUsed || (g.story && !g.story.playerMega));
+    const tera = !p.species.mega?.length && !p.isMega;
+    this.mega.classList.toggle('hidden', (tera ? !p.teraType || p.tera || g.raid : p.isMega) || g.playerTeam.megaUsed || (g.story && !g.story.playerMega));
+    this.mega.querySelector('b').textContent = tera ? 'TERA' : 'MEGA';
+    this.mega.querySelector('small').textContent = tera ? p.teraType ?? '' : 'Evolve';
     const cd = Math.ceil(g.switchCD);
     g.playerTeam.members.forEach((m, i) => {
       const b = this.mates[i];

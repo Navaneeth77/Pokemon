@@ -162,11 +162,21 @@ Object.assign(ORBS, {
     { radius: 8, scale: 0.85, speed: 330, knockback: 70, homing: 2.6, leaves: true }),
   electric: orb([255, 230, 90], '#ffffff', ['#ffffff', '#fff27a', '#e0b000'], (g, x, y) => g.marks.burn(x, y, 9), { speed: 320, radius: 8 }),
   mud: orb([150, 110, 60], '#e8d0a0', ['#d8b878', '#8a6630', '#4a3418'], (g, x, y) => g.marks.fracture(x, y, 9, 4), { speed: 250, radius: 9 }),
+  rock: orb([170, 150, 110], '#e8dcc0', ['#e8dcc0', '#a08a60', '#5a4a30'], (g, x, y) => g.marks.fracture(x, y, 8, 4), { speed: 280, radius: 8, knockback: 110 }),
+  bigRock: orb([170, 150, 110], '#f0e6d0', ['#e8dcc0', '#a08a60', '#5a4a30'], (g, x, y) => { g.marks.fracture(x, y, 16, 6); },
+    { radius: 12, scale: 1.4, speed: 220, knockback: 200 }),
+  bug: orb([170, 220, 70], '#f6ffd8', ['#f0ffd0', '#a8d848', '#5a7a20'], energyMark([150, 210, 70])),
+  needle: orb([200, 230, 120], '#ffffff', ['#ffffff', '#d8f080', '#88c040'], () => {}, { radius: 5, scale: 0.6, speed: 380, knockback: 40 }),
+  steel: orb([190, 200, 220], '#ffffff', ['#ffffff', '#c8d0e0', '#6a7488'], energyMark([180, 190, 210]), { homing: 2, speed: 270 }),
+  wind: orb([210, 240, 255], '#ffffff', ['#ffffff', '#cfeaff', '#8ab8d8'], () => {}, { radius: 12, scale: 1.4, speed: 240, knockback: 200 }),
+  dragon: orb([140, 100, 255], '#f0e8ff', ['#e8e0ff', '#8a6aff', '#3a2a90'], energyMark([130, 90, 240]), { speed: 330, radius: 7 }),
+  bigAura: orb([90, 150, 255], '#eef6ff', ['#dff0ff', '#6aa8ff', '#2a5ad8'], (g, x, y) => { g.marks.energy(x, y, 20, [90, 150, 255], 5); g.marks.fracture(x, y, 14, 5); },
+    { radius: 13, scale: 1.6, speed: 230, knockback: 230 }),
 });
 // Element of each orb style (Tri Attack's orbs carry their own element).
 const STYLE_ELEM = {
   fire: 'fire', bigFire: 'fire', water: 'water', shuriken: 'water', ice: 'ice', electric: 'electric', grass: 'grass', leaf: 'grass', stormLeaf: 'grass',
-  mud: 'ground', psy: 'psychic', fairy: 'fairy', moon: 'fairy', dark: 'dark', ghost: 'ghost', poison: 'poison', aura: 'fighting', gem: 'rock',
+  mud: 'ground', rock: 'rock', bigRock: 'rock', bug: 'bug', needle: 'bug', steel: 'steel', wind: 'flying', dragon: 'dragon', bigAura: 'fighting', psy: 'psychic', fairy: 'fairy', moon: 'fairy', dark: 'dark', ghost: 'ghost', poison: 'poison', aura: 'fighting', gem: 'rock',
 };
 
 const EVO_COLORS = [[255, 120, 70], [80, 150, 255], [255, 220, 60], [190, 120, 255], [60, 50, 80], [120, 220, 110], [120, 210, 255]];

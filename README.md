@@ -20,7 +20,7 @@ Open http://localhost:5173. For two local players use separate browsers, or two 
 - **Legendary Raids:** Rayquaza, Mewtwo and Lugia; solo or two-player online; public matchmaking or private six-character room codes. Bring three or six Pokémon. Four HP stages, telegraphed hazards, vulnerability windows and four difficulties.
 - **Draft Battles:** shared-pool snake draft (3v3/6v6), or simultaneous blind trade (6v6). The server validates picks, handles timeouts and reveals, and starts the battle after confirmation. Choose ranked or unranked queues, plus regular-only or full legal roster pools. Ranked drafts use the existing Elo rules.
 - **Pokémon Mastery:** searchable species levels, side-by-side comparisons, entered/completed records, best results, discovered reactions, trainer profile, 14 badges and wearable titles. Mastery unlocks equippable trainer frames, victory poses and send-out effects. Cosmetic rewards never increase combat stats.
-- **Match history:** summaries and bounded event replay timelines. These show recorded events with play/pause and scrubbing; they do not recreate the battle simulation. Old matches without recorded events retain their summaries.
+- **Match history:** per-match summaries (damage, KOs, reactions and survivors for each Pokémon).
 - **My Teams, Tutorial and Elemental Guide** remain accessible from the title menu. **Settings** groups Edit Trainer, Effects Quality, audio and display controls, and is also available from the pause menu. The existing story campaign modules remain in the codebase.
 
 ### Raid rules
@@ -109,7 +109,7 @@ Sprites and art receive one-week cache headers from `vercel.json`; version the U
 
 Browser profiling: open `/scripts/browser-bench.html` through the Vite dev server; add `?soak=60` for a mixed-effects soak. `node scripts/network-profile.mjs` measures two ordinary matches plus a raid against an isolated local server. These diagnostic pages are not part of the production Vite entry.
 
-See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Finishing sequences include a short visual replay of actual captured frames (raw pixel budget below 3 MB in High quality, cleared on exit). Full deterministic battle replay and network hit rewind are not implemented; match-history event timelines and existing authoritative hit timing are used instead.
+See `docs/PERFORMANCE.md` for measured results and limits, and `docs/EXPANSION.md` for the implementation checklist. There is no guarantee of 60 FPS on every device. Battle replays and network hit rewind are not implemented.
 
 Raid bosses alone use the supplied **Shadow Lugia, Armored Mewtwo and Dark Rayquaza** skins. Playable legends and their Mega forms retain their original sheets and names. Shadow Lugia has the reference sheet's red eyes, purple beams/waves/lightning and a purple SpriteCook disc restricted to the floor. Mega boss skins retain their form stats and timings; Armored Mewtwo keeps its armor after evolving. Source sheets and the reproducible import script are retained under `art/sources/legendary-skins` and `scripts/prepare-legendary-skins.py`.
 

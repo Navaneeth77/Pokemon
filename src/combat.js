@@ -1,5 +1,6 @@
 import { typeMultiplier } from './data/types.js';
-import { abilityOf, isContact, typesOf } from './data/abilities.js';
+import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
+import { itemOf } from './data/items.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { prepareReaction, resolveReaction } from './elemental.js';
@@ -22,7 +23,8 @@ const ROLE_NAME = ['OPENER', 'LAUNCHER', 'FINISHER'];
 const ULT_DEAL = 0.075, ULT_TAKE = 0.05, ULT_DEAL_CAP = 12, ULT_TAKE_CAP = 8;
 
 function moveType(attacker, move, A) {
-  if (A.convert && move.type === A.convert.from) return [A.convert.to, A.convert.mult];
+  const c = A.convert;
+  if (c && (c.from === move.type || c.test?.(move)) && c.to !== move.type) return [c.to, c.mult];
   return [move.type, 1];
 }
 
@@ -32,14 +34,28 @@ function weatherMult(game, type) {
   return 1;
 }
 
+// Pokémon touching the ground (not flying, not levitating) are the ones a terrain affects.
+export const grounded = mon => !mon.species.fly && !mon.airborne && !abilityOf(mon).levitating && !itemOf(mon)?.levitating;
+
+// Terrains: the matching type hits 30% harder from a grounded attacker; Misty Terrain halves Dragon moves
+// against grounded targets and Grassy Terrain softens earthquakes.
+function terrainMult(game, type, attacker, target, move) {
+  const t = game.terrain?.kind;
+  if (!t) return 1;
+  if (t === 'misty') return type === 'dragon' && grounded(target) ? 0.5 : 1;
+  if (t === 'grassy' && (move.id === 'earthquake' || move.id === 'bulldoze')) return 0.5;
+  return grounded(attacker) && type === { electric: 'electric', grassy: 'grass', psychic: 'psychic' }[t] ? 1.3 : 1;
+}
+
 // Applies one hit of `move` and all of its feedback. `o.stack` groups the ticks of a multi-hit move
 // so they share one damage popup, one status roll, one combo-chain check and capped ultimate charge.
 export function applyHit(game, attacker, target, move, o = {}) {
   if (game.state !== 'fighting' || !target.alive || target.hidden || (target.invuln && !o.unblockable)) return false;
   const stack = o.stack ?? {};
   const A = abilityOf(attacker), Dfull = abilityOf(target), D = A.moldBreaker ? {} : Dfull;
+  const I = itemOf(attacker) ?? {}, J = itemOf(target) ?? {};
   const head = target.y - target.headZ;
-  if (target.dodgeInv > 0 && !o.unblockable) {
+  if (target.dodgeInv > 0 && !o.unblockable && !A.noGuard && !Dfull.noGuard) {
     if (!stack.dodged) {
       stack.dodged = true;
       game.spawn(new FloatText(target.x, head - 10, 'DODGED!', '#bff3ff'));
@@ -50,7 +66,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   }
 
   // King's Shield / Quick Guard: most of the hit is blocked; contact against King's Shield saps attack.
-  const guard = !o.unblockable && target.guard;
+  const guard = !o.unblockable && !(A.unseenFist && isContact(move)) && target.guard;
   if (guard && guard.mult === 0) {
     if (!stack.blocked) {
       stack.blocked = true;
@@ -64,22 +80,30 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const [type, convertMult] = moveType(attacker, move, A);
   const defTypes = typesOf(target);
   const winds = game.deltaStream && defTypes.includes('flying');
-  const raw = typeMultiplier(type, defTypes, winds);
+  // Scrappy: Normal and Fighting moves hit Ghost types normally.
+  const hitTypes = A.scrappy && (type === 'normal' || type === 'fighting') ? defTypes.filter(t => t !== 'ghost') : defTypes;
+  const raw = typeMultiplier(type, hitTypes, winds);
   const calmed = winds && raw < typeMultiplier(type, defTypes);
   let eff = soften(raw);
-  if (A.pierce === type && eff < 1) eff = 1;
+  if ((A.pierce === type || A.tinted) && eff < 1) eff = 1;
   // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped.
   if (move.ultimate) eff = Math.min(eff, 1.5);
-  const contact = isContact(move);
+  const contact = isContact(move) && !(I.noContactPunch && isPunch(move));
   const info = { type, eff, contact };
 
-  const stab = typesOf(attacker).includes(type) ? (A.stab ?? 1.2) : 1;
-  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move) ?? 0);
+  // Same-type bonus: its current types and, once Terastallized, its original types too; a Tera type that
+  // matches an original type stacks a further 25%.
+  const own = attacker.species.types.includes(type);
+  const stab = typesOf(attacker).includes(type) || (attacker.tera && own) ? (A.stab ?? 1.2) * (attacker.tera === type && own ? 1.25 : 1) : 1;
+  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0);
+  // Sheer Force: moves with an added effect hit harder and lose the effect.
+  const sheer = !!(A.sheerForce && (move.status || move.debuff || move.statusPool || move.selfBuff || o.burnChance || o.freezeChance || o.flinchChance));
   const power = o.power ?? move.power;
   // Foul Play turns the target's own attack against it.
   const atkSrc = move.foul ? target : attacker;
-  const stats = ((move.cat === 'special' ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1)) * buffMult(atkSrc, 'atk') * (atkSrc.buffT > 0 ? 1.3 : 1))
-    / ((move.cat === 'special' ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * buffMult(target, 'def'));
+  // Unaware ignores the other side's stat changes.
+  const stats = ((move.cat === 'special' ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1)) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * (atkSrc.buffT > 0 ? 1.3 : 1))
+    / ((move.cat === 'special' ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')));
   const auraMult = [attacker, target].reduce((m, mon) => {
     const au = abilityOf(mon).aura;
     return m * (au && au.type === type && !mon.hidden && mon.alive ? au.mult : 1);
@@ -112,34 +136,56 @@ export function applyHit(game, attacker, target, move, o = {}) {
     attacker.chainRole = role;
   }
 
-  let dmg = power * stats * eff * stab * convertMult * auraMult * weatherMult(game, type) * comboMult * (crit ? 1.5 : 1) * rand(0.92, 1.04);
-  dmg *= (A.dealMult?.(game, attacker, target, move, info) ?? 1);
+  let dmg = power * stats * eff * stab * convertMult * auraMult * weatherMult(game, type) * terrainMult(game, type, attacker, target, move) * comboMult
+    * (crit ? A.critDmg ?? 1.5 : 1) * (sheer ? 1.3 : 1) * rand(0.92, 1.04);
+  // Snow toughens Ice types against physical hits; a sandstorm toughens Rock types against special ones.
+  if (game.weather === 'snow' && defTypes.includes('ice') && move.cat === 'physical') dmg *= 0.7;
+  if (game.weather === 'sand' && defTypes.includes('rock') && move.cat === 'special') dmg *= 0.7;
+  // Abilities that change the damage show it the moment they do (at most every few seconds).
+  const dealt = A.dealMult?.(game, attacker, target, move, info) ?? 1;
+  dmg *= dealt;
+  if (dealt > 1.001) game.abilityTouch?.(attacker, A.boostText ?? 'Power boosted!');
+  const held = I.dealMult?.(game, attacker, target, move, info) ?? 1;
+  dmg *= held;
+  if (held > 1.001) game.itemTouch?.(attacker, 'Power boosted!');
+  // Knock Off hits harder while the foe still holds an item, and knocks it away.
+  if (move.knockOff && target.item) dmg *= 1.5;
   if (move.hex && (target.frozen > 0 || Object.values(target.status).some(v => v > 0))) dmg *= 1.6;
   // Aerial combos: each hit on a juggled foe scales down; flyers fight better in the air.
   if (target.air) dmg *= 0.9 ** target.air.juggle * (attacker.species.fly ? 1.15 : 1);
 
-  if (!o.unblockable && D.evade?.(game, target, attacker, move, dmg)) {
+  if (!o.unblockable && !A.keenEye && (D.evade?.(game, target, attacker, move, dmg) || J.evade?.(game, target, attacker, move, dmg))) {
     game.spawn(new FloatText(target.x, head - 10, 'EVADED!', '#d8c8ff'));
     return false;
   }
   info.dmg = dmg;
-  if (D.absorb?.(game, target, attacker, move, info)) {
-    game.spawn(new FloatText(target.x, head - 10, 'ABSORBED!', '#9fffc8'));
+  const soaked = D.absorb?.(game, target, attacker, move, info) || J.absorb?.(game, target, attacker, move, info);
+  if (soaked) {
+    game.spawn(new FloatText(target.x, head - 10, typeof soaked === 'string' ? soaked : 'ABSORBED!', '#9fffc8'));
     return false;
   }
   const raidBarrier = target.boss && (game.raid?.ult || (!game.raid && game.raidState?.ul));
   const reaction = raidBarrier ? null : prepareReaction(game, target, type, move, stack, o);
   if (reaction && !(reaction.id === 'conduct' && defTypes.includes('ground'))) dmg *= 1 + reaction.bonus;
   if (target.boss && game.raid?.vulnerable > 0) dmg *= 1.3;
-  dmg *= (D.takeMult?.(game, target, attacker, move, info) ?? 1);
+  const taken = D.takeMult?.(game, target, attacker, move, info) ?? 1;
+  dmg *= taken;
+  if (taken < 0.999) game.abilityTouch?.(target, D.guardText ?? 'Damage reduced!');
+  else if (taken > 1.001) game.abilityTouch?.(target, 'It took extra damage!');
+  const shielded = J.takeMult?.(game, target, attacker, move, info) ?? 1;
+  dmg *= shielded;
+  if (shielded < 0.999) game.itemTouch?.(target, 'Damage reduced!');
   if (guard) dmg *= guard.mult;
   dmg = Math.max(1, Math.round(dmg));
-  if (target.shield > 0) {
+  if (target.shield > 0 && !A.infiltrator) {
     const soak = Math.min(target.shield, dmg);
     target.shield -= soak;
     dmg = Math.max(1, dmg - soak);
     if (target.shield <= 0) game.spawn(new FloatText(target.x, head - 18, 'SHIELD BROKE!', '#ff9fd0', 7));
   }
+  // Sturdy and the like: a blow that would knock it out leaves it hanging on.
+  if (D.endure && dmg >= target.hp) dmg = D.endure(game, target, dmg);
+  if (J.endure && dmg >= target.hp) dmg = J.endure(game, target, dmg);
   // A raid boss charging its ultimate hides behind a barrier that takes the hits first (bosses.js).
   // Online the barrier is the server's; this screen only shows the hits landing on it.
   let barrier = 0;
@@ -147,7 +193,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   else if (target.boss && !game.raid && game.raidState?.ul) barrier = dmg;
   dmg -= barrier;
 
-  const flinch = !!(o.flinchChance && !D.noFlinch && target.action && Math.random() < o.flinchChance * (A.serene ? 2 : 1));
+  const flinch = !!(o.flinchChance && !sheer && !D.noFlinch && target.action && Math.random() < o.flinchChance * (A.serene ? 2 : 1));
   // Anti-stunlock: after five hits in a row the target briefly can't be staggered and can break free.
   if (!stack.hitCounted) {
     stack.hitCounted = true;
@@ -196,7 +242,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   }
   if (guard?.punish && contact && attacker.alive && !stack.punished) {
     stack.punished = true;
-    game.buff(attacker, 'atk', 0.75, 4);
+    game.buff(attacker, 'atk', 0.75, 4, target);
   }
   wakeOnHit(target);
 
@@ -240,9 +286,17 @@ export function applyHit(game, attacker, target, move, o = {}) {
 
   A.onDeal?.(game, attacker, target, move, dmg, info);
   Dfull.onTake?.(game, target, attacker, move, dmg, info);
+  I.onDeal?.(game, attacker, target, move, dmg, info);
+  J.onTake?.(game, target, attacker, move, dmg, info);
+  if (move.knockOff && target.item && target.alive && !stack.knocked) {
+    stack.knocked = true;
+    game.knockOffItem(target, attacker);
+  }
 
   // Secondary effects: rolled once per move use. Moves name their own; otherwise the type default.
-  if (dmg > 0 && target.alive && !stack.statusRolled) {
+  // Shield Dust and the Covert Cloak keep a move's added effects off it.
+  const covered = D.shieldDust || J.covert;
+  if (dmg > 0 && target.alive && !stack.statusRolled && !sheer && !covered) {
     stack.statusRolled = true;
     const serene = A.serene ? 2 : 1;
     const rolls = [];
@@ -256,11 +310,19 @@ export function applyHit(game, attacker, target, move, o = {}) {
     }
   }
 
-  if (dmg > 0 && move.debuff && target.alive && !stack.debuffed) {
+  if (dmg > 0 && move.debuff && target.alive && !stack.debuffed && !sheer && !covered) {
     stack.debuffed = true;
-    game.buff(target, ...move.debuff);
+    game.buff(target, ...move.debuff, attacker);
   }
-  if (move.recoil && attacker.alive && !stack.recoiled) {
+  if (move.drain && dmg > 0 && attacker.alive && !stack.drained) {
+    stack.drained = true;
+    // Liquid Ooze: draining it hurts instead.
+    if (Dfull.liquidOoze) {
+      game.dotDamage(attacker, (dmg * move.drain) / attacker.maxHp, '#a040a0');
+      game.abilityPop(target, 'It sucked up the liquid ooze!');
+    } else game.heal(attacker, dmg * move.drain);
+  }
+  if (move.recoil && attacker.alive && !stack.recoiled && !A.rockHead) {
     stack.recoiled = true;
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');
   }

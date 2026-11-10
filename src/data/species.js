@@ -10,6 +10,9 @@ import { isFinalSpecies, finalDescendants } from './roster-rules.js';
 import { DIMS } from './dims.js';
 
 import { MEGA_STATS } from './mega-stats.js';
+import { NATIONAL, OFFICIAL_ABILITIES, DEX } from './national.js';
+import { NATIONAL_DIMS } from './national-dims.js';
+import { officialAbility } from './abilities.js';
 
 const BASE = { atk: 1, def: 1, weight: 1, class: 'regular' };
 
@@ -149,6 +152,27 @@ for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, ability
 }
 for (const [dex, id] of Object.entries(KANTO_EXISTING)) LIST.find(s => s.id === id).kanto = +dex;
 
+// Every other fully evolved Pokémon (national.js, generated): the same conversion, with physical and special
+// attack and defence kept apart so a Pokémon's better side really is better.
+const CLASS = { R, L, M };
+for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, cls, x] of NATIONAL) {
+  const types = typeStr.split('/'), bst = hp + at + df + sa + sd + sp;
+  const stats = [
+    Math.round(clamp(560 + 5 * hp + 0.9 * bst, 800, 1900) / 10) * 10, Math.round(clamp(46 + 0.55 * sp, 52, 124)),
+    r2(0.85 + at / 400), r2(0.8 + df / 400), r2(clamp(0.45 + 0.35 * Math.log(1 + kg / 10), 0.5, 2.4)),
+  ];
+  const ult = types[0] === 'normal' && types[1] === 'flying' ? 'skyAttack' : TYPE_ULT[types[0]];
+  LIST.push(mon(id, name, types, CLASS[cls], stats, moves.split(' '), ult, null, {
+    spa: r2(0.85 + sa / 400), spdef: r2(0.8 + sd / 400), sprite: x.sprite, ...(x.hover && hover(...x.hover)),
+  }));
+}
+// Official abilities for every fully evolved Pokémon: its first one the game implements (see abilities.js).
+for (const s of LIST) {
+  s.dex = DEX[s.id] ?? s.kanto;
+  const pick = OFFICIAL_ABILITIES[s.id] && officialAbility(OFFICIAL_ABILITIES[s.id]);
+  if (pick) Object.assign(s, { ability: pick, abilities: OFFICIAL_ABILITIES[s.id] });
+}
+
 // Mega forms inherit everything from their base form and have their size re-measured from their own sheet.
 const MEGAS = [
   ['charizard', 'charizardMegaX', 'Mega Charizard X', { sprite: 'charizard-mega-x', types: ['fire', 'dragon'], speed: 100, atk: 1.3, def: 1.2, radius: 13, weight: 1.15,
@@ -194,7 +218,7 @@ for (const [baseId, id, name, o] of MEGAS) {
 
 // Sizes for species without hand-tuned dimensions (measured from their sprites, see dims.js).
 for (const s of Object.values(SPECIES)) {
-  const d = s.bodyZ == null && DIMS[s.sprite];
+  const d = s.bodyZ == null && (DIMS[s.sprite] ?? NATIONAL_DIMS[s.sprite]);
   if (d) Object.assign(s, { radius: d[0], shadow: [d[0], d[5]], bodyZ: d[1], headZ: d[2], mouth: { z: d[3], fwd: d[4] } });
 }
 

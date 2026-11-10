@@ -70,7 +70,7 @@ export function level(xp) {
 
 // ── While a battle runs ──
 export function newSummary(game) {
-  return { id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`, events: [], droppedEvents: 0, species: { player: {}, opponent: {} }, moves: { player: {}, opponent: {} }, arena: game.arenaId ?? 'mtSilver' };
+  return { id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`, species: { player: {}, opponent: {} }, moves: { player: {}, opponent: {} }, arena: game.arenaId ?? 'mtSilver' };
 }
 
 const row = () => ({ damage: 0, received: 0, hits: 0, kos: 0, faints: 0, ultimates: 0, ultimateHits:0, mega: 0, switches: 0, reactions: 0, bossDamage: 0, discovered: [] });
@@ -85,15 +85,6 @@ export function recordCombat(game, kind, actor, target, details = {}) {
     const stat = rows[actor.baseSpecies.id] ??= row();
     stat.entered = 1;
     if (!game.online?.authority && actor.side === 'player') saveEntry(summary.id, actor.baseSpecies.id);
-  }
-  if (kind !== 'entered') {
-    summary.events ??= [];
-    if (summary.events.length < 600) summary.events.push({
-      n: summary.events.length, t: Math.round(game.time * 10) / 10, kind,
-      side: actor.side, actor: actor.baseSpecies.id, target: target?.baseSpecies.id,
-      move: details.id ?? details.move, damage: details.damage == null ? undefined : Math.round(details.damage), reaction: details.reaction,
-    });
-    else summary.droppedEvents = (summary.droppedEvents ?? 0) + 1;
   }
   if (actor.boss) {
     if (kind === 'hit' && target && !target.boss) (summary.species[target.side][target.baseSpecies.id] ??= row()).received += details.damage;
@@ -120,7 +111,7 @@ export function recordCombat(game, kind, actor, target, details = {}) {
 
 export function resultSummary(game, side = 'player', extra = {}) {
   const raid = game.raid ? { raid: game.raid.id, difficulty: game.raid.difficulty } : {};
-  return { events: game.summary.events ?? [], droppedEvents: game.summary.droppedEvents ?? 0, replaySide: side, id: game.summary.id, arena: game.summary.arena, duration: Math.round(game.time), species: game.summary.species[side], moves: game.summary.moves[side], mode: game.raid ? 'raid' : game.online && !game.online.server ? 'friend' : 'battle', survivors: (side === 'player' ? game.playerTeam : game.opponentTeam).members.filter(m => m.alive).map(m => ({id:m.baseSpecies.id,hp:Math.ceil(m.hp),maxHp:m.maxHp})), ...raid, ...extra };
+  return { id: game.summary.id, arena: game.summary.arena, duration: Math.round(game.time), species: game.summary.species[side], moves: game.summary.moves[side], mode: game.raid ? 'raid' : game.online && !game.online.server ? 'friend' : 'battle', survivors: (side === 'player' ? game.playerTeam : game.opponentTeam).members.filter(m => m.alive).map(m => ({id:m.baseSpecies.id,hp:Math.ceil(m.hp),maxHp:m.maxHp})), ...raid, ...extra };
 }
 
 // ── When the result is known ──

@@ -16,13 +16,12 @@ PERFORMANCE.md separates measurements from deployment/device limits.
 - Both draft formats with private/reveal rules, legal pools, timers, confirmation and battle launch.
   Ranked/unranked queues and regular/full-roster choices are separate; ranked results use server Elo.
 - Arcade mode menu/visual previews, trainer/team/arena intro, restored player ultimate charge scenes,
-  nonblocking online ultimate/Mega presentation, final-hit/victory effects, short captured-frame final-hit replay, ping/jitter feedback.
+  nonblocking online ultimate/Mega presentation, final-hit/victory effects, ping/jitter feedback. (The captured-frame final-hit replay and the match-history event replay were removed on 10 Nov 2026.)
 - Full-roster mastery search/sort/comparison, separate entered/completed counts, best results, next
   rewards and milestone history. Earned trainer frames, victory poses and send-out effects can be
   equipped. Existing badges, titles, profile, safe migration and result deduplication remain.
 - Reusable summaries cover ordinary, friend-room, draft and raid matches. Results show survivors,
-  damage, moves, reactions, transforms and earned XP. Bounded event replay has play/pause/scrubbing;
-  it does not claim deterministic simulation playback or award progression.
+  damage, moves, reactions, transforms and earned XP.
 - SpriteCook crest, impact and all three legendary sprites remain in use. Rayquaza/Lugia each have
   one ground disc; their air effects use natural wind, spray, longer meteor trails and beam pressure
   streaks. Casts hold position, facing and altitude until release; the next attack waits for recovery.
@@ -107,7 +106,7 @@ preview UI does not persist results. These diagnostic pages are not production a
 | Shared combat and forms | `src/reactions.js`, `src/elemental.js`, `src/combat.js`, `src/data/mega-stats.js` |
 | Boss authority and visuals | `src/bosses.js`, `src/raid-art.js`, `src/legendary-effects.js`, `src/raid-cinematics.js` |
 | Real online raids and drafts | `server/raids.js`, `server/drafts.js`, `src/draft-rules.js`, `src/matchmaking.js` |
-| Presentation and integration | `src/cinema.js`, `src/final-hit-replay.js`, `src/moves.js`, `src/game.js`, `src/flow.js` |
+| Presentation and integration | `src/cinema.js`, `src/moves.js`, `src/game.js`, `src/flow.js` |
 | Progression and results | `src/mastery.js`, `src/results.js`, `src/expansion-ui.js` |
 | Assets and performance evidence | `spritecook-assets.json`, `scripts/browser-bench.js`, `scripts/lifecycle-profile.mjs`, `docs/PERFORMANCE.md` |
 
