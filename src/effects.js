@@ -1050,6 +1050,10 @@ export class Missile extends Effect {
       ctx.strokeStyle = '#2a6ac8';
       ctx.lineWidth = 1;
       ctx.stroke();
+    } else if (MISSILE_SHAPES[this.style]) {
+      // Shaped projectiles point along their flight.
+      ctx.rotate(Math.atan2(this.y1 - this.y0, this.x1 - this.x0));
+      MISSILE_SHAPES[this.style](ctx, R, G, B, this.age);
     } else {
       const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 13);
       g.addColorStop(0, `rgba(${R},${G},${B},0.95)`);
@@ -1064,6 +1068,38 @@ export class Missile extends Effect {
     ctx.restore();
   }
 }
+
+// Projectile shapes for move sequences (move-sequence.js): an ice crystal, a boulder, a seed, a sludge bomb, a
+// fireball.
+const MISSILE_SHAPES = {
+  crystal(ctx, R, G, B) {
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(0, 4); ctx.lineTo(-8, 0); ctx.lineTo(0, -4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -1, 6, 2);
+  },
+  boulder(ctx, R, G, B, t) {
+    ctx.rotate(t * 8);
+    ctx.fillStyle = `rgb(${R},${G},${B})`; ctx.strokeStyle = '#3a2a18'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); [[7, 0], [3, 6], [-5, 5], [-7, -1], [-2, -6], [5, -5]].forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](x, y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+  },
+  seed(ctx, R, G, B) {
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.beginPath(); ctx.ellipse(0, 0, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e0ffc0'; ctx.fillRect(1, -1.5, 3, 1.5);
+  },
+  bomb(ctx, R, G, B) {
+    ctx.fillStyle = `rgb(${R >> 1},${G >> 1},${B >> 1})`;
+    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.beginPath(); ctx.arc(-2, -2, 4, 0, Math.PI * 2); ctx.fill();
+  },
+  flame(ctx, R, G, B, t) {
+    const f = 1 + Math.sin(t * 40) * 0.15;
+    ctx.fillStyle = `rgba(${R},${G},${B},0.9)`;
+    ctx.beginPath(); ctx.moveTo(10 * f, 0); ctx.quadraticCurveTo(0, 8, -10, 0); ctx.quadraticCurveTo(0, -8, 10 * f, 0); ctx.fill();
+    ctx.fillStyle = '#fff0a0'; ctx.beginPath(); ctx.ellipse(2, 0, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+  },
+};
 
 // A wall of water sweeping across the whole arena from y0 to y1.
 export class TidalWave extends Effect {

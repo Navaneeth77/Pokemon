@@ -679,7 +679,8 @@ const UTIL_FX = {
   // Stat stages, each setup move with its own look around the user.
   stages(a, g, u, c) {
     g.stage(u, g.weather === 'sun' && c.sun ? c.sun : c.self);
-    SETUP_LOOK[c.look]?.(g, u);
+    if (SETUP_LOOK[c.look]) SETUP_LOOK[c.look](g, u);
+    else spiral(g, u, ['#ffffff', ...(TYPE_COLORS[a.move.type] ?? ['#ffffff'])], 16, 60);
   },
   // A status move aimed at the foe (see the moves above).
   ray(a, g, u, c) {
@@ -2956,7 +2957,7 @@ function fromDex(id, d) {
 
 for (const [id, d] of Object.entries(MOVEDEX)) {
   if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], mechanicsOf(d));
-  else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d) };
+  else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d), generated: true };
 }
 // Moves with their own staged animation (data/move-anims.js, move-sequence.js).
 class Sequence extends MoveAction {
@@ -2966,6 +2967,10 @@ class Sequence extends MoveAction {
 for (const [id, r] of Object.entries(MOVE_ANIMS)) {
   const m = MOVES[id];
   if (!m || m.ultimate) continue;
+  // A strike or tackle keeps its action and takes the recipe's look.
+  if (r.melee && m.melee) { m.melee = { ...m.melee, ...r.melee }; continue; }
+  if (r.dash && m.dash) { m.dash = { ...m.dash, ...r.dash }; continue; }
+  if (r.melee || r.dash) continue;
   for (const k of ['shot', 'beam', 'shockwave', 'melee', 'dash', 'stream']) delete m[k];
   if (r.seq) {
     const self = r.seq.aim === 'self', reach = self ? Math.max(...r.seq.steps.map(s => s.hit?.r ?? 0)) : 300;

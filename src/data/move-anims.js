@@ -59,7 +59,7 @@ export const MOVE_ANIMS = {
   // Gunk Shot: a heap of toxic sludge is hurled and splashes over the target.
   gunkShotAtk: { seq: { aim: 'target', end: 0.85, steps: [
     { at: 0, anim: 'Attack' },
-    { at: 0.15, missile: { style: 'orb', dur: 0.4, rgb: [170, 70, 190], scale: 1.6 } },
+    { at: 0.15, missile: { style: 'bomb', dur: 0.4, rgb: [170, 70, 190], scale: 1.6 } },
     { at: 0.55, burst: { colors: ['#e0a0f0', '#a040a0', '#5a1f5a'], n: 24 }, mark: 'energy', markRgb: [160, 60, 170], markSize: 26, sound: 'splash' },
     { at: 0.55, hit: { r: 30, knockback: 200 } },
   ] } },
@@ -85,7 +85,7 @@ export const MOVE_ANIMS = {
   ] } },
   // Sludge Bomb: a gob of sludge arcs over and bursts.
   sludgeBomb: { seq: { aim: 'target', end: 0.75, steps: [
-    { at: 0, anim: 'Shoot', missile: { style: 'orb', dur: 0.38, rgb: [170, 70, 190], scale: 1.2 } },
+    { at: 0, anim: 'Shoot', missile: { style: 'bomb', dur: 0.38, rgb: [170, 70, 190], scale: 1.2 } },
     { at: 0.38, burst: { colors: ['#e0a0f0', '#a040a0'], n: 16 }, mark: 'energy', markRgb: [160, 60, 170], markSize: 18, sound: 'splash' },
     { at: 0.38, hit: { r: 26, knockback: 150 } },
   ] } },
@@ -126,6 +126,88 @@ export const MOVE_ANIMS = {
     duration: 0.8, tick: 0.12, width: 12, reach: 140, knockback: 40, stagger: 0.1, mark: 'wet', sound: () => {},
   } },
 };
+
+// ── Shapes shared by many moves, each move giving its own colours, size, count, impact and timing ──
+// A projectile charged at the mouth, flown to the target, bursting on impact.
+const orb = (colors, rgb, o = {}) => {
+  const c = o.charge ?? 0.25, d = o.dur ?? 0.3, hit = c + d;
+  return { seq: { aim: 'target', end: hit + (o.after ?? 0.25), steps: [
+    { at: 0, anim: 'Charge', gather: { colors, until: c, radius: o.radius ?? 30 } },
+    { at: c, anim: 'Shoot', missile: { style: o.style ?? 'orb', dur: d, rgb, scale: o.scale ?? 1.2 } },
+    { at: hit, rings: { colors, r: o.r ?? 36 }, ...(o.burst && { burst: { colors, n: o.burst } }), ...(o.mark && { mark: o.mark, markRgb: rgb, markSize: o.markSize ?? 20 }), ...(o.shake && { shake: o.shake }), ...(o.sound && { sound: o.sound }) },
+    { at: hit, hit: { r: o.hitR ?? 28, knockback: o.kb ?? 170, stagger: o.stagger ?? 0.35 } },
+  ] } };
+};
+// Something rising out of the ground under the target after a warning.
+const erupt = (colors, rgb, o = {}) => ({ seq: { aim: 'target', end: (o.delay ?? 0.55) + 0.3, steps: [
+  { at: 0, anim: o.anim ?? 'Charge' },
+  { at: 0.1, telegraph: { r: o.r ?? 28, color: colors[1], life: (o.delay ?? 0.55) - 0.1 } },
+  { at: o.delay ?? 0.55, ...(o.pillar !== false && { pillar: { rgb, height: o.height ?? 170, life: 0.45 } }), burst: { colors, n: o.n ?? 20, up: o.up ?? 140 }, ...(o.spikes && { spikes: { n: 5, style: o.spikes, spread: o.r ?? 24 } }), ...(o.mark && { mark: o.mark, markRgb: rgb }), shake: o.shake ?? [7, 0.3], ...(o.sound && { sound: o.sound }) },
+  { at: o.delay ?? 0.55, hit: { r: (o.r ?? 28) + 2, knockback: o.kb ?? 200, stagger: o.stagger ?? 0.45 } },
+] } });
+// Rings of sound or power around the user.
+const pulse = (colors, r, o = {}) => ({ seq: { aim: 'self', end: (o.at ?? 0.25) + 0.4, steps: [
+  { at: 0, anim: 'Charge', ...(o.gather && { gather: { colors, until: o.at ?? 0.25 } }) },
+  { at: o.at ?? 0.25, anim: 'Shoot', rings: { colors, r }, burst: { colors, n: o.n ?? 18, up: 60 }, ...(o.flash && { flash: o.flash }), ...(o.shake && { shake: o.shake }), sound: o.sound ?? 'roar' },
+  { at: o.at ?? 0.25, hit: { r: r - 6, knockback: o.kb ?? 160 } },
+] } });
+// Tackles and strikes keep their action; these set their look.
+const rush = (color, ghost, o = {}) => ({ dash: { color, ghost, burst: o.burst ?? 'type', width: o.width ?? 5, ...o } });
+const strike = (colors, o = {}) => ({ melee: { colors, ...o } });
+
+Object.assign(MOVE_ANIMS, {
+  bodyPress: rush('#e8e8f0', '#8f9db2', { windup: 0.2, dist: 130, width: 7, knockback: 230 }),
+  flipTurn: rush('#d4f1ff', '#3a8ae8', { through: true, dist: 170 }),
+  outrageAtk: strike(['#b090ff', '#ff7a5a'], { fx: 'claw', lunge: 50, hits: [{ knockback: 60 }, { delay: 0.12, knockback: 60 }, { delay: 0.24, knockback: 230, hitstop: 0.07 }] }),
+  superpower: strike(['#ff7a2a', '#ffd0b0'], { fx: 'punchT', lunge: 34, hits: [{ knockback: 260, stagger: 0.5, hitstop: 0.08 }] }),
+  psychicNoise: pulse(['#ffffff', '#ff8ad0', '#c040a0'], 96, { sound: 'roar' }),
+  facade: strike(['#ffffff', '#ffe066'], { fx: 'punchT', lunge: 44 }),
+  freezeDry: orb(['#ffffff', '#c8f2ff', '#7ab8e8'], [190, 235, 255], { style: 'crystal', burst: 14, mark: 'frost', sound: 'ice' }),
+  alluringVoice: pulse(['#ffffff', '#ffc8e4', '#f080b0'], 92, { sound: 'pulse' }),
+  explosion: pulse(['#ffffff', '#ffe066', '#ff7a2a', '#b8461c'], 120, { at: 0.35, gather: true, flash: 0.12, shake: [16, 0.6], n: 40, kb: 300, sound: 'explosion' }),
+  return: strike(['#ffffff', '#ffe8a0'], { fx: 'arc', lunge: 46 }),
+  heavySlam: rush('#c8d0e0', '#5a6478', { windup: 0.22, dist: 120, width: 8, knockback: 260 }),
+  stompingTantrum: erupt(['#ffffff', '#e8d0a0', '#8a6630'], [200, 160, 100], { r: 40, pillar: false, delay: 0.4, mark: 'fracture', sound: 'quake' }),
+  grassKnot: erupt(['#ffffff', '#8ad84f', '#3f8f2c'], [120, 210, 80], { r: 20, height: 60, delay: 0.4, mark: 'leaves', kb: 120 }),
+  dualWingbeat: strike(['#cfeaff', '#ffffff'], { anim: 'Swing', fx: 'arc', lunge: 48, hits: [{ knockback: 80 }, { delay: 0.14, knockback: 170 }] }),
+  tripleAxel: strike(['#c8f2ff', '#ffffff'], { anim: 'Rotate', fx: 'arc', lunge: 40, hits: [{ knockback: 40 }, { delay: 0.12, knockback: 60 }, { delay: 0.24, knockback: 200, hitstop: 0.06 }] }),
+  waveCrash: rush('#d4f1ff', '#2b57bd', { windup: 0.16, dist: 190, width: 7, knockback: 250 }),
+  nuzzle: strike(['#fff27a', '#ffffff'], { fx: 'arc', lunge: 36 }),
+  fakeOut: rush('#ffffff', '#ffd8a0', { windup: 0.02, dist: 110, dur: 0.07 }),
+  overheat: orb(['#ffffff', '#ffb070', '#b8461c'], [255, 120, 40], { style: 'flame', scale: 2, dur: 0.35, burst: 24, mark: 'scorch', shake: [10, 0.35], sound: 'explosion', charge: 0.4 }),
+  scorchingSands: erupt(['#fff0c0', '#e8b060', '#b8461c'], [230, 150, 70], { r: 30, height: 90, mark: 'scorch' }),
+  trailblaze: rush('#e0ffc0', '#62b947', { dist: 160 }),
+  storedPower: orb(['#ffffff', '#ff8ad0', '#c040a0'], [255, 120, 200], { scale: 1.5, burst: 16 }),
+  hornLeech: strike(['#8ad84f', '#e0ffc0'], { fx: 'arc', lunge: 46 }),
+  mysticalFire: orb(['#ffffff', '#ff9ad5', '#ff7a2a'], [255, 140, 170], { style: 'flame', burst: 16, mark: 'scorch' }),
+  icicleSpear: orb(['#ffffff', '#c8f2ff'], [200, 240, 255], { style: 'crystal', scale: 0.9, dur: 0.22 }),
+  superFang: strike(['#ffffff', '#c8b8a8'], { fx: 'bite', lunge: 44 }),
+  bulletSeed: orb(['#e0ffc0', '#8ad84f'], [140, 210, 90], { style: 'seed', scale: 1, dur: 0.25, charge: 0.1 }),
+  headlongRush: rush('#e8d0a0', '#8a6630', { windup: 0.15, dist: 190, width: 7, knockback: 250 }),
+  supercellSlam: rush('#fff27a', '#e0b000', { windup: 0.15, dist: 180, width: 7, burst: 'electric', knockback: 240 }),
+  highJumpKick: rush('#ffd8a0', '#c8402c', { windup: 0.2, dist: 170, width: 6, knockback: 260 }),
+  lowKick: strike(['#c8402c', '#ffd0b0'], { fx: 'arc', lunge: 30 }),
+  heatCrash: rush('#ffb070', '#b8461c', { windup: 0.22, dist: 120, width: 8, burst: 'fire', knockback: 260 }),
+  populationBomb: strike(['#ffffff', '#e8e8d0'], { fx: 'arc', lunge: 40, hits: Array.from({ length: 6 }, (_, i) => ({ delay: i * 0.07, knockback: i === 5 ? 160 : 20 })) }),
+  lunge: rush('#d8f080', '#88c040', { dist: 150 }),
+  clearSmog: orb(['#ffffff', '#e0e8f0', '#a8b0c0'], [200, 210, 220], { scale: 1.4, burst: 20 }),
+  lavaPlume: pulse(['#fff0a0', '#ff9a3a', '#b8461c'], 92, { sound: 'explosion', n: 26 }),
+  gyroBall: strike(['#c8d0e0', '#ffffff'], { anim: 'Rotate', fx: 'arc', lunge: 30 }),
+  fireLash: strike(['#ff7a2a', '#fff0a0'], { anim: 'Swing', fx: 'arc', lunge: 48, spread: 3 }),
+  fieryDance: pulse(['#fff0a0', '#ff9a3a', '#b8461c'], 80, { n: 22, sound: 'flamethrower' }),
+  boltBeak: rush('#fff27a', '#e0b000', { windup: 0.08, dist: 170, burst: 'electric' }),
+  fishiousRend: strike(['#3a8ae8', '#d4f1ff'], { fx: 'bite', lunge: 44 }),
+  waterSpout: erupt(['#ffffff', '#86ccff', '#3a8ae8'], [90, 160, 255], { r: 36, height: 200, mark: 'wet', sound: 'splash' }),
+  seismicToss: rush('#ffd8a0', '#c8402c', { windup: 0.2, dist: 110, width: 7, knockback: 280 }),
+  thief: strike(['#6a3a8a', '#c8a0ff'], { fx: 'dark', lunge: 46 }),
+  crabhammer: strike(['#3a8ae8', '#d4f1ff'], { fx: 'punchT', lunge: 38, critChance: 0.25 }),
+  whirlpool: erupt(['#ffffff', '#86ccff', '#3a8ae8'], [90, 160, 255], { r: 30, height: 80, delay: 0.45, mark: 'wet', kb: 80 }),
+  endeavor: strike(['#ffffff', '#c8c8b0'], { fx: 'arc', lunge: 40 }),
+  megaKick: strike(['#ffffff', '#ffe8a0'], { fx: 'punchT', lunge: 32, hits: [{ knockback: 240, stagger: 0.45, hitstop: 0.07 }] }),
+  thousandArrows: erupt(['#ffffff', '#c8f080', '#6a8a30'], [170, 210, 90], { r: 44, spikes: 'rock', delay: 0.5, sound: 'quake' }),
+  gigatonHammer: erupt(['#ffffff', '#c8d0e0', '#5a6478'], [200, 210, 225], { r: 34, pillar: false, spikes: 'rock', anim: 'Attack', delay: 0.6, shake: [14, 0.45], kb: 280 }),
+  makeItRain: erupt(['#fff8c0', '#ffd84a', '#c89a1a'], [255, 216, 74], { r: 44, height: 40, delay: 0.5, n: 34, up: 60 }),
+});
 
 // In Weather Ball's sequence the ball takes the weather's colours.
 export const WEATHER_TINT = { sun: [255, 140, 60], rain: [90, 160, 255], snow: [190, 235, 255], sand: [200, 170, 110] };
