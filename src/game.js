@@ -25,10 +25,11 @@ import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import {
-  ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst,
-  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst,
+  ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst, Telegraph, TidalWave, Lightning, leafBurst,
+  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble,
 } from './effects.js';
-import { initAudio, sfx } from './audio.js';
+import { initAudio, sfx, playCry } from './audio.js';
+import { EMOTES } from './social.js';
 import { music, ARENA_TRACK, RAID_TRACKS } from './music.js';
 
 export const SWITCH_COOLDOWN = 15;
@@ -39,6 +40,21 @@ const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afte
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 // Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
 const traps = (by, foe) => { const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
+const ARENA_EVENTS = {
+  mtSilver: { name: 'AVALANCHE!', hit: 'AVALANCHE!', n: 3, r: 30, color: '#e8f4ff', status: 'slow',
+    fx: (g, z) => { iceShatter(g, z.x, z.y, 10); dustCloud(g, z.x, z.y, 12, 5); g.spawn(new Pillar(z.x, z.y, 0.5, [230, 244, 255], 140)); sfx.quake(); } },
+  viridian: { name: 'FALLING TREES!', hit: 'TIMBER!', n: 2, r: 16, lane: true, rgb: '120,200,90', color: '#8fd060', status: 'stun',
+    fx: (g, z) => { for (let x = 20; x < WORLD_W; x += 40) leafBurst(g, x, z.y, 6, 4); dustCloud(g, WORLD_W / 2, z.y, 10, 5); sfx.quake(); } },
+  cinnabar: { name: 'ERUPTION!', hit: 'LAVA!', n: 4, r: 26, color: '#ff7a2a', status: 'burn',
+    fx: (g, z) => { g.spawn(new Pillar(z.x, z.y, 0.6, [255, 120, 40], 200)); g.marks.scorch(z.x, z.y, 24, 6); for (let i = 0; i < 10; i++) g.particles.spawn({ x: z.x, y: z.y, z: 4, vx: rand(-60, 60), vy: rand(-30, 30), vz: rand(120, 260), g: 400, life: 0.8, size: rand(2, 4), colors: FIRE }); sfx.explosion(); } },
+  seafoam: { name: 'TIDAL SURGE!', hit: 'SWEPT AWAY!', n: 1, r: 46, lane: true, rgb: '90,160,255', color: '#5aa6f0', status: 'slow',
+    fx: (g, z) => { g.spawn(new TidalWave(z.y - 60, z.y + 60, 0.6, [70, 140, 230], true)); waterSplash(g, WORLD_W / 2, z.y); sfx.splash(); } },
+  indigo: { name: 'LIGHTNING STRIKE!', hit: 'ZAP!', n: 3, r: 24, color: '#ffe066', status: 'para',
+    fx: (g, z) => { g.spawn(new Lightning(z.x, z.y - 240, z.x, z.y, 0.3)); electricBurst(g, z.x, z.y, 6); g.marks.burn(z.x, z.y, 16); sfx.thunder(); } },
+};
+const HAZARD_MAX = { rocks: 1, spikes: 3, toxic: 2, web: 1 };
+const HAZARD_NAME = { rocks: 'Stealth Rock', spikes: 'Spikes', toxic: 'Toxic Spikes', web: 'Sticky Web' };
+const HAZARD_COLOR = { rocks: '#e8dcc0', spikes: '#d8b878', toxic: '#e0a0f0', web: '#ffffff' };
 const TERRAIN_COLOR = { electric: '#ffd84a', grassy: '#5fd04a', psychic: '#ff6ad0', misty: '#ffb0e0' };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -128,6 +144,11 @@ export class Game {
     this.bossFx = null;
     this.summary = newSummary(this);
     this.time = 0;
+    this.hazards = { player: {}, opponent: {} };
+    this.eventN = -1;
+    this.eventSeed ??= Math.floor(Math.random() * 2 ** 31);
+    this.timedWeather = null;
+    this.terrain = null;
     this.effects = [];
     this.timers = [];
     this.particles.clear();
@@ -152,7 +173,7 @@ export class Game {
 
   // Team selection screen; the lead chosen there is used by start().
   toSelect() {
-    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = [];
+    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = []; this.survival = null;
     this.online = null;
     this.endPractice();
     this.paused = false;
@@ -164,7 +185,7 @@ export class Game {
 
   // Opening, trainer setup and format screens (flow.js): no battle input, battle overlays hidden.
   toMenu() {
-    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = [];
+    this.raid = null; this.raidState = null; this.raidAlly = null; this.raidCards = []; this.survival = null;
     this.online = null;
     this.paused = false;
     this.reset();
@@ -208,6 +229,7 @@ export class Game {
     if (practice) this.online = null;
     if (!this.online) {
       // Against the bot: it leads with its first Pokémon and Megas into its first form.
+      this.eventSeed = Math.floor(Math.random() * 2 ** 31);
       this.foeLead = 0;
       this.foeMegaPicks = null;
       if (!this.story) {
@@ -313,6 +335,7 @@ export class Game {
     mon.appear = 1;
     mon.enteredAt = this.time;
     this.lastUsed[mon.side] = null;
+    if (!this.headless) playCry(mon.baseSpecies.dex);
     sendOutBurst(this, mon.x, mon.y, mon.species.bodyZ);
     const [c1] = TYPE_COLORS[mon.species.types[0]];
     const rgb = [1, 3, 5].map(i => parseInt(c1.slice(i, i + 2), 16));
@@ -327,6 +350,7 @@ export class Game {
     this.later(0.35, () => {
       if (!mon.hidden && mon.alive) abilityOf(mon).onEnter?.(this, mon);
       if (!mon.hidden && mon.alive) itemOf(mon)?.onEnter?.(this, mon);
+      if (!mon.hidden && mon.alive) this.applyHazards(mon);
     });
     const player = mon.side === 'player';
     this.spawn(new FloatText(mon.x, mon.y + (player ? 26 : 18), `Go, ${mon.species.name}!`, player ? '#ff8a3d' : '#f5c542', 8, 1.5));
@@ -675,6 +699,14 @@ export class Game {
     if (this.time - (mon.abTouch ?? -9) < 3) return;
     mon.abTouch = this.time;
     this.abilityPop(mon, text);
+  }
+
+  // Quick chat (social.js): a speech bubble over that side's trainer for a few seconds.
+  showEmote(side, n) {
+    const text = EMOTES[n], tr = side === 'player' ? this.red : this.gold;
+    if (!text || !tr) return;
+    this.spawn(new SpeechBubble(tr, text));
+    this.ui.log(`${tr.name}: ${text}`, side);
   }
 
   floatText(mon, text, color) {
@@ -1101,6 +1133,7 @@ export class Game {
     this.netSend(mon, { t: 'faint', i: team.members.indexOf(mon), mv: move?.id, last: next < 0 });
     this.recordCombat('faint', mon, by);
     abilityOf(mon).onFaint?.(this, mon, by, move);
+    if (!this.headless) playCry(mon.baseSpecies.dex, { rate: 0.8, gain: 0.45 });
     if (by && by !== mon && by.alive && !by.hidden) abilityOf(by).onKO?.(this, by, mon);
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
@@ -1243,6 +1276,7 @@ export class Game {
       this.switchCD = Math.max(0, this.switchCD - dt);
       this.foeSwitchCD = Math.max(0, (this.foeSwitchCD ?? 0) - dt);
       this.updateWeather(dt);
+      this.updateArenaEvents();
       this.online?.processEvents();
       if (this.story?.spare) this.checkSpare(dt);
       if (!this.practice && (this.musicT -= dt) <= 0) {
@@ -1336,6 +1370,124 @@ export class Game {
       this.ui.log(`The arena became ${kind} terrain!`);
     }
     this.terrain = { kind, t: dur };
+  }
+
+  // ── Entry hazards: set on a side by Stealth Rock, Spikes, Toxic Spikes and Sticky Web; they hit each
+  // Pokémon that comes in on that side. Rapid Spin clears its own side; Heavy-Duty Boots ignore them. ──
+  setHazard(side, kind, by) {
+    const h = this.hazards[side], max = HAZARD_MAX[kind];
+    if ((h[kind] ?? 0) >= max) return false;
+    h[kind] = (h[kind] ?? 0) + 1;
+    const text = { rocks: 'Pointed stones float in the air', spikes: 'Spikes were scattered', toxic: 'Poison spikes were scattered', web: 'A sticky web spreads out' }[kind];
+    this.ui.log(`${text} around ${side === 'player' ? 'your' : "the foe's"} side!`, by?.side);
+    this.hud.showBanner(HAZARD_NAME[kind].toUpperCase(), { color: HAZARD_COLOR[kind], y: side === 'player' ? 470 : 250, life: 1, size: 12 });
+    return true;
+  }
+
+  clearHazards(side, by) {
+    if (!Object.values(this.hazards[side] ?? {}).some(Boolean)) return;
+    this.hazards[side] = {};
+    this.floatText(by, 'HAZARDS CLEARED!', '#bff3ff');
+    this.ui.log(`${by.species.name} blew away the hazards!`, by.side);
+  }
+
+  applyHazards(mon) {
+    const h = this.hazards?.[mon.side];
+    if (!h || itemOf(mon)?.hazardProof || mon.boss) return;
+    const ground = grounded(mon), say = (text, color) => {
+      this.spawn(new FloatText(mon.x, mon.y - mon.headZ - 26, text, color, 7, 1.2));
+      this.ui.log(`${text[0]}${text.slice(1).toLowerCase()} hit ${mon.species.name}!`, mon.side);
+    };
+    if (h.rocks) {
+      const eff = soften(typeMultiplier('rock', typesOf(mon)));
+      this.dotDamage(mon, 0.1 * eff, '#c8b080');
+      for (let i = 0; i < 5; i++) this.particles.spawn({ x: mon.x + rand(-14, 14), y: mon.y, z: mon.headZ + 20, vz: -160, life: 0.35, size: rand(3, 5), colors: ['#e8dcc0', '#a08a60'] });
+      say('STEALTH ROCK!', '#e8dcc0');
+    }
+    if (h.spikes && ground) {
+      this.dotDamage(mon, [0, 0.06, 0.09, 0.12][h.spikes], '#a08050');
+      say('SPIKES!', '#d8b878');
+    }
+    if (h.toxic && ground) {
+      // A grounded Poison type soaks the toxic spikes up.
+      if (typesOf(mon).includes('poison')) {
+        h.toxic = 0;
+        say('ABSORBED TOXIC SPIKES', '#e0a0f0');
+      } else if (this.applyStatus(mon, 'poison', { dur: h.toxic > 1 ? 9 : 6 })) say('TOXIC SPIKES!', '#e0a0f0');
+    }
+    if (h.web && ground && this.buff(mon, 'spd', 0.75, 6)) say('STICKY WEB!', '#ffffff');
+  }
+
+  // ── Arena events: every 22s (from 18s in) the arena itself strikes: an avalanche on Mt. Silver, falling
+  // trees in Viridian Forest, lava geysers on Cinnabar, a tidal surge at Seafoam, lightning in the stadium.
+  // Each is marked on the ground 1.4s ahead so it can be dodged, and hits both sides. Positions come from
+  // a seed both players share (eventSeed), so everyone sees the same event. ──
+  updateArenaEvents() {
+    const ev = ARENA_EVENTS[this.arena.theme.id];
+    if (!ev || this.raid || this.raidState || this.practice || this.state !== 'fighting' || this.cinematic) return;
+    const k = Math.floor((this.time - 18) / 22);
+    if (k < 0 || k <= this.eventN) return;
+    this.eventN = k;
+    let s = (this.eventSeed + k * 0x9e3779b9) >>> 0;
+    const rnd = () => ((s = (s + 0x6d2b79f5) >>> 0), (((s ^ (s >>> 15)) * (s | 1) ^ (s >>> 7)) >>> 0) / 4294967296);
+    const zones = Array.from({ length: ev.n }, () => ({ x: 50 + rnd() * 260, y: 140 + rnd() * 430 }));
+    this.hud.showBanner(ev.name, { color: ev.color, y: 300, life: 1.3, size: 16 });
+    this.ui.log(`${ev.name[0]}${ev.name.slice(1).toLowerCase()}`);
+    const marks = ev.lane
+      ? zones.map(z => this.spawn(new Telegraph(0, z.y, 0, WORLD_W, ev.r, ev.rgb)))
+      : zones.map(z => this.spawn(new Ring(z.x, z.y, { r0: ev.r, r1: ev.r, life: 1.4, color: ev.color, width: 2, hold: true })));
+    this.later(1.4, () => {
+      for (const m of marks) m.dead = true;
+      if (this.state !== 'fighting') return;
+      for (const z of zones) {
+        ev.fx(this, z);
+        for (const mon of [this.player, this.opponent]) {
+          if (!mon.alive || mon.hidden || mon.untouchable) continue;
+          const inside = ev.lane ? Math.abs(mon.y - z.y) <= ev.r : Math.hypot(mon.x - z.x, mon.y - z.y) <= ev.r + mon.radius * 0.5;
+          if (!inside) continue;
+          this.dotDamage(mon, 0.07, ev.color);
+          if (ev.status && Math.random() < 0.35) this.applyStatus(mon, ev.status, {});
+          this.floatText(mon, ev.hit, ev.color);
+        }
+      }
+      this.shake(6, 0.35);
+    });
+  }
+
+  // Hazards lie around the side's send-out point: floating stones, spikes, purple toxic spikes, a web.
+  drawHazards(ctx) {
+    const t = this.time;
+    for (const [side, h] of Object.entries(this.hazards ?? {})) {
+      const { x, y } = HOME[side];
+      if (h.web) {
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = '#f4f8ff';
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < 8; i++) {
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(i * Math.PI / 4) * 34, y + Math.sin(i * Math.PI / 4) * 16);
+          ctx.stroke();
+        }
+        for (const r of [10, 20, 30]) {
+          ctx.beginPath();
+          ctx.ellipse(x, y, r, r * 0.47, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      const ring = (n, r, draw) => { for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 + 0.4; draw(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.45, i); } };
+      if (h.spikes) ring(3 * h.spikes, 30, (px, py) => { ctx.fillStyle = '#5a4a3a'; ctx.beginPath(); ctx.moveTo(px, py - 5); ctx.lineTo(px + 3, py + 1); ctx.lineTo(px - 3, py + 1); ctx.fill(); });
+      if (h.toxic) ring(3 * h.toxic, 22, (px, py) => { ctx.fillStyle = '#a848a8'; ctx.beginPath(); ctx.moveTo(px, py - 4); ctx.lineTo(px + 2.5, py + 1); ctx.lineTo(px - 2.5, py + 1); ctx.fill(); });
+      if (h.rocks) ring(4, 40, (px, py, i) => {
+        const bob = Math.sin(t * 2 + i) * 2, z = 16 + bob;
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.ellipse(px, py, 4, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#b8a888'; ctx.strokeStyle = '#5a4a30'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(px, py - z - 6); ctx.lineTo(px + 4, py - z); ctx.lineTo(px, py - z + 4); ctx.lineTo(px - 4, py - z); ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+    }
   }
 
   updateWeather(dt) {
@@ -1665,6 +1817,7 @@ export class Game {
     this.arena.drawBackdrop(ctx);
     this.arena.drawGround(ctx);
     this.drawTerrain(ctx);
+    this.drawHazards(ctx);
     if (cam.dim > 0) {
       ctx.fillStyle = `rgba(14,10,30,${cam.dim})`;
       ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);

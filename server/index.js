@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { loadSpriteSets } from './sprites.js';
+import { seedOf } from '../src/arena.js';
 
 const { Game } = await import('../src/game.js');
 const { SPECIES, ROSTER } = await import('../src/data/species.js');
@@ -30,6 +31,7 @@ const { MOVES } = await import('../src/moves.js');
 const { ARENAS } = await import('../src/arena.js');
 const { LOOKS } = await import('../src/trainers.js');
 const { safeName } = await import('../src/names.js');
+const { OpponentAI } = await import('../src/ai.js');
 
 export const PROTOCOL = 2;
 const PORT = Number(process.env.PORT) || 8787;
@@ -63,7 +65,7 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 // ── Players and connections ──
 const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queued'|'match', entry, match, record }
-const queues = { 3: [], 6: [] }; // waiting entries per format, oldest first
+const queues = { 3: [], 6: [], tag: [] }; // waiting entries per format (tag: 2v2 Tag Battles), oldest first
 const matches = new Map();
 const MAX_MATCHES = Math.max(1, Math.min(32, Number(process.env.MAX_MATCHES) || 3));
 const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES, (team, kits) => validKits(team, kits));
@@ -192,6 +194,20 @@ const rankOf = pid => standings().findIndex(([p]) => p === pid) + 1 || null;
 const lobby = new Map(); // pid → { fmt: 3 | 6 | 'raid' | 'draft' | 'menu', at }
 const LOBBY_TTL = 12_000;
 function presence() {
+  const seen = whereAll();
+  const modes = { 3: { browsing: 0, searching: 0, battling: 0 }, 6: { browsing: 0, searching: 0, battling: 0 }, tag: { browsing: 0, searching: 0, battling: 0 } };
+  const raid = { browsing: 0, searching: 0, battling: 0, waiting: {} }, draft = { browsing: 0, searching: 0, drafting: 0, battling: 0, waiting: {} }, menu = { browsing: 0 };
+  for (const v of seen.values()) {
+    const box = v.mode === 'raid' ? raid : v.mode === 'draft' ? draft : v.mode === 'menu' ? menu : modes[v.mode];
+    if (!box) continue;
+    box[v.what]++;
+    if (v.key) box.waiting[v.key] = (box.waiting[v.key] ?? 0) + 1;
+  }
+  return { online: seen.size, modes, raids: raid, drafts: draft, menu: menu.browsing };
+}
+
+// Where every online player is (pid → { mode, what, key }), each counted once.
+function whereAll() {
   const now = Date.now(), seen = new Map();
   const put = (pid, where) => { if (pid && !seen.has(pid)) seen.set(pid, where); };
   for (const m of matches.values()) {
@@ -200,25 +216,18 @@ function presence() {
     if (!m.side) {
       for (const e of m.entries ?? []) if (e.player.ws) put(e.player.pid, { mode: 'raid', what: 'battling' });
     } else {
-      for (const s of ['A', 'B']) if (!m.side[s].player.bot) put(m.side[s].player.pid, { mode: m.draftMode ? 'draft' : m.format, what: 'battling' });
+      for (const s of ['A', 'B']) for (const p of [m.side[s].player, m.side[s].partner]) if (p && !p.bot) put(p.pid, { mode: m.tag ? 'tag' : m.draftMode ? 'draft' : m.format, what: 'battling' });
     }
   }
   for (const r of drafts.rooms.values()) for (const p of r.players) put(p.pid, { mode: 'draft', what: 'drafting' });
   for (const e of drafts.waiting) put(e.p.pid, { mode: 'draft', what: 'searching', key: `${e.mode}:${e.format}:${e.ranked ? 'ranked' : 'casual'}:${e.roster ?? 'regular'}` });
   for (const e of raids.waiting) put(e.player.pid, { mode: 'raid', what: 'searching', key: e.kind === 'public' ? `${e.boss}:${e.difficulty}:${e.format}` : null });
-  for (const f of [3, 6]) for (const e of queues[f]) put(e.player.pid, { mode: f, what: 'searching' });
+  for (const f of [3, 6, 'tag']) for (const e of queues[f]) put(e.player.pid, { mode: f, what: 'searching' });
   for (const [pid, l] of lobby) {
     if (now - l.at > LOBBY_TTL) lobby.delete(pid);
     else put(pid, { mode: l.fmt, what: 'browsing' });
   }
-  const modes = { 3: { browsing: 0, searching: 0, battling: 0 }, 6: { browsing: 0, searching: 0, battling: 0 } };
-  const raid = { browsing: 0, searching: 0, battling: 0, waiting: {} }, draft = { browsing: 0, searching: 0, drafting: 0, battling: 0, waiting: {} }, menu = { browsing: 0 };
-  for (const v of seen.values()) {
-    const box = v.mode === 'raid' ? raid : v.mode === 'draft' ? draft : v.mode === 'menu' ? menu : modes[v.mode];
-    box[v.what]++;
-    if (v.key) box.waiting[v.key] = (box.waiting[v.key] ?? 0) + 1;
-  }
-  return { online: seen.size, modes, raids: raid, drafts: draft, menu: menu.browsing };
+  return seen;
 }
 
 function send(ws, msg) {
@@ -233,7 +242,8 @@ const SHINY_SET = new Set(SHINY);
 
 // ── Validation: nothing from a client is trusted ──
 function validTeam(m) {
-  const format = m.format === 6 ? 6 : m.format === 3 ? 3 : 0;
+  // A Tag Battle player brings three Pokémon; their partner brings the other three.
+  const tag = m.format === 'tag', format = tag ? 3 : m.format === 6 ? 6 : m.format === 3 ? 3 : 0;
   const team = Array.isArray(m.team) ? m.team.map(String) : [];
   if (!format || team.length !== format || new Set(team).size !== format || !team.every(id => ROSTER_SET.has(id))) return null;
   const lead = Number.isInteger(m.lead) && m.lead >= 0 && m.lead < format ? m.lead : 0;
@@ -242,7 +252,7 @@ function validTeam(m) {
     const pick = m.mega?.[id];
     if (typeof pick === 'string' && SPECIES[id].mega?.includes(pick)) mega[id] = pick;
   }
-  return { format, team, lead, mega, kit: validKits(team, m.kit) };
+  return { format: tag ? 'tag' : format, team, lead, mega, kit: validKits(team, m.kit) };
 }
 
 // Held items and Tera types are checked against the game's lists; shiny is cosmetic and passed through.
@@ -259,7 +269,8 @@ function enqueue(player, spec, since = Date.now(), front = false) {
   if (front) q.unshift(entry);
   else q.push(entry);
   sendTo(player, { t: 'queued', format: spec.format, since });
-  pair(spec.format);
+  if (spec.format === 'tag') pairTag(Date.now());
+  else pair(spec.format);
 }
 
 function dequeue(player) {
@@ -312,6 +323,7 @@ class Match {
     this.megaQueuedB = 0;
     this.lastAct = { player: null, opponent: null };
     this.out = []; // events since the last message
+    this.spectators = new Set(); // players watching (they get side A's view, and send nothing)
     this.fightT = 0;
     this.clock = 0; // battle time in seconds, sent with every state update so screens can pace them evenly
     for (const s of ['A', 'B']) {
@@ -356,6 +368,7 @@ class Match {
     g.foeMegaPicks = { ...B.mega };
     g.kits = A.kit ?? {};
     g.foeKits = B.kit ?? {};
+    g.eventSeed = seedOf(this.id);
     g.arenaId = this.arena;
     g.red.name = A.player.name;
     g.gold.name = B.player.name;
@@ -385,10 +398,16 @@ class Match {
 
   broadcast(msg) {
     const data = JSON.stringify(msg);
-    for (const s of ['A', 'B']) {
-      const ws = this.side[s].player.ws;
+    for (const p of [this.side.A.player, this.side.B.player, ...this.spectators]) {
+      const ws = p.ws;
       if (ws?.readyState === 1) {if(ws.bufferedAmount>262144)ws.close(1013,'slow connection');else ws.send(data);}
     }
+  }
+
+  // What a spectator needs to set the battle up: both trainers and teams, from side A's point of view.
+  spectateInfo() {
+    const side = s => { const e = this.side[s]; return { name: e.player.name, look: e.player.look, team: e.team, lead: e.lead, mega: e.mega, kit: e.kit }; };
+    return { t: 'spectate', id: this.id, format: this.format, arena: this.arena, ranked: this.ranked, A: side('A'), B: side('B') };
   }
 
   step() {
@@ -431,7 +450,9 @@ class Match {
     // `q` tells each screen which of its direction updates this state includes and for how long, so it
     // can line our position up with its own (see matchmaking.js).
     const ack = s => this.ack[s] && [this.ack[s].q, Math.round((this.clock - this.ack[s].at) * 1000)];
-    if (live) msg.s = { A: snapshot(g.playerTeam, g.switchCD, ack('A')), B: snapshot(g.opponentTeam, g.foeSwitchCD, ack('B')) };
+    if (live) msg.s = { A: snapshot(g.playerTeam, g.switchCD, ack('A'), g), B: snapshot(g.opponentTeam, g.foeSwitchCD, ack('B'), g) };
+    // Tag Battles: whose Pokémon is out on each side (0 = the side's first player, 1 = their partner).
+    if (live && this.tag) for (const s of ['A', 'B']) msg.s[s].ow = this.side[s].owners[(s === 'A' ? g.playerTeam : g.opponentTeam).index];
     this.out = [];
     this.broadcast(msg);
   }
@@ -534,6 +555,11 @@ class Match {
       if(!wasLoading&&['ko','time'].includes(reason)&&this.game)economy.award(p,resultSummary(this.game,s==='A'?'player':'opponent',{id:this.id,result,reason,team:this.side[s].team}),Date.now(),{local:this.bot});
       sendTo(p, { t: 'end', id: this.id, ranked:this.ranked, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
+    for (const p of this.spectators) {
+      sendTo(p, { t: 'spectate-end', id: this.id, winner: winner ? this.side[winner].player.name : null, reason });
+      if (p.spectating === this) p.spectating = null;
+    }
+    this.spectators.clear();
     log(`match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
   }
 
@@ -562,7 +588,168 @@ class Match {
   }
 }
 
-function snapshot(team, switchCD, ack) {
+// ── 2v2 Tag Battles: two trainers a side, three Pokémon each, one Pokémon of each side out at a time. Whoever
+// owns the active Pokémon controls it; switching to the partner's Pokémon hands control over. A computer
+// trainer fills any empty seat, and takes over for anyone who leaves. Casual (unrated). ──
+class TagMatch extends Match {
+  constructor(a, b) {
+    super(a, b);
+    this.tag = true;
+    this.ranked = false;
+    this.loadedBy_ = new Set();
+    for (const s of ['A', 'B']) {
+      const p = this.side[s].partner;
+      Object.assign(p, { state: 'match', match: this, matchSide: s, tagLeft: false });
+      this.side[s].player.tagLeft = false;
+      this.loaded[s] = this.humans(s).length === 0;
+    }
+    this.aiA = new OpponentAI();
+  }
+
+  humans(s) { return [this.side[s].player, this.side[s].partner].filter(p => !p.bot); }
+  everyone() { return [...this.humans('A'), ...this.humans('B')]; }
+
+  // The player whose Pokémon is out on side s; a computer trainer drives it if they are a bot or left.
+  controller(s) {
+    const e = this.side[s], team = this.game && (s === 'A' ? this.game.playerTeam : this.game.opponentTeam);
+    return e.owners[team?.index ?? e.lead] ? e.partner : e.player;
+  }
+  botControls(s) { const p = this.controller(s); return !!(p.bot || p.tagLeft || !p.ws); }
+
+  intro() {
+    for (const s of ['A', 'B']) {
+      const e = this.side[s], f = this.side[this.other(s)];
+      for (const [k, p] of [[0, e.player], [1, e.partner]]) {
+        if (p.bot) continue;
+        sendTo(p, {
+          t: 'matched', ranked: false, id: this.id, you: s, format: 6, arena: this.arena,
+          tag: { me: k, owners: e.owners, partner: (k ? e.player : e.partner).name },
+          me: { team: e.team, lead: e.lead, mega: e.mega, kit: e.kit },
+          foe: { name: f.player.name, partner: f.partner.name, look: f.player.look, team: f.team, lead: f.lead, mega: f.mega, kit: f.kit },
+        });
+      }
+    }
+  }
+
+  loadedBy(s, p) {
+    if (this.phase !== 'loading' || !p) return;
+    this.loadedBy_.add(p);
+    for (const k of ['A', 'B']) this.loaded[k] = this.humans(k).every(h => this.loadedBy_.has(h));
+    if (this.loaded.A && this.loaded.B) this.begin();
+  }
+
+  begin() {
+    super.begin();
+    const g = this.game;
+    g.difficulty = 'medium';
+    g.foeCanMega = true;
+    g.online.beforePuppet = () => (this.botControls('B') ? null : this.driveB());
+  }
+
+  step() {
+    if (this.phase !== 'battle') return;
+    const g = this.game;
+    g.online.botFoe = this.botControls('B');
+    // A computer partner on side A plays with the opponent AI, seeing the field turned around.
+    if (g.state === 'fighting' && this.botControls('A')) {
+      this.aiA.update(STEP, new Proxy(g, { get: (t, k) => (k === 'opponent' ? t.player : k === 'player' ? t.opponent : typeof t[k] === 'function' ? t[k].bind(t) : t[k]) }));
+      this.vec.A = { x: g.player.input.x, y: g.player.input.y };
+    }
+    const now = Date.now();
+    for (const s of ['A', 'B']) if (this.botControls(s)) this.active[s] = now;
+    // Someone idle for too long: the computer takes over their Pokémon instead of ending the battle.
+    for (const s of ['A', 'B']) if (now - this.active[s] > AFK_MS) { this.controller(s).tagLeft = true; this.active[s] = now; }
+    super.step();
+  }
+
+  input(s, m, p) { if (p === this.controller(s) && !p.tagLeft) super.input(s, m); }
+  act(s, m, p) { if (p === this.controller(s) && !p.tagLeft) super.act(s, m); }
+
+  broadcast(msg) {
+    const data = JSON.stringify(msg);
+    for (const p of [...this.everyone(), ...this.spectators]) {
+      const ws = p.ws;
+      if (ws?.readyState === 1) { if (ws.bufferedAmount > 262144) ws.close(1013, 'slow connection'); else ws.send(data); }
+    }
+  }
+
+  leave(s, reason, p) {
+    if (!p || p.bot) return;
+    if (this.phase === 'loading') return this.abort('opponent-left');
+    if (this.phase !== 'battle') return;
+    p.tagLeft = true;
+    if (p.match === this) { p.match = null; p.state = 'idle'; }
+    this.vec[s] = { x: 0, y: 0 };
+    // A side whose players have both gone loses.
+    if (this.humans(s).every(h => h.tagLeft)) this.finish(this.other(s), reason);
+  }
+
+  abort(reason) {
+    if (this.phase !== 'loading') return;
+    this.phase = 'done';
+    matches.delete(this.id);
+    for (const p of this.everyone()) {
+      if (p.match !== this) continue;
+      p.match = null;
+      p.state = 'idle';
+      sendTo(p, { t: 'aborted', id: this.id, reason, requeued: false });
+    }
+    log(`tag match ${this.id} aborted (${reason})`);
+  }
+
+  finish(winner, reason) {
+    if (this.phase === 'done') return;
+    const wasLoading = this.phase === 'loading';
+    this.flush();
+    this.phase = 'done';
+    matches.delete(this.id);
+    for (const s of ['A', 'B']) for (const p of this.humans(s)) {
+      const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
+      if (p.match === this) { p.match = null; p.state = 'idle'; }
+      const summary = this.game ? resultSummary(this.game, s === 'A' ? 'player' : 'opponent', { id: this.id, result, reason, mode: 'tag', team: this.side[s].team }) : null;
+      if (!wasLoading && ['ko', 'time'].includes(reason) && summary) economy.award(p, summary, Date.now(), { local: true });
+      if (p.ws) sendTo(p, { t: 'end', id: this.id, ranked: false, result, reason, summary, record: p.record, delta: 0 });
+    }
+    for (const p of this.spectators) {
+      sendTo(p, { t: 'spectate-end', id: this.id, winner: winner ? `${this.side[winner].player.name} & ${this.side[winner].partner.name}` : null, reason });
+      if (p.spectating === this) p.spectating = null;
+    }
+    this.spectators.clear();
+    log(`tag match ${this.id} ended: ${winner ?? 'draw'} (${reason})`);
+  }
+}
+
+function createTagMatch(entries) {
+  const side = (x, y) => ({
+    player: x.player, partner: y.player, format: 6, team: [...x.team, ...y.team], lead: 0, owners: [0, 0, 0, 1, 1, 1],
+    mega: { ...y.mega, ...x.mega }, kit: { ...y.kit, ...x.kit },
+  });
+  const m = new TagMatch(side(entries[0], entries[1]), side(entries[2], entries[3]));
+  matches.set(m.id, m);
+  log(`tag match ${m.id}: ${entries.map(e => e.player.name).join(', ')}`);
+  m.intro();
+  if (m.loaded.A && m.loaded.B) m.begin();
+}
+
+// Four waiting Tag Battle players make a match; after a while, computer trainers fill the empty seats.
+function pairTag(t) {
+  const q = queues.tag;
+  while (q.length >= 4 && matches.size < MAX_MATCHES) {
+    const four = q.splice(0, 4);
+    for (const e of four) e.player.entry = null;
+    createTagMatch(four);
+  }
+  if (!q.length || BOT_AFTER_MS <= 0 || t - q[0].since < BOT_AFTER_MS || matches.size >= MAX_MATCHES) return;
+  const humans = q.splice(0, q.length).filter(e => e.player.ws?.readyState === 1);
+  for (const e of humans) e.player.entry = null;
+  if (!humans.length) return;
+  const seats = [...humans];
+  while (seats.length < 4) seats.push(botEntry({ ...humans[0], format: 3 }, { roster: ROSTER, species: SPECIES, looks: LOOKS }));
+  createTagMatch(seats);
+}
+
+// `g` adds the field: hazards on this side, a timed weather and the terrain.
+function snapshot(team, switchCD, ack, g = null) {
   const p = team.active, ab = {};
   for (const [k, v] of Object.entries(p.ab)) if (v == null || typeof v !== 'object') ab[k] = v;
   return {
@@ -572,7 +759,8 @@ function snapshot(team, switchCD, ack) {
     mv: p.moving ? 1 : 0, lx: r1(p.lastMove.x), ly: r1(p.lastMove.y), sg: p.stagger > 0 ? 1 : 0,
     ch: p.charging ? [p.charging.id, r1(p.charging.t)] : 0, iv: p.invuln ? 1 : 0, ph: p.phasing ? 1 : 0, hl: p.held ? 1 : 0, ab,
     mu: team.megaUsed ? 1 : 0, sw: r1(switchCD ?? 0), cd: Object.fromEntries(Object.entries(p.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => [k, r1(v)])),
-    q: ack || 0, ea: p.elementAura ?? null, te: p.tera ?? 0, it: p.item ?? 0,
+    q: ack || 0, ea: p.elementAura ?? null, te: p.tera ?? 0, it: p.item ?? 0, hz: g?.hazards?.[p.side] ?? 0,
+    wx: g?.timedWeather ? [g.timedWeather.w, r1(g.timedWeather.t)] : 0, tr: g?.terrain ? [g.terrain.kind, r1(g.terrain.t)] : 0,
   };
 }
 
@@ -606,6 +794,8 @@ function onMessage(conn, raw) {
   if (m.t === 'hello') return hello(conn, m);
   const p = conn.player;
   if (!p || p.ws !== conn.ws) return send(conn.ws, { t: 'error', code: 'no-hello', message: 'Say hello first.' });
+  // Joining anything else stops watching.
+  if (['queue', 'raid-queue', 'draft-queue'].includes(m.t)) unspectate(p);
   if (raids.handle(p,m)) return;
   if (drafts.handle(p, m)) return;
   switch (m.t) {
@@ -623,18 +813,77 @@ function onMessage(conn, raw) {
       }
       return;
     case 'loaded':
-      if (p.match?.id === m.id) p.match.loadedBy(p.matchSide);
+      if (p.match?.id === m.id) p.match.loadedBy(p.matchSide, p);
       return;
     case 'in':
-      if (p.match?.id === m.id) p.match.input(p.matchSide, m);
+      if (p.match?.id === m.id) p.match.input(p.matchSide, m, p);
       return;
     case 'act':
-      if (p.match?.id === m.id) p.match.act(p.matchSide, m);
+      if (p.match?.id === m.id) p.match.act(p.matchSide, m, p);
       return;
     case 'leave':
-      if (p.match?.id === m.id) p.match.leave(p.matchSide, 'forfeit');
+      if (p.match?.id === m.id) p.match.leave(p.matchSide, 'forfeit', p);
       return;
+    // Quick chat: one of a fixed list of lines (no free text), at most one every 1.5s.
+    case 'emote': {
+      const n = m.n, now = Date.now();
+      if (!p.match || p.match.raidSession || !Number.isInteger(n) || n < 0 || n >= EMOTE_COUNT || now - (p.emoteAt ?? 0) < 1500) return;
+      p.emoteAt = now;
+      return p.match.broadcast({ t: 'emote', side: p.matchSide, n });
+    }
+    // Live battles anyone can watch, and watching one.
+    case 'live':
+      return sendTo(p, { t: 'live', list: liveMatches() });
+    case 'spectate': {
+      const match = matches.get(m.id);
+      if (!match?.side || match.phase === 'done' || p.state !== 'idle') return sendTo(p, { t: 'spectate-end', id: m.id, gone: true });
+      unspectate(p);
+      if (match.spectators.size >= MAX_SPECTATORS) return sendTo(p, { t: 'error', message: 'That battle has too many spectators right now.' });
+      match.spectators.add(p);
+      p.spectating = match;
+      return sendTo(p, match.spectateInfo());
+    }
+    case 'unspectate':
+      return unspectate(p);
+    // Friends: who of these friend codes is online, where, and (if battling) which battle to watch.
+    case 'friends': {
+      const codes = Array.isArray(m.codes) ? m.codes.slice(0, 50).map(c => String(c).toUpperCase()) : [];
+      const where = whereAll(), list = [];
+      for (const q of players.values()) {
+        const code = codeOf(q.pid);
+        if (!codes.includes(code) || !q.ws) continue;
+        const w = where.get(q.pid);
+        list.push({ code, name: q.name, where: w ? `${w.what} · ${w.mode === 'raid' ? 'raid' : w.mode === 'draft' ? 'draft' : w.mode === 'menu' ? 'menu' : `${w.mode}v${w.mode}`}` : 'online', match: q.match?.side && !q.match.raidSession ? q.match.id : null });
+      }
+      return sendTo(p, { t: 'friends', list });
+    }
+    // A friend-room invitation passed on to an online friend.
+    case 'invite': {
+      const now = Date.now(), room = String(m.room ?? '').slice(0, 12);
+      if (now - (p.inviteAt ?? 0) < 3000 || !/^[A-Za-z0-9-]{3,12}$/.test(room)) return;
+      p.inviteAt = now;
+      const to = [...players.values()].find(q => q.ws && codeOf(q.pid) === String(m.code ?? '').toUpperCase());
+      if (to) sendTo(to, { t: 'invite', from: p.name, code: codeOf(p.pid), room });
+      return sendTo(p, { t: 'invited', ok: !!to });
+    }
   }
+}
+
+const EMOTE_COUNT = 8, MAX_SPECTATORS = 20;
+// A short public code for adding friends, derived from the private player id.
+const codeOf = pid => crypto.createHash('sha256').update(pid).digest('hex').slice(0, 6).toUpperCase();
+
+function unspectate(p) {
+  p.spectating?.spectators.delete(p);
+  p.spectating = null;
+}
+
+function liveMatches() {
+  return [...matches.values()].filter(m => m.side && m.phase === 'battle').slice(0, 30).map(m => ({
+    id: m.id, format: m.format, ranked: m.ranked, draft: !!m.draftMode, watching: m.spectators.size, time: Math.round(m.clock),
+    A: { name: m.side.A.player.name, lead: m.game?.playerTeam.active.baseSpecies.id ?? m.side.A.team[0] },
+    B: { name: m.side.B.player.name, lead: m.game?.opponentTeam.active.baseSpecies.id ?? m.side.B.team[0] },
+  }));
 }
 
 function hello(conn, m) {
@@ -662,7 +911,7 @@ function hello(conn, m) {
   if(/^[a-f0-9]{64}$/.test(m.economyToken??'')){try{economy.request(pid,m.economyToken,'view');}catch{ /* gameplay remains available if wallet recovery is needed */ }}
   p.economyAuthenticated=economy.authenticated(pid,m.economyToken);
   conn.player = p;
-  send(conn.ws, { t: 'welcome', v: PROTOCOL, features:['raids','drafts','ranked-drafts','readiness','economy'], record: p.record });
+  send(conn.ws, { t: 'welcome', v: PROTOCOL, features:['raids','drafts','ranked-drafts','readiness','economy','spectate','friends','emotes','kits'], record: p.record, code: codeOf(pid) });
   if(p.match?.raidSession) p.match.raidSession.intro(p);
 }
 
@@ -673,7 +922,8 @@ function onClose(conn) {
   raids.leaveWaiting(p);
   drafts.leave(p);
   if (p.state === 'queued') dequeue(p);
-  if (p.match) p.match.leave(p.matchSide, 'disconnect');
+  unspectate(p);
+  if (p.match) p.match.leave(p.matchSide, 'disconnect', p);
   if (p.state === 'idle') players.delete(p.pid);
 }
 
@@ -727,7 +977,7 @@ setInterval(() => {
         }
       }
     }
-    pair(3); pair(6);
+    pair(3); pair(6); pairTag(t);
     // Still nobody after a while: a computer trainer steps in (if the server has room for another match).
     if (BOT_AFTER_MS > 0) for (const f of [3, 6]) for (const e of [...queues[f]]) {
       if (t - e.since < BOT_AFTER_MS || e.player.ws?.readyState !== 1 || matches.size >= MAX_MATCHES) continue;
@@ -767,7 +1017,7 @@ setInterval(() => {
 // The game's Online Battles screen: who's online per format, the top 10, and the asking player's rank.
 // Players are identified by their anonymous id in the request body (never in the URL); ids are never sent out.
 function lobbyInfo(pid, fmt) {
-  if (pid && PID_RE.test(pid) && [3, 6, 'raid', 'draft', 'menu'].includes(fmt)) lobby.set(pid, { fmt, at: Date.now() });
+  if (pid && PID_RE.test(pid) && [3, 6, 'tag', 'raid', 'draft', 'menu'].includes(fmt)) lobby.set(pid, { fmt, at: Date.now() });
   const table = standings(), mine = pid ? table.findIndex(([p]) => p === pid) : -1;
   return {
     ...presence(),
@@ -809,7 +1059,7 @@ const server = http.createServer((req, res) => {
       let q = {};
       try { q = JSON.parse(body || '{}'); } catch { /* ignore */ }
       try {
-        const info = lobbyInfo(typeof q.pid === 'string' ? q.pid : null, [3, 6, 'raid', 'draft', 'menu'].includes(q.fmt) ? q.fmt : null);
+        const info = lobbyInfo(typeof q.pid === 'string' ? q.pid : null, [3, 6, 'tag', 'raid', 'draft', 'menu'].includes(q.fmt) ? q.fmt : null);
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify(info));
       } catch (err) {

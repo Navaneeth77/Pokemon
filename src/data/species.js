@@ -166,6 +166,26 @@ for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, cls, x]
     spa: r2(0.85 + sa / 400), spdef: r2(0.8 + sd / 400), sprite: x.sprite, ...(x.hover && hover(...x.hover)),
   }));
 }
+// Field moves (moves.js) for the Pokémon known for them: they replace the fourth move.
+const FIELD_MOVES = {
+  stealthRock: ['tyranitar', 'garchomp', 'skarmory', 'hippowdon', 'excadrill', 'heatran', 'rhyperior', 'golem', 'aerodactyl', 'landorus', 'tingLu', 'glimmora', 'probopass', 'gigalith', 'coalossal', 'stonjourner', 'garganacl', 'kleavor'],
+  spikes: ['forretress', 'ferrothorn', 'cloyster', 'delphox', 'omastar', 'roserade', 'smeargle', 'greninja', 'qwilfish'],
+  toxicSpikes: ['toxapex', 'nidoqueen', 'tentacruel', 'dragalge', 'drapion', 'garbodor', 'skuntank'],
+  stickyWeb: ['galvantula', 'ribombee', 'araquanid', 'vikavolt', 'masquerain', 'ariados', 'leavanny', 'spidops'],
+  rainDance: ['politoed', 'kingdra', 'ludicolo', 'pelipper', 'barraskewda', 'floatzel'],
+  sunnyDay: ['ninetales', 'torkoal', 'venusaur', 'sunflora', 'tropius', 'lilligant', 'leafeon'],
+  sandstorm: ['sandslash', 'flygon', 'cacturne', 'sandaconda', 'krookodile'],
+  snowscape: ['abomasnow', 'froslass', 'frosmoth', 'arctozolt', 'arctovish', 'beartic', 'cetitan'],
+  electricTerrain: ['pincurchin', 'raichu', 'electivire', 'bellibolt'],
+  grassyTerrain: ['rillaboom', 'whimsicott', 'meganium'],
+  psychicTerrain: ['indeedee', 'hatterene', 'alakazam'],
+  mistyTerrain: ['florges', 'sylveon', 'weezing', 'grimmsnarl'],
+};
+for (const [move, ids] of Object.entries(FIELD_MOVES)) for (const id of ids) {
+  const s = LIST.find(x => x.id === id);
+  if (s && !s.moves.includes(move)) s.moves = [...s.moves.slice(0, 3), move];
+}
+
 // Official abilities for every fully evolved Pokémon: its first one the game implements (see abilities.js).
 for (const s of LIST) {
   s.dex = DEX[s.id] ?? s.kanto;

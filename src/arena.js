@@ -4,6 +4,8 @@ export { RAID_ARENAS } from './raid-environments.js';
 
 export const WORLD_W = 360;
 export const WORLD_H = 640;
+// Shared arena-event seed (game.js) from a match id or room code, so both players see the same events.
+export const seedOf = id => [...String(id)].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7);
 export const BOUNDS = { minX: 22, maxX: 338, minY: 112, maxY: 588 };
 
 const LEDGE_Y = 603;

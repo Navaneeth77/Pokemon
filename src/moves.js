@@ -4,6 +4,7 @@ import { LegendaryBeam, AeroblastBeam } from './raid-art.js';
 import { skyLegend, CastEnergy, Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
 import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
 import { applyHit } from './combat.js';
+import { itemOf } from './data/items.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
 import {
@@ -668,6 +669,23 @@ const UTIL_FX = {
     g.spawn(new Ring(u.x, u.y, { r0: 8, r1: 30, life: 0.5, color: '#9fd8ff', width: 3 }));
     waterSplash(g, u.x, u.y);
   },
+  weather(a, g, u, c) {
+    g.setWeather(c.weather, c.dur);
+    fieldBurst(g, u, c.color);
+  },
+  terrain(a, g, u, c) {
+    g.setTerrain(c.terrain, itemOf(u)?.terrainTime ?? 20);
+    fieldBurst(g, u, c.color);
+  },
+  hazard(a, g, u, c) {
+    const side = u.side === 'player' ? 'opponent' : 'player';
+    if (!g.setHazard(side, c.hazard, u)) return g.floatText(u, 'IT FAILED!', '#c9d2de');
+    // The hazard is flung toward the foe's side of the arena.
+    const home = HOME_OF[side];
+    g.spawn(new Ring(home.x, home.y, { r0: 6, r1: 46, life: 0.5, color: c.color, width: 3 }));
+    for (let i = 0; i < 8; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: (home.x - u.x) * rand(0.9, 1.3), vy: (home.y - u.y) * rand(0.9, 1.3), vz: 140, g: 300, life: 1, size: rand(2, 4), colors: ['#ffffff', c.color] });
+    sfx.shard();
+  },
   guard(a, g, u, c) {
     if (c.shieldForm && u.ab.blade) g.toggleForm(u, false);
     u.guard = { t: c.dur, mult: c.mult, punish: !!c.punish, color: c.color, label: c.label };
@@ -676,10 +694,20 @@ const UTIL_FX = {
   },
 };
 
+// A weather or terrain move: rings of its colour burst out from the user.
+function fieldBurst(g, u, color) {
+  for (let i = 0; i < 3; i++) g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 60 + i * 30, life: 0.5 + i * 0.12, color, width: 4 - i }));
+  g.spawn(new Glow(u.x, u.y, u.bodyZ, 50, [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16)), 0.5));
+  sfx.pulse();
+}
+const HOME_OF = { player: { x: 180, y: 500 }, opponent: { x: 180, y: 215 } };
+
 // Rapid Spin: spins in place while drifting forward, spraying water all around; hits anything close.
+// It also blows away any entry hazards on its own side.
 class Spin extends MoveAction {
   start() {
     const c = this.move.spin;
+    this.game.clearHazards?.(this.user.side, this.user);
     this.allowMove = true;
     this.hits = 0;
     this.tickT = 0.05;
@@ -2447,6 +2475,20 @@ Object.assign(NEW_MOVES, {
   swordsDance: util('Swords Dance', 'normal', 7, 'Attack +40% for 6s', { kind: 'buff', stat: 'atk', mult: 1.4, dur: 6, anim: 'Pose' }),
   roost: util('Roost', 'flying', 9, 'Lands to heal 25% HP', { kind: 'heal', pct: 0.25, land: true }),
   recover: util('Recover', 'normal', 10, 'Heals 30% HP', { kind: 'heal', pct: 0.3 }),
+
+  // Field moves: weather and terrain for 20s, and entry hazards on the foe's side (cleared by Rapid Spin).
+  rainDance: util('Rain Dance', 'water', 14, 'Rain for 20s · Water +30%, Fire −30%', { kind: 'weather', weather: 'rain', dur: 20, anim: 'Pose', color: '#5a8ef0' }),
+  sunnyDay: util('Sunny Day', 'fire', 14, 'Harsh sun for 20s · Fire +30%, Water −30%', { kind: 'weather', weather: 'sun', dur: 20, anim: 'Pose', color: '#ff9a3a' }),
+  sandstorm: util('Sandstorm', 'rock', 14, 'Sandstorm for 20s · chips non-Rock/Ground/Steel', { kind: 'weather', weather: 'sand', dur: 20, anim: 'Pose', color: '#c8a060' }),
+  snowscape: util('Snowscape', 'ice', 14, 'Snow for 20s · Ice types toughen', { kind: 'weather', weather: 'snow', dur: 20, anim: 'Pose', color: '#9fd8ff' }),
+  electricTerrain: util('Electric Terrain', 'electric', 16, 'Electric Terrain for 20s', { kind: 'terrain', terrain: 'electric', color: '#ffd84a' }),
+  grassyTerrain: util('Grassy Terrain', 'grass', 16, 'Grassy Terrain for 20s · heals grounded Pokémon', { kind: 'terrain', terrain: 'grassy', color: '#5fd04a' }),
+  psychicTerrain: util('Psychic Terrain', 'psychic', 16, 'Psychic Terrain for 20s', { kind: 'terrain', terrain: 'psychic', color: '#ff6ad0' }),
+  mistyTerrain: util('Misty Terrain', 'fairy', 16, 'Misty Terrain for 20s · blocks status on the ground', { kind: 'terrain', terrain: 'misty', color: '#ffb0e0' }),
+  stealthRock: util('Stealth Rock', 'rock', 16, 'Hazard · pointed stones hit foes switching in', { kind: 'hazard', hazard: 'rocks', color: '#c8b080' }),
+  spikes: util('Spikes', 'ground', 12, 'Hazard · up to 3 layers hurt grounded foes switching in', { kind: 'hazard', hazard: 'spikes', color: '#a08050' }),
+  toxicSpikes: util('Toxic Spikes', 'poison', 12, 'Hazard · poisons grounded foes switching in', { kind: 'hazard', hazard: 'toxic', color: '#a848a8' }),
+  stickyWeb: util('Sticky Web', 'bug', 14, 'Hazard · slows foes switching in', { kind: 'hazard', hazard: 'web', color: '#e8f0f0' }),
   aquaRing: util('Aqua Ring', 'water', 12, 'Regenerates 1.5% HP/s for 8s', { kind: 'regen', dur: 8, rate: 0.015 }),
   quickGuard: util('Quick Guard', 'fighting', 7, 'Blocks every hit for 0.6s', { kind: 'guard', dur: 0.6, mult: 0, color: '#ffd8a0', label: 'GUARD', at: 0.02, end: 0.25 }),
   kingsShield: util("King's Shield", 'steel', 7, 'Shield Forme · blocks 80% for 1.2s · contact lowers foe attack', {

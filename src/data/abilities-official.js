@@ -123,7 +123,7 @@ function onKO(stat, mult, text) {
 
 // Weather and terrain setters.
 const surge = (kind, text) => ({ onEnter(g, me) {
-  g.setTerrain(kind, 20);
+  g.setTerrain(kind, ITEMS[me.item]?.terrainTime ?? 20);
   g.abilityPop(me, text);
 } });
 

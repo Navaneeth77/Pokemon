@@ -1419,3 +1419,34 @@ export class TeraBurst extends Effect {
     ctx.restore();
   }
 }
+
+// Quick chat: a pixel speech bubble over a trainer.
+export class SpeechBubble extends Effect {
+  constructor(trainer, text) {
+    super('top', 2.6);
+    Object.assign(this, { trainer, text });
+  }
+
+  draw(ctx) {
+    const t = this.age / this.life, tr = this.trainer, pop = Math.min(1, this.age / 0.12);
+    ctx.save();
+    ctx.globalAlpha = t > 0.85 ? (1 - t) / 0.15 : 1;
+    ctx.font = '700 8px "Pixelify Sans"';
+    const w = Math.ceil(ctx.measureText(this.text).width) + 12, h = 14;
+    const x = Math.max(4, Math.min(356 - w, tr.x - w / 2)), y = tr.y - 46 - 6 * (1 - pop);
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#1a1a2a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect?.(x, y, w, h, 4) ?? ctx.rect(x, y, w, h);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tr.x - 3, y + h);
+    ctx.lineTo(tr.x, y + h + 5);
+    ctx.lineTo(tr.x + 3, y + h);
+    ctx.fill();
+    outlinedText(ctx, this.text, x + w / 2, y + 10, { size: 8, color: '#1a1a2a', align: 'center', lw: 0 });
+    ctx.restore();
+  }
+}

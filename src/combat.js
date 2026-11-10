@@ -138,6 +138,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
 
   let dmg = power * stats * eff * stab * convertMult * auraMult * weatherMult(game, type) * terrainMult(game, type, attacker, target, move) * comboMult
     * (crit ? A.critDmg ?? 1.5 : 1) * (sheer ? 1.3 : 1) * rand(0.92, 1.04);
+  // Survival (survival.js): foes grow stronger each wave; your upgrades count on top.
+  const sv = game.survival;
+  if (sv) dmg *= attacker.side === 'opponent' ? sv.foePower * (sv.def ?? 1) : (sv.atk ?? 1) * sv.foeGuard;
   // Snow toughens Ice types against physical hits; a sandstorm toughens Rock types against special ones.
   if (game.weather === 'snow' && defTypes.includes('ice') && move.cat === 'physical') dmg *= 0.7;
   if (game.weather === 'sand' && defTypes.includes('rock') && move.cat === 'special') dmg *= 0.7;

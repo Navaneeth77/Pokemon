@@ -152,6 +152,10 @@ export class OpponentAI {
     if (u.kind === 'regen') return !me.regen && me.hp < me.maxHp * 0.8 ? 1.2 : 0;
     if (u.kind === 'buff') return !(me.buffs[u.stat]?.t > 0) && dist > 110 ? 1.2 : 0;
     if (u.kind === 'guard') return foe.action && dist < 160 && Math.random() < (this.cfg?.guard ?? 0.6) ? 4 : 0;
+    // Field moves: set weather or terrain when it isn't already up; lay hazards while the foe has others to send in.
+    if (u.kind === 'weather') return game.weather !== u.weather && dist > 90 ? 1.4 : 0;
+    if (u.kind === 'terrain') return game.terrain?.kind !== u.terrain && dist > 90 ? 1.4 : 0;
+    if (u.kind === 'hazard') return !(game.hazards?.[foe.side]?.[u.hazard] >= 1) && game.teamOf(foe).members.filter(m => m.alive).length > 1 && dist > 90 ? 1.5 : 0;
     return 0;
   }
 

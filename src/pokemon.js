@@ -258,7 +258,7 @@ export class Pokemon {
     this.abilityOff = Math.max(0, this.abilityOff - dt);
     const ab = abilityOf(this);
     const held = itemOf(this);
-    const cdRate = (ab.cdRate ?? 1) * (held?.cdRate ?? 1) * (this.foe && !this.foe.hidden && this.foe.alive ? abilityOf(this.foe).foeCdRate ?? 1 : 1);
+    const cdRate = (ab.cdRate ?? 1) * (held?.cdRate ?? 1) * (this.side === 'player' ? game.survival?.cd ?? 1 : 1) * (this.foe && !this.foe.hidden && this.foe.alive ? abilityOf(this.foe).foeCdRate ?? 1 : 1);
     for (const id in this.cooldowns) this.cooldowns[id] = Math.max(0, this.cooldowns[id] - dt * cdRate);
 
     this.x += this.vx * dt;

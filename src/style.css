@@ -1615,3 +1615,52 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
   background: linear-gradient(#10243a, #10243a) padding-box, linear-gradient(90deg, #2a6aa8, #7ad8ff, #e8fbff, #7ad8ff, #2a6aa8) border-box;
   background-size: 100% 100%, 200% 100%;
 }
+/* Survival: upgrade picker and game over */
+.sv-overlay{position:fixed;inset:0;z-index:185;display:flex;align-items:center;justify-content:center;padding:16px;background:#050916d8;}
+.sv-overlay>section{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:22px;color:#eef0fa;background:#182037;border:2px solid #a79a77;box-shadow:0 0 0 4px #080d19;font-family:'Pixelify Sans',monospace;text-align:center;}
+.sv-overlay small{letter-spacing:2px;color:#ffd84a;}
+.sv-overlay h2{margin:6px 0 14px;font-size:28px;}
+.sv-team{display:flex;justify-content:center;gap:10px;margin-bottom:16px;}
+.sv-team>div{flex:1;max-width:160px;padding:8px;background:#10182a;border:1px solid #3a4560;}
+.sv-team>div.down{opacity:.5;}
+.sv-team img{width:44px;height:44px;image-rendering:pixelated;}
+.sv-team b{display:block;font-size:13px;}
+.sv-team i{display:block;height:5px;margin:5px 0;background:linear-gradient(90deg,#46d36b var(--hp),#2a3350 var(--hp));}
+.sv-team small{font-size:10px;letter-spacing:0;color:#b8c0d8;}
+.sv-ups{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
+.sv-ups button{display:flex;flex-direction:column;gap:6px;min-height:96px;padding:12px;text-align:left;color:#eef0fa;background:#22293a;border:2px solid #3a4560;cursor:pointer;font-family:inherit;}
+.sv-ups button:hover,.sv-ups button:focus-visible{border-color:#ffd84a;outline:none;}
+.sv-ups b{font-size:16px;color:#ffe9a8;}
+.sv-ups span{font-size:12px;color:#c9d0e4;}
+/* Survival picks its own foes, difficulty and format (3v3) */
+body.survival #difficulty, body.survival .foe, body.survival .fmt-switch { display: none; }
+/* Social: watch live, friends, invites, quick chat */
+.social-overlay{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;padding:16px;background:#050916d8;}
+.social-overlay>section{width:min(560px,100%);max-height:90dvh;overflow:auto;padding:18px;color:#eef0fa;background:#182037;border:2px solid #a79a77;box-shadow:0 0 0 4px #080d19;font-family:'Pixelify Sans',monospace;}
+.social-overlay header{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.social-overlay h2{margin:0;font-size:22px;}
+.social-note{color:#b8c0d8;font-size:13px;}
+.social-code{font-size:14px;}
+.social-code b{padding:2px 8px;letter-spacing:2px;color:#1a1205;background:#ffd84a;}
+.social-add{display:flex;gap:8px;margin:10px 0 14px;}
+.social-add input{flex:1;min-height:36px;padding:6px 10px;font:600 15px 'Pixelify Sans',monospace;text-transform:uppercase;letter-spacing:2px;color:#eef0fa;background:#10182a;border:1px solid #4b5671;}
+.social-list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;}
+.social-list li{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#10182a;border:1px solid #3a4560;}
+.social-list .lv-who{flex:1;min-width:0;}
+.social-list .lv-who b{display:block;font-size:14px;}
+.social-list .lv-who code{font-size:11px;color:#a6aec3;}
+.social-list small{font-size:11px;color:#8a92a8;}
+.social-list small.on{color:#7ee08a;}
+.lv-mons{display:flex;align-items:center;gap:4px;}
+.lv-mons img{width:32px;height:32px;image-rendering:pixelated;}
+.lv-mons i{font-style:normal;font-size:10px;color:#ffd84a;}
+.social-toast{position:fixed;z-index:210;left:50%;top:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:92vw;padding:10px 14px;color:#ffe6a4;background:#20253b;border:2px solid #b29a62;box-shadow:3px 3px #050812;font:700 14px 'Pixelify Sans',monospace;}
+.social-toast button{min-height:32px;padding:4px 10px;font:700 12px 'Pixelify Sans',monospace;color:#1a1205;background:#ffd84a;border:0;cursor:pointer;}
+#chat-btn{position:relative;margin:6px 0;}
+#chat-btn.hidden{display:none;}
+#chat-btn .chat-list{position:absolute;bottom:100%;left:0;z-index:20;display:grid;grid-template-columns:1fr 1fr;gap:4px;width:240px;padding:6px;background:#141a28;border:1px solid #3a4560;}
+#chat-btn .chat-list.hidden{display:none;}
+#chat-btn .chat-list button{min-height:30px;padding:4px 6px;font:600 11px 'Pixelify Sans',monospace;color:#eef0fa;background:#22293a;border:1px solid #3a4560;cursor:pointer;}
+/* The 2v2 TAG choice only appears when queueing for Online Battles */
+.fmt-switch .tag-fmt { display: none; }
+body.mm .fmt-switch .tag-fmt { display: inline-block; }

@@ -36,6 +36,12 @@ export function applyStatus(game, mon, name, { dur, source } = {}) {
     else text(game, mon, 'IMMUNE', '#c9d2de', 6);
     return false;
   }
+  // Misty Terrain keeps every status off grounded Pokémon; Electric Terrain keeps them awake.
+  const onGround = !mon.species.fly && !mon.airborne && !ab.levitating && !itemOf(mon)?.levitating;
+  if (onGround && (game.terrain?.kind === 'misty' || (game.terrain?.kind === 'electric' && name === 'sleep'))) {
+    text(game, mon, 'TERRAIN PROTECTED IT', '#ffb0e0', 6);
+    return false;
+  }
   if (mon.sGuard[name] > 0 || (name === 'freeze' && mon.frozen > 0)) {
     text(game, mon, 'RESISTED', '#c9d2de', 6);
     return false;

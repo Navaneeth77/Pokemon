@@ -7,6 +7,7 @@ import { SHINY } from './data/national-dims.js';
 import { TYPE_COLORS } from './data/types.js';
 import { lookById, frontPalette } from './trainers.js';
 import { nameAllowed, safeName } from './names.js';
+import { seedOf } from './arena.js';
 
 // Online custom rooms: one player creates a room and shares its code, the other joins with it.
 // Peer-to-peer over WebRTC; the free PeerJS cloud service only introduces the two browsers.
@@ -251,6 +252,7 @@ export class Online {
       case 'pong': this.ping = Math.round(performance.now() - m.ts); this.flow.onlineUpdate(); return;
       case 'full': this.close(); this.flow.onlineError('That room already has two players.'); return;
       case 'bye': this.lost('left the room'); return;
+      case 'emote': if (this.inBattle && Number.isInteger(m.n)) this.game.showEmote('opponent', m.n); return;
       case 'hello':
         if (m.v !== PROTOCOL) {
           this.close();
@@ -333,7 +335,8 @@ export class Online {
     g.opponentSelection = them.team.filter(id => SPECIES[id]);
     g.foeLead = Math.min(Math.max(0, them.lead | 0), g.opponentSelection.length - 1);
     g.foeMegaPicks = { ...them.mega };
-    Object.assign(g, { kits: me.kit, foeKits: them.kit });
+    Object.assign(g, { kits: me.kit, foeKits: them.kit, eventSeed: seedOf(this.code) });
+    this.flow.social?.showChat(true);
     g.arenaId = this.room.arena;
     g.gold.name = this.friend.name;
     g.gold.setPalette(frontPalette(lookById(this.friend.look)));

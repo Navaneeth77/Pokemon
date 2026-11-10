@@ -171,3 +171,13 @@ saved in their record): mostly Easy or Medium at 0, mostly Hard from 5. Nothing 
 bot (owner's choice). The bot's rating sits within ±60 of the player's, so the rating change looks
 normal; its record is never saved. Bots aren't counted in the online numbers, and coins from these
 wins fall under the Bot Battles daily cap. Tests: `tests/bots.test.js`.
+
+## National Dex update (10 Nov 2026)
+
+- Roster: 527 fully evolved Pokémon (`scripts/build-national.py` → `src/data/national.js`, `national-dims.js`, sprites, shiny palettes).
+- Official abilities: `src/data/abilities-official.js` (plus loosely adapted ones in `abilities.js` brought closer to the games).
+- Held items, Tera and kits: `src/data/items.js`; Terastallize shares the M key and the once-per-battle rule with Mega Evolution.
+- Field: weather/terrain/hazard moves (`moves.js`), hazards and arena events (`game.js`).
+- Survival: `src/survival.js`. Social (watch live, friends, quick chat): `src/social.js` and the server's `live`/`spectate`/`friends`/`invite`/`emote` messages.
+- 2v2 Tag Battles: `TagMatch` in `server/index.js`; tests in `tests/tag.test.js`, `tests/social.test.js`.
+- Cries: `public/cries/<dex>.mp3` (`scripts/fetch-cries.py`).

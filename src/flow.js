@@ -18,6 +18,8 @@ import { Online, cleanCode, CODE_LEN } from './online.js';
 import { nameAllowed } from './names.js';
 import { Matchmaker } from './matchmaking.js';
 import { LEADERS, leaderById, leaderBust } from './leaders.js';
+import { Survival } from './survival.js';
+import { Social } from './social.js';
 
 // Screen flow before (and around) the battle:
 // opening → PRESS START → [title menu for returning players] → trainer setup → tutorial → format → team select → battle.
@@ -44,6 +46,8 @@ export class Flow {
     this.expansion = new ExpansionUI(this);
     this.economy=new EconomyClient(this);
     this.economyUI=new EconomyUI(this);
+    this.survival = new Survival(this);
+    this.social = this.friends = new Social(this);
     if(this.economy.scope==='server')this.economy.sync();
     // Invite links (?room=CODE) jump straight into that room after the title screen.
     this.pendingRoom = cleanCode(new URLSearchParams(location.search).get('room')) || null;
@@ -125,6 +129,9 @@ export class Flow {
   // ── Title menu (returning players) ──
   showTitleMenu() {
     this.ui.raidSetup = null; document.body.classList.remove('raid-setup');
+    this.ui.survival = null;
+    document.body.classList.remove('survival');
+    this.social.showChat(false);
     $('#intro').classList.remove('hidden');
     if (!this.opening.running) {
       this.opening.start();
@@ -145,6 +152,9 @@ export class Flow {
       ['MY TEAMS', () => this.showTeams(), 'Build & save your teams'],
       ['SETTINGS', () => this.expansion.settings(), 'Trainer · Effects · Audio · Display'],
       ['TUTORIAL', () => this.startTutorial()],
+      ['SURVIVAL', () => this.survival.enter(), this.survival.best ? `Endless waves · best: wave ${this.survival.best}` : 'Endless waves · upgrades'],
+      ['WATCH LIVE', () => this.social.openLive(), 'Spectate battles happening now'],
+      ['FRIENDS', () => this.social.openFriends(), 'Friend codes · invites'],
     ];
     const menu = $('#title-menu');
     const title = this.economy?.loadout().title?.name??currentTitle();
@@ -152,7 +162,7 @@ export class Flow {
       const [label, , sub] = items[i];
       return `<button class="tm-item${sub ? ' tm-main' : ''}" data-i="${i}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
     };
-    const groups = [['BATTLE', [0, 1, 2]], ['EXPANSION', [3, 4]], ['TRAINER GUILD', [5, 6, 7]], ['TRAINER & TOOLS', [8, 9, 10, 11, 12]]];
+    const groups = [['BATTLE', [0, 13, 1, 2, 14, 15]], ['EXPANSION', [3, 4]], ['TRAINER GUILD', [5, 6, 7]], ['TRAINER & TOOLS', [8, 9, 10, 11, 12]]];
     menu.innerHTML = `<header class="tm-logo" aria-label="${GAME_TITLE.full}"></header>`
       + `<div class="px-window tm-bar"><div class="tm-who"><canvas width="24" height="24"></canvas><span>${escapeHtml(this.save.name)}${title ? `<small class="tm-title">${escapeHtml(title)}</small>` : ''}<small class="tm-online">${this.onlineTotal()}</small></span></div></div>`
       + `<div class="tm-grid">${groups.map(([name, ids]) => `<section class="px-window tm-sec"><h3 class="tm-group">${name}</h3>${ids.map(row).join('')}</section>`).join('')}</div>`;

@@ -97,6 +97,7 @@ export class UI {
     if (this.selection.length !== this.format || this.loading) return;
     if (this.builder) return this.saveBuilder();
     if (this.raidSetup) return this.game.flow.expansion.startRaidTeam(this);
+    if (this.survival) return this.survival.begin(this);
     const btn = $('#start-btn');
     this.game.flow?.enterFullscreen();
     if (this.online) {
@@ -108,7 +109,7 @@ export class UI {
       // Matchmaking: queue with this team; the match server finds the opponent.
       const mega = {};
       for (const id of this.selection) if (SPECIES[id].mega?.length) mega[id] = this.megaPick[id] ?? SPECIES[id].mega[0];
-      this.game.flow.mm.find({ format: this.format, team: [...this.selection], lead: this.lead, mega, kit: this.teamKits() });
+      this.game.flow.mm.find({ format: this.tagQueue ? 'tag' : this.format, team: [...this.selection], lead: this.lead, mega, kit: this.teamKits() });
       return;
     }
     this.loading = true;
@@ -201,9 +202,11 @@ export class UI {
     // Switch between 3v3 and 6v6 right here as well.
     const fmtSwitch = document.createElement('div');
     fmtSwitch.className = 'fmt-switch';
-    fmtSwitch.innerHTML = '<button data-n="3" title="3 VS 3">3v3</button><button data-n="6" title="6 VS 6">6v6</button>';
+    fmtSwitch.innerHTML = '<button data-n="3" title="3 VS 3">3v3</button><button data-n="6" title="6 VS 6">6v6</button>'
+      + '<button data-n="3" data-tag title="2v2 Tag Battle: you and a partner bring three Pokémon each" class="tag-fmt">2v2 TAG</button>';
     fmtSwitch.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       const n = +b.dataset.n, flow = this.game.flow;
+      this.tagQueue = 'tag' in b.dataset;
       if (flow) {
         flow.format = n;
         flow.save.format = n;
@@ -657,11 +660,13 @@ export class UI {
       bar.innerHTML = (d ? `<span class="ob-live" title="${d.modes[3].searching + d.modes[6].searching} searching · ${d.modes[3].battling + d.modes[6].battling} battling">● ${d.online} online</span>`
         + `<span class="ob-mode${this.format === 3 ? ' on' : ''}">3v3 · ${count(3)}</span><span class="ob-mode${this.format === 6 ? ' on' : ''}">6v6 · ${count(6)}</span>` : '<span class="ob-ping">Checking who\'s online…</span>')
         + (me ? `<span class="ob-ping">#${me.rank} · ${me.rating}</span>` : '')
-        + '<button class="mini-btn" data-a="lb">🏆 Leaderboard</button>';
+        + '<button class="mini-btn" data-a="lb">🏆 Leaderboard</button><button class="mini-btn" data-a="live">👁 Watch live</button><button class="mini-btn" data-a="friends">👥 Friends</button>';
       bar.querySelector('[data-a="lb"]').addEventListener('click', e => {
         e.currentTarget.blur();
         mm?.showLeaderboard();
       });
+      bar.querySelector('[data-a="live"]').addEventListener('click', () => this.game.flow?.social.openLive());
+      bar.querySelector('[data-a="friends"]').addEventListener('click', () => this.game.flow?.social.openFriends());
       return;
     }
     if (!o) {
@@ -727,17 +732,18 @@ export class UI {
       this.megaPick[e.dataset.id] = e.dataset.m;
       this.renderSelection();
     }));
-    document.querySelectorAll('.fmt-switch button').forEach(b => b.classList.toggle('on', +b.dataset.n === this.format));
+    document.querySelectorAll('.fmt-switch button').forEach(b => b.classList.toggle('on', +b.dataset.n === this.format && ('tag' in b.dataset) === !!(this.tagQueue && this.queue)));
     const start = $('#start-btn');
     start.disabled = !full;
     start.textContent = full ? `Start ${this.format}v${this.format} battle ▶` : `Pick ${this.format - this.selection.length} more`;
     if (this.raidSetup && full) start.textContent = 'ENTER LEGENDARY RAID ▶';
+    if (this.survival && full) start.textContent = 'START SURVIVAL ▶';
     if (this.story && full) start.textContent = `Battle ${this.story.stage.name} ▶`;
     if (this.builder) start.textContent = full ? '✓ Save team' : `Pick ${this.format - this.selection.length} more`;
     if (this.queue) {
       const busy = !!this.game.flow?.mm.busy;
       start.disabled = !full || busy;
-      if (full) start.textContent = busy ? 'Searching…' : `Find ${this.format}v${this.format} match ▶`;
+      if (full) start.textContent = busy ? 'Searching…' : this.tagQueue ? 'Find 2v2 Tag Battle ▶' : `Find ${this.format}v${this.format} match ▶`;
     }
     if (this.online && full) {
       start.disabled = !!this.online.locked;
@@ -838,6 +844,7 @@ export class UI {
       return;
     }
     $('#leave-btn').textContent = this.online ? 'Leave room' : 'Main Menu';
+    if (this.game.survival) return this.game.flow.survival.onResult(win);
     if (this.game.story) {
       if (this.game.story.onResult) this.game.story.onResult(win, winner);
       else this.game.flow.story.onResult(win, winner);

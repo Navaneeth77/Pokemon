@@ -14,6 +14,14 @@ Open http://localhost:5173. For two local players use separate browsers, or two 
 
 ## Modes and expansion
 
+- **Roster:** all 527 fully evolved Pokémon with complete PMD SpriteCollab sheets (no middle stages), with real base stats and their official abilities. `scripts/build-national.py` regenerates `src/data/national.js` and the sprites; `scripts/fetch-cries.py` fetches the cries.
+- **Abilities:** official abilities adapted to real time. Every activation shows the games' ability banner, a flare and its effect (stat arrows, ripples, Intimidate's glare…).
+- **Kits:** each Pokémon's held item (about 50), Tera type and shiny switch, set in the team builder and used in every mode. Press **M** to Mega Evolve or, for Pokémon without a Mega form, Terastallize (one per team per battle).
+- **Field:** weather (rain, sun, sandstorm, snow) and terrains from abilities and moves; entry hazards (Stealth Rock, Spikes, Toxic Spikes, Sticky Web; Rapid Spin clears them); a telegraphed arena event every 22s (avalanche, falling trees, eruption, tidal surge, lightning).
+- **Shiny Pokémon** are bought in the Trainer Guild shop (cosmetic; recoloured in the browser from each species' shiny palette).
+- **Survival:** endless waves with one team; HP carries over and you pick an upgrade between waves.
+- **Social:** watch live battles, friends by friend code with room invites, and fixed quick-chat lines in online battles.
+- **2v2 Tag Battles:** two players a side with three Pokémon each; whoever owns the active Pokémon controls it, and switching hands over. Computer trainers fill empty seats. Unrated.
 - **Bot Battles:** 3v3 or 6v6, three difficulties, random or themed opponents, five arenas.
 - **Online Battles:** server-authoritative battles, ratings and leaderboard.
 - **Friend Room:** peer-to-peer battles using a room code.

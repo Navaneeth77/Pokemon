@@ -14,6 +14,7 @@ import { safeName } from './names.js';
 import { sfx } from './audio.js';
 import { preloadRaidArt } from './raid-art.js';
 import { matchServerUrl, warmServer, serverIsWarm, rememberReady } from './server-connection.js';
+import { seedOf } from './arena.js';
 export { matchServerUrl } from './server-connection.js';
 
 // Online matchmaking against random players, through the match server (server/index.js).
@@ -191,6 +192,7 @@ export class Matchmaker {
             clearTimeout(timer);
             this.welcomed = true;
             this.record = m.record;
+            this.friendCode = typeof m.code === 'string' ? m.code : null;
             this.features=Array.isArray(m.features)?m.features:[];
             resolve();
           } else if (m.t === 'error') {
@@ -305,7 +307,7 @@ export class Matchmaker {
   // ── Queue ──
   async find(spec) {
     if (this.busy) return;
-    this.spec = { format: spec.format, team: [...spec.team], lead: spec.lead, mega: { ...spec.mega } };
+    this.spec = { format: spec.format, team: [...spec.team], lead: spec.lead, mega: { ...spec.mega }, kit: spec.kit };
     this.flow.save.format = spec.format;
     this.flow.persist();
     if (!this.url) {
@@ -364,6 +366,14 @@ export class Matchmaker {
 
   // "Find New Match" after a result: back to team select and straight into the queue with the same team.
   again() {
+    // After watching a battle: back to the list of live battles.
+    if (this.watchAgain) {
+      this.watchAgain = false;
+      this.stop();
+      this.flow.showTitleMenu();
+      this.flow.social.openLive();
+      return;
+    }
     if(this.match?.raid || this.match?.draftMode){const raid=this.match.raid;this.stop();this.flow.showTitleMenu();if(raid)this.flow.expansion.raids();else this.flow.expansion.drafts();return;}
     const spec = this.spec;
     clearTimeout(this.koTimer);
@@ -384,7 +394,8 @@ export class Matchmaker {
     clearTimeout(this.rejoinTimer);
     clearTimeout(this.wakeNote);
     if (this.state === 'searching' || this.state === 'connecting') this.send({ t: 'cancel' });
-    if (this.match && (this.state === 'battle' || this.state === 'matched' || this.state === 'loading')) this.send({ t: 'leave', id: this.match.id });
+    if (this.match?.spectator) this.send({ t: 'unspectate' });
+    else if (this.match && (this.state === 'battle' || this.state === 'matched' || this.state === 'loading')) this.send({ t: 'leave', id: this.match.id });
     this.cancelConnect?.();
     this.cancelConnect = null;
     const ws = this.ws;
@@ -410,7 +421,7 @@ export class Matchmaker {
         this.rtt = [...this.rtts].sort((a, b) => a - b)[this.rtts.length >> 1];
         this.ping = Math.round(rtt);
         this.jitter=Math.round(Math.max(...this.rtts)-Math.min(...this.rtts));
-        if (this.state === 'battle') $('#panel .loc').textContent = `ONLINE MATCH · ${this.ping} MS${this.jitter>80?' · UNSTABLE CONNECTION':''}`;
+        if (this.state === 'battle') $('#panel .loc').textContent = `${this.modeLabel()} · ${this.ping} MS${this.jitter>80?' · UNSTABLE CONNECTION':''}`;
         return;
       }
       case 'queued':
@@ -461,6 +472,25 @@ export class Matchmaker {
       case 'end':
         if (this.match?.id === m.id) this.onEnd(m);
         return;
+      // Quick chat (either player, seen by spectators too), live battles, spectating and friends.
+      case 'emote':
+        if (this.match && this.state === 'battle') this.game.showEmote(m.side === 'A' ? (this.flip ? 'opponent' : 'player') : this.flip ? 'player' : 'opponent', m.n);
+        return;
+      case 'live':
+        this.liveWait?.(Array.isArray(m.list) ? m.list : []);
+        this.liveWait = null;
+        return;
+      case 'spectate':
+        this.onSpectate(m);
+        return;
+      case 'spectate-end':
+        if (this.match?.spectator && this.match.id === m.id) this.endSpectate(m);
+        return;
+      case 'friends':
+      case 'invite':
+      case 'invited':
+        this.flow.friends?.onMessage(m);
+        return;
       case 'error':
         if (this.busy) this.fail(m.message ?? 'Something went wrong.', true);
         return;
@@ -487,9 +517,75 @@ export class Matchmaker {
     this.setState('loading');
   }
 
+  // ── Watching someone else's battle: side A's view, nothing sent but quick chat is shown ──
+  async liveList() {
+    await this.connect?.();
+    return new Promise(resolve => {
+      this.liveWait = resolve;
+      this.send({ t: 'live' });
+      setTimeout(() => this.liveWait === resolve && (this.liveWait = null, resolve([])), 6000);
+    });
+  }
+
+  async watch(id) {
+    await this.connect?.();
+    this.send({ t: 'spectate', id });
+  }
+
+  async onSpectate(s) {
+    if (s.gone || !s.A) return this.flow.social?.toast('That battle has already ended.');
+    const m = { id: s.id, you: 'A', format: s.format, arena: s.arena, ranked: s.ranked, spectator: true, me: s.A, foe: s.B };
+    this.match = m;
+    this.flip = false;
+    this.setState('matched');
+    try {
+      Object.assign(this.game, { kits: m.me.kit ?? {}, foeKits: m.foe.kit ?? {} });
+      await this.game.ensureSprites([...m.me.team, ...m.foe.team]);
+    } catch {
+      if (this.match === m) this.fail('Could not load that battle.', true);
+      return;
+    }
+    if (this.match !== m) return;
+    this.beginBattle();
+    this.flow.social.showChat(false);
+    const g = this.game;
+    g.red.name = safeName(s.A.name);
+    g.red.setPalette(frontPalette(lookById(s.A.look)));
+    this.flow.ui.setVersus?.(`${safeName(s.A.name)} VS ${safeName(s.B.name)}`);
+    $('#panel .loc').textContent = 'SPECTATING · LIVE';
+  }
+
+  endSpectate(m) {
+    const ui = this.flow.ui;
+    this.match = null;
+    this.setState('idle');
+    ui.resultText.innerHTML = `<b>${m.winner ? `${esc(safeName(m.winner))} won the battle!` : 'The battle ended in a draw.'}</b><br>Thanks for watching.`;
+    $('#again-btn').textContent = 'Watch another';
+    $('#again-btn').classList.remove('hidden');
+    $('#leave-btn').textContent = 'Main Menu';
+    $('#leave-btn').hidden = false;
+    this.watchAgain = true;
+    ui.resultOverlay.classList.remove('hidden');
+  }
+
+  modeLabel() {
+    const m = this.match;
+    return m?.spectator ? 'SPECTATING · LIVE' : m?.tag ? (this.inControl ? 'TAG BATTLE · YOUR TURN' : `TAG BATTLE · ${safeName(m.tag.partner)}'S TURN`) : 'ONLINE MATCH';
+  }
+
+  // Tag Battles: whose turn it is on our side (only the player whose Pokémon is out controls it).
+  tagTurn(mine) {
+    if (mine === this.inControl) return;
+    this.inControl = mine;
+    const partner = safeName(this.match.tag.partner);
+    $('#panel .loc').textContent = this.modeLabel();
+    this.game.hud.showBanner(mine ? 'YOUR TURN!' : `${partner.toUpperCase()}'S TURN`, { color: mine ? '#ffd84a' : '#9fd8ff', y: 300, life: 1.2, size: 15 });
+  }
+
   // ── Battle ──
   beginBattle() {
     const g = this.game, m = this.match, ui = this.flow.ui;
+    this.inControl = m.tag ? m.tag.owners[m.me.lead] === m.tag.me : true;
     this.flow.show(null); this.flow.opening.stop(); this.flow.screen='battle'; document.querySelector('#intro').classList.add('hidden');
     g.selection = [...m.me.team];
     g.lead = m.me.lead;
@@ -497,9 +593,9 @@ export class Matchmaker {
     g.opponentSelection = [...m.foe.team];
     g.foeLead = m.foe.lead;
     g.foeMegaPicks = { ...m.foe.mega };
-    Object.assign(g, { kits: m.me.kit ?? {}, foeKits: m.foe.kit ?? {} });
+    Object.assign(g, { kits: m.me.kit ?? {}, foeKits: m.foe.kit ?? {}, eventSeed: seedOf(m.id) });
     g.arenaId = m.arena;
-    g.gold.name = safeName(m.foe.name);
+    g.gold.name = m.foe.partner ? `${safeName(m.foe.name)} & ${safeName(m.foe.partner)}` : safeName(m.foe.name);
     g.gold.setPalette(frontPalette(lookById(m.foe.look)));
     this.events = [];
     this.snap = { player: null, opponent: null };
@@ -510,6 +606,11 @@ export class Matchmaker {
     ui.format = g.selection.length;
     g.online = this;
     g.start();
+    this.flow.social?.showChat(!m.raid && !m.spectator);
+    if (m.tag) {
+      $('#panel .loc').textContent = this.modeLabel();
+      g.hud.showBanner(this.inControl ? 'TAG BATTLE · YOU LEAD!' : `TAG BATTLE · ${safeName(m.tag.partner).toUpperCase()} LEADS`, { color: '#ffd84a', y: 300, life: 2, size: 14 });
+    }
     if (m.raid) {
       Object.assign(g, { showcase: null, state: 'fighting', timers: [] });
       dressBoss(g.opponent, m.raid, g.opponent.maxHp, g.sprites);
@@ -566,7 +667,7 @@ export class Matchmaker {
   // A button press: the server applies it with the normal rules, and the result comes back as events.
   // Attacks and dodges also start here straight away (see predict), so they never wait for the round trip.
   intent(kind, i) {
-    if (this.state !== 'battle' || !this.match) return;
+    if (this.state !== 'battle' || !this.match || this.match.spectator || (this.match.tag && !this.inControl)) return;
     this.send({ t: 'act', id: this.match.id, k: kind, i });
     this.predict(kind, i);
   }
@@ -623,7 +724,7 @@ export class Matchmaker {
   // Every frame: predictions the server never confirmed run out, and the held direction goes to the
   // server as soon as it changes (and every half second regardless).
   tick(dt) {
-    if (this.state !== 'battle' || !this.match) return;
+    if (this.state !== 'battle' || !this.match || this.match.spectator || (this.match.tag && !this.inControl)) return;
     const g = this.game, p = g.player, pr = this.pred, now = performance.now();
     this.tickAlly(dt, now);
     if (pr) {
@@ -707,6 +808,7 @@ export class Matchmaker {
     if (!mine || !theirs) return;
     this.snap = { player: mine, opponent: theirs };
     const now = performance.now();
+    if (this.match?.tag) this.tagTurn(mine.ow === this.match.tag.me);
     if (typeof ts === 'number' && this.foeBuf) {
       this.trackClock(ts, now);
       const b = this.foeBuf;
@@ -726,6 +828,11 @@ export class Matchmaker {
   // with where we are now (which would drag us backwards on every update).
   measureDrift(s, now) {
     const g = this.game, mon = g.playerTeam.active;
+    // Tag Battle, partner's turn: our side's Pokémon simply follows the server.
+    if (this.match?.tag && !this.inControl) {
+      this.corr = { snap: true, x: this.fx(s.x), y: this.fy(s.y) };
+      return;
+    }
     if (!this.hist || g.playerTeam.members[s.i] !== mon || mon.hidden || mon.fainted || mon.recallT > 0) return;
     const sent = s.q && this.sentAt.get(s.q[0]);
     const at = sent ? sent + s.q[1] : now - (this.rtt ?? 120) - 25;
@@ -795,6 +902,10 @@ export class Matchmaker {
     }
     if (mon && s.te && !mon.tera && !g.terastallize(mon, true)) mon.tera = s.te;
     if (mon && 'it' in s) mon.item = s.it || null;
+    // The field as the server sees it: this side's hazards, a timed weather, the terrain.
+    if (s.hz !== undefined && g.hazards) g.hazards[team.side] = s.hz || {};
+    if (s.wx !== undefined) g.timedWeather = s.wx ? { w: s.wx[0], t: s.wx[1], at: g.timedWeather?.w === s.wx[0] ? g.timedWeather.at : g.time } : null;
+    if (s.tr !== undefined && (s.tr ? g.terrain?.kind !== s.tr[0] : g.terrain)) s.tr ? g.setTerrain(s.tr[0], s.tr[1]) : (g.terrain = null);
     if (mon !== team.active || mon.hidden || mon.fainted) return;
     if (mon.ult < 100 && s.u >= 100) g.onUltReady(mon);
     mon.ult = s.u;
@@ -835,7 +946,11 @@ export class Matchmaker {
 
   // Our own Pokémon walks straight away from the stick (so movement feels immediate) and is eased
   // toward the server's position only by how far the two really drifted apart (see measureDrift).
-  beforePlayer() { return this.puppetBefore(this.game.playerTeam, this.snap.player, true); }
+  beforePlayer() {
+    // Tag Battle, partner's turn: our keys don't move the Pokémon on screen.
+    if (this.match?.tag && !this.inControl) this.game.player.input.x = this.game.player.input.y = 0;
+    return this.puppetBefore(this.game.playerTeam, this.snap.player, true);
+  }
   afterPlayer(dt, pre) { this.puppetAfter(dt, pre, this.snap.player, true); }
   // The opponent follows the server's positions, shown a moment in the past and interpolated.
   beforePuppet() {
