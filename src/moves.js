@@ -54,6 +54,8 @@ class MoveAction {
     this.aim = user.aimAt(this.target);
     user.face(this.target.x, this.target.y);
     this.start();
+    // A move's wind-up flourish (data/move-anims.js `windup` steps) around the user.
+    if (move.windup) scheduleSteps(this, move.windup, { x: user.x, y: user.y });
   }
 
   at(time, fn) {
@@ -123,10 +125,16 @@ class MoveAction {
     return off < 1.3 || d < u.radius + t.radius + 4;
   }
 
+  // A move's own impact flourish (data/move-anims.js `impact` steps) plays on the foe the first time it lands.
   hit(opts) {
     const u = this.user, t = this.target;
     const d = u.distTo(t) || 1;
-    return applyHit(this.game, u, t, this.move, { dirX: (t.x - u.x) / d, dirY: (t.y - u.y) / d, stack: this.stack, ...opts });
+    const landed = applyHit(this.game, u, t, this.move, { dirX: (t.x - u.x) / d, dirY: (t.y - u.y) / d, stack: this.stack, ...opts });
+    if (landed && this.move.impact && !this.impactShown) {
+      this.impactShown = true;
+      scheduleSteps(this, this.move.impact.map(s => ({ ...s, at: this.t + (s.at ?? 0) })), { x: t.x, y: t.y });
+    }
+    return landed;
   }
 
   startLunge(maxDist, duration, pad = 6) {
@@ -2970,11 +2978,14 @@ for (const [id, r] of Object.entries(MOVE_ANIMS)) {
   const m = MOVES[id];
   if (!m || m.ultimate) continue;
   // A strike or tackle keeps its action and takes the recipe's look.
+  if (r.impact) m.impact = r.impact;
+  if (r.windup) m.windup = r.windup;
   if (r.fx && m.util) { m.fx = r.fx; continue; }
   if (r.beam && m.beam) { m.beam = { ...m.beam, ...r.beam }; continue; }
   if (r.melee && m.melee) { m.melee = { ...m.melee, ...r.melee }; continue; }
   if (r.dash && m.dash) { m.dash = { ...m.dash, ...r.dash }; continue; }
-  if (r.melee || r.dash) continue;
+  // Anything else that isn't a whole new sequence or stream only adds flourishes to the move's own action.
+  if (!r.seq && !r.stream) continue;
   for (const k of ['shot', 'beam', 'shockwave', 'melee', 'dash', 'stream']) delete m[k];
   if (r.seq) {
     const self = r.seq.aim === 'self', reach = self ? Math.max(...r.seq.steps.map(s => s.hit?.r ?? 0)) : 300;

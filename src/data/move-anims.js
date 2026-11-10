@@ -318,3 +318,93 @@ Object.assign(MOVE_ANIMS, {
 
 // In Weather Ball's sequence the ball takes the weather's colours.
 export const WEATHER_TINT = { sun: [255, 140, 60], rain: [90, 160, 255], snow: [190, 235, 255], sand: [200, 170, 110] };
+
+// ── Impacts and wind-ups for every strike and tackle in use ──
+// `impact` steps play on the foe the moment the move lands; `windup` steps around the user as it starts.
+// Each type has its own element (flames, splashes, sparks, leaves, frost…); each move picks its size,
+// extra flourishes (slashes, camera punch-in, tethers, afterimages) and marks.
+const EL = {
+  normal: { fx: 'dust', colors: [W, '#f0f0d8', '#a8a878'], rgb: [230, 230, 210] },
+  fire: { fx: 'flames', colors: [W, '#ffb070', '#ff5a2a'], rgb: [255, 140, 60], mark: 'scorch' },
+  water: { fx: 'splash', colors: [W, '#86ccff', '#3a8ae8'], rgb: [90, 160, 255], mark: 'wet' },
+  electric: { fx: 'sparks', colors: [W, '#fff27a', '#e0b000'], rgb: [255, 235, 100], mark: 'burn' },
+  grass: { fx: 'leaves', colors: [W, '#c8ff8a', '#3f9a3a'], rgb: [130, 220, 90], mark: 'leaves' },
+  ice: { fx: 'ice', colors: [W, '#c8f2ff', '#7ab8e8'], rgb: [190, 235, 255], mark: 'frost' },
+  fighting: { fx: 'dust', colors: [W, '#ffd0b0', '#c8402c'], rgb: [230, 120, 90] },
+  poison: { fx: 'dust', colors: [W, '#e0a0f0', '#a040a0'], rgb: [170, 70, 190], mark: 'energy' },
+  ground: { fx: 'debris', colors: [W, '#e8d0a0', '#8a6630'], rgb: [200, 160, 100], mark: 'fracture' },
+  flying: { fx: 'wind', colors: [W, '#e8f6ff', '#9fc8e8'], rgb: [220, 240, 255] },
+  psychic: { fx: 'dust', colors: [W, '#ffb0e0', '#c040a0'], rgb: [255, 130, 200], mark: 'energy' },
+  bug: { fx: 'leaves', colors: [W, '#d8f080', '#88c040'], rgb: [170, 220, 80] },
+  rock: { fx: 'debris', colors: [W, '#e8dcc0', '#a08a60'], rgb: [210, 190, 150], mark: 'fracture' },
+  ghost: { fx: 'dust', colors: ['#e0c8ff', '#7a48b8', '#2a1838'], rgb: [120, 70, 190], mark: 'energy' },
+  dragon: { fx: 'flames', colors: [W, '#b090ff', '#5a3ad8'], rgb: [140, 100, 255], mark: 'energy' },
+  dark: { fx: 'dust', colors: ['#c8a0ff', '#6a3a8a', '#1a0f24'], rgb: [90, 50, 130], mark: 'energy' },
+  steel: { fx: 'metal', colors: [W, '#dfe7f2', '#8f9db2'], rgb: [210, 220, 235] },
+  fairy: { fx: 'dust', colors: [W, '#ffe0f0', '#f080b0'], rgb: [255, 170, 215], mark: 'energy' },
+};
+// An impact in a type's element, scaled by the move: `big` adds a heavier ring, shake and camera punch-in.
+function impact(type, o = {}) {
+  const e = EL[type];
+  return [
+    { at: 0, fx: o.fx ?? e.fx, rings: { colors: e.colors, r: o.r ?? (o.big ? 44 : 30) }, ...(e.mark && o.mark !== false && { mark: e.mark, markRgb: e.rgb, markSize: o.big ? 26 : 16 }),
+      ...(o.slash && { slash: { colors: e.colors.slice(1), n: o.slash, radius: 20 } }), ...(o.big && { shake: [8, 0.3], punch: 0.06 }), ...(o.glow && { glow: { at: 'spot', rgb: e.rgb, r: 34 } }) },
+    ...(o.burst ? [{ at: 0.05, burst: { colors: e.colors, n: o.burst, up: o.up ?? 110 } }] : []),
+    ...(o.tether ? [{ at: 0, tether: { rgb: e.rgb, life: 0.5 } }] : []),
+    ...(o.dome ? [{ at: 0, dome: { r: o.dome, rgb: e.rgb, life: 0.45 } }] : []),
+  ];
+}
+const windup = (type, o = {}) => [{ at: 0, orbit: { colors: EL[type].colors, until: o.until ?? 0.18, r: o.r ?? 20 }, ...(o.after && { afterimage: { n: 3, color: EL[type].colors[1] } }) }];
+const look = (id, extra) => (MOVE_ANIMS[id] = { ...MOVE_ANIMS[id], ...extra });
+
+for (const [id, type, o, w] of [
+  // Bug
+  ['uTurn', 'bug', { slash: 2 }, { after: true }], ['bugBite', 'bug', { burst: 10 }], ['leechLife', 'bug', { tether: true, burst: 8 }], ['xScissor', 'bug', { slash: 2 }],
+  ['megahorn', 'bug', { big: true, burst: 16 }, { until: 0.25 }], ['lunge', 'bug', { burst: 10 }], ['pounce', 'bug', { burst: 8 }], ['firstImpression', 'bug', { big: true, slash: 1 }, { after: true }],
+  // Dark
+  ['knockOff', 'dark', { burst: 14, up: 160 }], ['crunch', 'dark', { slash: 2 }], ['suckerPunch', 'dark', { burst: 10 }, { after: true }], ['foulPlay', 'dark', { big: true, glow: true }],
+  ['nightSlash', 'dark', { slash: 3 }], ['throatChop', 'dark', { slash: 1, burst: 10 }], ['powerTrip', 'dark', { glow: true, burst: 12 }], ['thief', 'dark', { burst: 12, up: 160 }],
+  ['darkestLariat', 'dark', { slash: 2, big: true }], ['wickedBlow', 'dark', { big: true, glow: true }], ['lashOut', 'dark', { slash: 2 }], ['bite', 'dark', { burst: 8 }], ['kowtowCleave', 'dark', { slash: 3, big: true }],
+  // Dragon
+  ['outrageAtk', 'dragon', { big: true, burst: 18 }, { until: 0.3 }],
+  // Electric
+  ['wildCharge', 'electric', { big: true, burst: 16 }, { after: true }], ['voltSwitch', 'electric', { burst: 12 }, { after: true }], ['boltStrikeAtk', 'electric', { big: true, burst: 22 }, { until: 0.3 }],
+  ['nuzzle', 'electric', { burst: 8 }], ['supercellSlam', 'electric', { big: true, burst: 18 }], ['thunderFang', 'electric', { slash: 2, burst: 10 }], ['boltBeak', 'electric', { burst: 14 }],
+  ['doubleShock', 'electric', { big: true, burst: 24 }, { until: 0.3 }], ['thunderPunch', 'electric', { burst: 14, glow: true }],
+  // Fairy
+  ['playRough', 'fairy', { burst: 16 }], ['spiritBreak', 'fairy', { big: true, glow: true }], ['drainingKiss', 'fairy', { tether: true, burst: 8 }],
+  // Fighting
+  ['closeCombat', 'fighting', { big: true, burst: 14 }], ['machPunch', 'fighting', { burst: 10 }, { after: true }], ['sacredSword', 'fighting', { slash: 3, fx: 'metal' }], ['lowKick', 'fighting', { burst: 10, fx: 'debris' }],
+  ['bodyPress', 'fighting', { big: true, fx: 'debris' }], ['superpower', 'fighting', { big: true, burst: 16 }, { until: 0.25 }], ['drainPunch', 'fighting', { tether: true, burst: 10 }], ['brickBreak', 'fighting', { slash: 1, fx: 'debris' }],
+  ['seismicToss', 'fighting', { big: true, fx: 'debris' }], ['highJumpKick', 'fighting', { big: true, burst: 14 }], ['dynamicPunchAtk', 'fighting', { big: true, burst: 20, glow: true }, { until: 0.3 }], ['crossChop', 'fighting', { slash: 2 }],
+  // Fire
+  ['flareBlitz', 'fire', { big: true, burst: 22 }, { until: 0.25 }], ['temperFlare', 'fire', { burst: 14 }], ['heatCrash', 'fire', { big: true, burst: 20 }], ['blazeKick', 'fire', { burst: 16 }],
+  ['flameCharge', 'fire', { burst: 12 }, { after: true }], ['firePunch', 'fire', { burst: 14, glow: true }], ['fireLash', 'fire', { slash: 2, burst: 12 }], ['bitterBlade', 'fire', { slash: 2, tether: true }],
+  // Flying
+  ['braveBird', 'flying', { big: true, burst: 18 }, { until: 0.25 }], ['dualWingbeat', 'flying', { slash: 2 }], ['drillPeck', 'flying', { burst: 12 }], ['acrobatics', 'flying', { burst: 10 }, { after: true }],
+  // Ghost
+  ['shadowClaw', 'ghost', { slash: 3, glow: true }], ['shadowSneak', 'ghost', { glow: true }, { after: true }], ['rageFist', 'ghost', { big: true, glow: true }],
+  // Grass
+  ['leafBlade', 'grass', { slash: 2, burst: 12 }], ['powerWhip', 'grass', { slash: 1, big: true, burst: 14 }], ['trailblaze', 'grass', { burst: 10 }], ['woodHammer', 'grass', { big: true, fx: 'debris', burst: 12 }],
+  ['hornLeech', 'grass', { tether: true, burst: 10 }], ['grassyGlide', 'grass', { burst: 12 }, { after: true }],
+  // Ground
+  ['drillRun', 'ground', { burst: 14 }], ['highHorsepower', 'ground', { big: true, burst: 16 }], ['headlongRush', 'ground', { big: true, burst: 20 }, { until: 0.25 }],
+  // Ice
+  ['icePunch', 'ice', { burst: 14, glow: true }], ['tripleAxel', 'ice', { slash: 3, burst: 12 }], ['iceSpinner', 'ice', { slash: 2, burst: 12 }], ['iceHammer', 'ice', { big: true, burst: 18 }, { until: 0.25 }],
+  // Normal
+  ['extremeSpeed', 'normal', { burst: 10 }, { after: true }], ['return', 'normal', { glow: true }], ['facade', 'normal', { big: true }], ['doubleEdge', 'normal', { big: true, burst: 14 }],
+  ['fakeOut', 'normal', { burst: 8 }], ['quickAttack', 'normal', { burst: 8 }, { after: true }], ['superFang', 'normal', { slash: 2 }], ['populationBomb', 'normal', { burst: 18 }],
+  ['endeavor', 'normal', { glow: true }], ['megaKick', 'normal', { big: true, burst: 12 }], ['tailSlap', 'normal', { burst: 12 }], ['multiAttack', 'normal', { big: true, glow: true }],
+  // Poison
+  ['poisonJab', 'poison', { burst: 12 }], ['direClaw', 'poison', { slash: 3 }],
+  // Psychic
+  ['psychicFangs', 'psychic', { slash: 2, glow: true }], ['zenHeadbutt', 'psychic', { big: true, dome: 32 }], ['psyblade', 'psychic', { slash: 3, glow: true }],
+  // Rock
+  ['headSmash', 'rock', { big: true, burst: 22 }, { until: 0.3 }], ['accelerock', 'rock', { burst: 12 }, { after: true }],
+  // Steel
+  ['meteorMashAtk', 'steel', { big: true, glow: true, burst: 14 }], ['heavySlam', 'steel', { big: true, fx: 'debris' }], ['bulletPunch', 'steel', { burst: 10 }, { after: true }], ['ironHead', 'steel', { big: true }],
+  ['gyroBall', 'steel', { slash: 3 }], ['gearGrind', 'steel', { slash: 2 }], ['anchorShot', 'steel', { tether: true }], ['smartStrike', 'steel', { slash: 1 }], ['doubleIronBash', 'steel', { big: true }], ['ironTail', 'steel', { big: true, slash: 1 }],
+  // Water
+  ['flipTurn', 'water', { burst: 12 }, { after: true }], ['liquidation', 'water', { burst: 16 }], ['aquaJet', 'water', { burst: 10 }, { after: true }], ['aquaTail', 'water', { big: true, slash: 1 }],
+  ['waveCrash', 'water', { big: true, burst: 22 }, { until: 0.25 }], ['crabhammer', 'water', { big: true, burst: 14 }], ['fishiousRend', 'water', { slash: 2, burst: 12 }], ['aquaStep', 'water', { burst: 12 }], ['jetPunch', 'water', { burst: 10 }, { after: true }],
+]) look(id, { impact: impact(type, o), ...(w && { windup: windup(type, w) }) });
