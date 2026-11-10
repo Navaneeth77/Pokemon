@@ -15,6 +15,7 @@ import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
 import { LEGEND_ULTS_2 } from './ult-legends2.js';
 import { LEGEND_ULTS_3 } from './ult-legends3.js';
+import { LEGEND_ULTS_4 } from './ult-legends4.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -1455,6 +1456,7 @@ const ULTS = {
   ...LEGEND_ULTS,
   ...LEGEND_ULTS_2,
   ...LEGEND_ULTS_3,
+  ...LEGEND_ULTS_4,
   blastBurn(a, g, u, t) {
     // Mega Charizard X burns with blue flame.
     const fire = flameColors(u), blue = u.species.flame === 'blue';
