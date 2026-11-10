@@ -43,10 +43,23 @@ How it works today:
       Leech Seed, Toxic, Protect, Thunder Wave, sleep; acceptance tests.
 - [x] **2. Move database + movesets** (done 10 Nov: `node scripts/validate-moves.mjs` → 527 Pokémon, 289 moves, 0 problems): generate movedex and Smogon movesets for all 527; effect resolver for
       every effect kind; abilities picked from the sets; Megas keep their own stats/ability.
-- [~] **3. Animation recipes** (10 Nov: step-sequence system done; every move in use has a recipe or a hand-made look; ~20 moves have full staged sequences. Next: raise the shared-shape recipes and the older hand-made generic shots to full staged sequences, most-used first): the stage-based recipe system and a recipe for every move used, with signature
+- [~] **3. Animation recipes**: the stage-based recipe system and a recipe for every move used, with signature
       moves getting bespoke sequences at the Rayquaza/Lugia standard.
+      - 10 Nov: step-sequence system (`src/move-sequence.js`, recipes in `src/data/move-anims.js`); every move in use has a recipe or a
+        hand-made look. Batches A/B/C: impacts and wind-ups for all strikes and tackles, every older projectile as a full sequence, beams,
+        shockwaves and status-move looks.
+      - 10–11 Nov: ultimates. The 10 type ultimates (230 Pokémon) in `src/ult-choreo.js`; every legendary and mythical signature in
+        `src/ult-legends.js` (box legends), `ult-legends2.js` (Solgaleo … Darkrai), `ult-legends3.js` (Regis, Latis, Raikou, Suicune, Mew),
+        `ult-legends4.js` (mythicals). Each keeps its old mechanics and damage (checked against 20–60-run averages), and every one is
+        checked for leftover effects and stuck states.
+      - Next: the 21 remaining fan-favourite signatures (Venusaur, Blastoise, Infernape, Scizor, Zoroark, Sylveon, Lapras, Aegislash,
+        Umbreon, Espeon, Gallade, Togekiss, Swampert, Weavile, Talonflame, Alakazam, Milotic, Haxorus, Hydreigon, Porygon-Z), then the
+        visual review below.
 - [ ] **4. Validation and polish**: validation script, visual review of representative moves per type,
       performance pass, online (server) parity.
+      - Done so far: `scripts/validate-moves.mjs`; online stat stages fixed (they shared the `sg` key with the stagger flag; now `sx`,
+        with a network test). Visual review done for the type ultimates and legendary batch 1; batches 2–4 still need a look in the
+        browser (contact sheets).
 
 ## Phase 2 design (move database + movesets)
 
