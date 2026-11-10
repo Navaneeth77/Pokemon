@@ -47,7 +47,7 @@ const ARENA_EVENTS = {
   viridian: { name: 'FALLING TREES!', hit: 'TIMBER!', n: 2, r: 16, lane: true, rgb: '120,200,90', color: '#8fd060', status: 'stun',
     fx: (g, z) => { for (let x = 20; x < WORLD_W; x += 40) leafBurst(g, x, z.y, 6, 4); dustCloud(g, WORLD_W / 2, z.y, 10, 5); sfx.quake(); } },
   cinnabar: { name: 'ERUPTION!', hit: 'LAVA!', n: 4, r: 26, color: '#ff7a2a', status: 'burn',
-    fx: (g, z) => { g.spawn(new Pillar(z.x, z.y, 0.6, [255, 120, 40], 200)); g.marks.scorch(z.x, z.y, 24, 6); for (let i = 0; i < 10; i++) g.particles.spawn({ x: z.x, y: z.y, z: 4, vx: rand(-60, 60), vy: rand(-30, 30), vz: rand(120, 260), g: 400, life: 0.8, size: rand(2, 4), colors: FIRE }); sfx.explosion(); } },
+    fx: (g, z) => { g.spawn(new Pillar(z.x, z.y, 0.6, [255, 120, 40], 200)); g.marks.scorch(z.x, z.y, 24, 6); for (let i = 0; i < 10; i++) g.particles.spawn({ x: z.x, y: z.y, z: 4, vx: rand(-60, 60), vy: rand(-30, 30), vz: rand(120, 260), gz: 400, life: 0.8, size: rand(2, 4), colors: FIRE }); sfx.explosion(); } },
   seafoam: { name: 'TIDAL SURGE!', hit: 'SWEPT AWAY!', n: 1, r: 46, lane: true, rgb: '90,160,255', color: '#5aa6f0', status: 'slow',
     fx: (g, z) => { g.spawn(new TidalWave(z.y - 60, z.y + 60, 0.6, [70, 140, 230], true)); waterSplash(g, WORLD_W / 2, z.y); sfx.splash(); } },
   indigo: { name: 'LIGHTNING STRIKE!', hit: 'ZAP!', n: 3, r: 24, color: '#ffe066', status: 'para',

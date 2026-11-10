@@ -121,7 +121,7 @@ export function scheduleSteps(action, steps, spot) {
         const b = step.burst;
         for (let i = 0; i < (b.n ?? 14); i++) {
           const a = rand(0, Math.PI * 2), sp = rand(40, 120);
-          g.particles.spawn({ x: p.x, y: p.y, z: 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: rand(30, b.up ?? 120), g: 260, life: rand(0.4, 0.7), size: rand(2, 4), sizeEnd: 1, colors: b.colors });
+          g.particles.spawn({ x: p.x, y: p.y, z: 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: rand(30, b.up ?? 120), gz: 260, life: rand(0.4, 0.7), size: rand(2, 4), sizeEnd: 1, colors: b.colors });
         }
       }
       // Energy marks take the move's colour (markRgb); the rest have their own look.

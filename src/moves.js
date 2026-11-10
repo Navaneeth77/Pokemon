@@ -11,6 +11,7 @@ import { MOVEDEX } from './data/movedex.js';
 import { statusMove } from './effects-resolver.js';
 import { MOVE_ANIMS } from './data/move-anims.js';
 import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
+import { TYPE_ULTS } from './ult-choreo.js';
 import {
   UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
@@ -728,7 +729,7 @@ const UTIL_FX = {
     // The hazard is flung toward the foe's side of the arena.
     const home = HOME_OF[side];
     g.spawn(new Ring(home.x, home.y, { r0: 6, r1: 46, life: 0.5, color: c.color, width: 3 }));
-    for (let i = 0; i < 8; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: (home.x - u.x) * rand(0.9, 1.3), vy: (home.y - u.y) * rand(0.9, 1.3), vz: 140, g: 300, life: 1, size: rand(2, 4), colors: ['#ffffff', c.color] });
+    for (let i = 0; i < 8; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: (home.x - u.x) * rand(0.9, 1.3), vy: (home.y - u.y) * rand(0.9, 1.3), vz: 140, gz: 300, life: 1, size: rand(2, 4), colors: ['#ffffff', c.color] });
     sfx.shard();
   },
   guard(a, g, u, c) {
@@ -754,7 +755,7 @@ const SETUP_LOOK = {
   plot(g, u) { spiral(g, u, ['#c8a0ff', '#6a3a8a', '#1a0f24'], 12, 40); g.spawn(new Glow(u.x, u.y, u.headZ, 22, [110, 60, 170], 0.4)); },
   bulk(g, u) { g.spawn(new Ring(u.x, u.y, { r0: u.radius, r1: u.radius + 22, life: 0.35, color: '#ff9a5a', width: 5 })); g.shake(3, 0.2); sfx.clang(); },
   quiver(g, u) { spiral(g, u, ['#ffffff', '#f0ffd0', '#a8d848'], 18, 30); },
-  smash(g, u) { for (let i = 0; i < 10; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: rand(-90, 90), vy: rand(-40, 40), vz: rand(60, 140), g: 300, life: 0.7, size: rand(2, 4), colors: ['#e8dcc0', '#a08a60'] }); g.shake(4, 0.25); sfx.explosion(); },
+  smash(g, u) { for (let i = 0; i < 10; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: rand(-90, 90), vy: rand(-40, 40), vz: rand(60, 140), gz: 300, life: 0.7, size: rand(2, 4), colors: ['#e8dcc0', '#a08a60'] }); g.shake(4, 0.25); sfx.explosion(); },
   agility(g, u) { for (let i = 0; i < 3; i++) g.spawn(new Afterimage(u, 0.25 + i * 0.1, '#ffd0f0')); sfx.whoosh(); },
   iron(g, u) { g.spawn(new Glow(u.x, u.y, u.bodyZ, 30, [220, 230, 245], 0.4)); metalSparks(g, u.x, u.y, u.bodyZ, 8); sfx.clang(); },
   growth(g, u) { spiral(g, u, ['#e0ffc0', '#8ad84f', '#3f8f2c'], 14, 50); leafBurst(g, u.x, u.y, u.bodyZ, 8); },
@@ -1297,9 +1298,9 @@ function tkStep(action, dt) {
   m.y = tk.from.y + (tk.to.y - tk.from.y) * k;
   m.zOverride = tk.from.z * (1 - k) + tk.height * 4 * k * (1 - k) + (tk.to.z ?? 0) * k;
   m.flash = 0.55;
-  m.flashColor = '#ff9fe0';
+  m.flashColor = tk.color ?? '#ff9fe0';
   if (Math.random() < 0.8) {
-    action.game.particles.spawn({ x: m.x + rand(-m.radius, m.radius), y: m.y, z: m.z + rand(0, m.species.headZ), vz: rand(-20, 20), life: 0.3, size: 2, colors: ['#ffffff', '#ffb0e0', '#c060ff'] });
+    action.game.particles.spawn({ x: m.x + rand(-m.radius, m.radius), y: m.y, z: m.z + rand(0, m.species.headZ), vz: rand(-20, 20), life: 0.3, size: 2, colors: tk.colors ?? ['#ffffff', '#ffb0e0', '#c060ff'] });
   }
   if (k < 1) return;
   action.tk = null;
@@ -1400,6 +1401,12 @@ class Ultimate extends MoveAction {
     this.later(dt, () => this.finish(0.4));
   }
 
+  // Carries a Pokémon through the air (telekinesis), glowing in `color`; `keep` leaves it held at the end.
+  lift(mon, to, dur, height, land, color, colors, keep = false) {
+    telekinesis(this, mon, to, dur, height, land);
+    Object.assign(this.tk, { color, colors, keep });
+  }
+
   // Deals `frac` of the move's power to the target, wherever it is.
   strike(frac, opts = {}) {
     const u = this.user, t = this.target;
@@ -1441,6 +1448,7 @@ class Ultimate extends MoveAction {
 }
 
 const ULTS = {
+  ...TYPE_ULTS,
   blastBurn(a, g, u, t) {
     // Mega Charizard X burns with blue flame.
     const fire = flameColors(u), blue = u.species.flame === 'blue';
