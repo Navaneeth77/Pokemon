@@ -43,7 +43,7 @@ How it works today:
       Leech Seed, Toxic, Protect, Thunder Wave, sleep; acceptance tests.
 - [x] **2. Move database + movesets** (done 10 Nov: `node scripts/validate-moves.mjs` → 527 Pokémon, 289 moves, 0 problems): generate movedex and Smogon movesets for all 527; effect resolver for
       every effect kind; abilities picked from the sets; Megas keep their own stats/ability.
-- [ ] **3. Animation recipes**: the stage-based recipe system and a recipe for every move used, with signature
+- [~] **3. Animation recipes** (10 Nov: step-sequence system done; every move in use has a recipe or a hand-made look; ~20 moves have full staged sequences. Next: raise the shared-shape recipes and the older hand-made generic shots to full staged sequences, most-used first): the stage-based recipe system and a recipe for every move used, with signature
       moves getting bespoke sequences at the Rayquaza/Lugia standard.
 - [ ] **4. Validation and polish**: validation script, visual review of representative moves per type,
       performance pass, online (server) parity.
