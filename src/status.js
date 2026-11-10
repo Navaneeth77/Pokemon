@@ -1,6 +1,7 @@
 import { FloatText, StatArrows, iceShatter, electricBurst, rand } from './effects.js';
 import { abilityOf, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
+import { STAT_NAME } from './stats.js';
 
 // Status conditions. Durations refresh rather than stack; `guard` is a grace period after the
 // status ends during which it can't be re-applied, so freezes, stuns and sleep can't chain-lock.
@@ -27,7 +28,7 @@ function text(game, mon, str, color, size = 7) {
   game.spawn(new FloatText(mon.x + rand(-4, 4), mon.y - mon.headZ - 14, str, color, size, 1));
 }
 
-export function applyStatus(game, mon, name, { dur, source } = {}) {
+export function applyStatus(game, mon, name, { dur, source, toxic } = {}) {
   const S = STATUS[name], ab = abilityOf(mon);
   if (!S || !mon.alive || mon.hidden || mon.remote) return false;
   const corrodes = name === 'poison' && source && abilityOf(source).corrosion;
@@ -56,7 +57,12 @@ export function applyStatus(game, mon, name, { dur, source } = {}) {
     iceShatter(game, mon.x, mon.y, mon.bodyZ);
   } else {
     const had = mon.status[name] > 0;
-    mon.status[name] = Math.max(mon.status[name] ?? 0, d);
+    // Toxic: badly poisoned for longer, and every tick hurts more than the last.
+    if (name === 'poison' && toxic) {
+      mon.status.toxicN = mon.status.toxicN || 1;
+      mon.status.poisonT = 1.5;
+    }
+    mon.status[name] = Math.max(mon.status[name] ?? 0, name === 'poison' && toxic ? 9 : d);
     if (name === 'stun') {
       mon.cancelCharge(game, true);
       mon.stagger = Math.max(mon.stagger, d);
@@ -88,8 +94,13 @@ export function tickStatus(game, mon, dt) {
       st[`${name}T`] = (st[`${name}T`] ?? S.every) - dt;
       if (st[`${name}T`] <= 0) {
         st[`${name}T`] = S.every;
+        const toxicN = name === 'poison' ? st.toxicN : 0;
         if (name === 'poison' && abilityOf(mon).poisonHeal) game.heal(mon, mon.maxHp * S.dot * 1.5);
-        else game.dotDamage(mon, S.dot, S.color);
+        else game.dotDamage(mon, toxicN ? 0.03 * toxicN : S.dot, S.color);
+        if (toxicN) {
+          st.toxicN++;
+          st.poisonT = 1.5;
+        }
         if (!mon.alive) return;
       }
     }
@@ -107,6 +118,7 @@ export function tickStatus(game, mon, dt) {
     }
     if (st[name] <= 0) {
       st[name] = 0;
+      if (name === 'poison') delete st.toxicN;
       if (name !== 'stun') text(game, mon, `${S.label} WORE OFF`, '#c9d2de', 6);
     }
   }
@@ -127,7 +139,8 @@ export function statusPills(mon) {
   const out = [];
   if (mon.elementAura?.type === 'water') out.push(['WET', '#71ceff']);
   if (mon.frozen > 0) out.push(['FRZ', STATUS.freeze.color]);
-  for (const name of TIMED) if (mon.status[name] > 0) out.push([STATUS[name].label, STATUS[name].color]);
+  for (const name of TIMED) if (mon.status[name] > 0) out.push([name === 'poison' && mon.status.toxicN ? 'TOX' : STATUS[name].label, STATUS[name].color]);
+  if (mon.seeded) out.push(['SEEDED', '#62b947']);
   return out;
 }
 
@@ -162,6 +175,51 @@ export function addBuff(game, mon, stat, mult, dur, source = null) {
   }
   return true;
 }
+
+// Stat stages (stats.js), the main series' way: `changes` like { atk: 1, spe: 1 } (Dragon Dance) or
+// { atk: -1 } (Intimidate). `source` is the Pokémon causing a drop, for abilities that react to it.
+// Contrary flips the change, Simple doubles it; Clear Body, Hyper Cutter, Clear Amulet and Mirror Armor
+// stop or reflect drops; Defiant / Competitive answer them; White Herb undoes them once.
+const STAGE_WORDS = { 1: 'rose!', 2: 'rose sharply!', 3: 'rose drastically!', '-1': 'fell!', '-2': 'harshly fell!', '-3': 'severely fell!' };
+export function changeStage(game, mon, changes, source = null) {
+  if (mon.remote || !mon.alive) return false;
+  const ab = abilityOf(mon), item = itemOf(mon), byFoe = source && source !== mon;
+  let any = false, dropped = false;
+  for (let [stat, n] of Object.entries(changes)) {
+    if (ab.contrary) n = -n;
+    if (ab.simple) n *= 2;
+    if (n < 0 && byFoe) {
+      if (item?.noDebuff) { game.itemPop(mon, 'The Clear Amulet kept its stats up!'); continue; }
+      if (ab.noDebuff || ab.keepStat === (stat === 'spa' ? 'atk' : stat)) { game.abilityPop(mon, `Its ${STAT_NAME[stat]} can't be lowered!`); continue; }
+      if (ab.mirror && source.alive && !source.hidden) {
+        game.abilityPop(mon, 'It reflected the stat drop!');
+        changeStage(game, source, { [stat]: n }, mon);
+        continue;
+      }
+    }
+    const before = mon.stages[stat] ?? 0, after = Math.max(-6, Math.min(6, before + n));
+    if (after === before) {
+      text(game, mon, `${STAT_NAME[stat].toUpperCase()} WON'T GO ${n > 0 ? 'HIGHER' : 'LOWER'}`, '#c9d2de', 6);
+      continue;
+    }
+    mon.stages[stat] = after;
+    any = true;
+    if (after < before) dropped = true;
+    const d = Math.max(-3, Math.min(3, after - before));
+    text(game, mon, `${STAT_NAME[stat].toUpperCase()} ${d > 0 ? '▲'.repeat(d) : '▼'.repeat(-d)}`, d > 0 ? '#ffe680' : '#9fb8ff', 7);
+    game.ui.log(`${mon.species.name}'s ${STAT_NAME[stat]} ${STAGE_WORDS[d]}`, mon.side);
+    if (!mon.hidden) game.spawn(new StatArrows(mon, stat === 'spa' ? 'atk' : stat === 'spd' ? 'def' : stat, d > 0));
+    game.emit?.('stage', { mon, stat, from: before, to: after, source });
+  }
+  if (dropped && byFoe) {
+    ab.onDebuffed?.(game, mon, source);
+    item?.onDebuffed?.(game, mon, source);
+  }
+  return any;
+}
+
+export const stagePills = mon => Object.entries(mon.stages ?? {}).filter(([, n]) => n)
+  .map(([k, n]) => [`${k.toUpperCase()}${n > 0 ? '+' : ''}${n}`, n > 0 ? '#c89a1a' : '#4a6aa8']);
 
 export const buffMult = (mon, stat) => (mon.buffs[stat]?.t > 0 ? mon.buffs[stat].m : 1);
 

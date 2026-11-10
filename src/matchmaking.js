@@ -912,6 +912,7 @@ export class Matchmaker {
     mon.status = s.st ?? {};
     mon.elementAura = s.ea ?? null;
     mon.buffs = s.bf ?? {};
+    mon.stages = s.sg ?? {};
     mon.frozen = s.fr;
     mon.shield = s.sh;
     mon.guard = s.g ? { t: 1, mult: s.g[0], color: s.g[1], label: s.g[2], punish: s.g[3] } : null;

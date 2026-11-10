@@ -136,6 +136,7 @@ export const ITEMS = {
     name: 'White Herb', desc: 'Restores lowered stats once.', color: '#f0f0f0',
     onDebuffed(g, me) {
       for (const [k, b] of Object.entries(me.buffs)) if (b.m < 1) delete me.buffs[k];
+      for (const [k, n] of Object.entries(me.stages)) if (n < 0) me.stages[k] = 0;
       g.itemPop(me, 'Its White Herb restored its stats!');
       g.useUpItem(me);
     },
@@ -149,6 +150,12 @@ export const ITEMS = {
     name: 'Toxic Orb', desc: 'Poisons its holder 3s after it enters (for Guts, Toxic Boost or Poison Heal).', color: '#a040a0',
     tick(g, me, dt) { if ((me.it.t = (me.it.t ?? 0) + dt) >= 3 && !me.it.done) { me.it.done = true; g.applyStatus(me, 'poison', {}); } },
   },
+  // Weather rocks: the matching weather lasts 40s instead of 25s when this Pokémon starts it.
+  dampRock: { name: 'Damp Rock', desc: 'Rain it starts lasts 40s instead of 25s.', color: '#5a8ef0', rock: 'rain' },
+  heatRock: { name: 'Heat Rock', desc: 'Harsh sunlight it starts lasts 40s instead of 25s.', color: '#ff7a2a', rock: 'sun' },
+  smoothRock: { name: 'Smooth Rock', desc: 'A sandstorm it starts lasts 40s instead of 25s.', color: '#c8a060', rock: 'sand' },
+  icyRock: { name: 'Icy Rock', desc: 'Snow it starts lasts 40s instead of 25s.', color: '#9fd8ff', rock: 'snow' },
+  safetyGoggles: { name: 'Safety Goggles', desc: 'Unharmed by sandstorms; powder and spore moves can\'t touch it.', color: '#3a8a5a', powderProof: true },
   terrainExtender: { name: 'Terrain Extender', desc: 'Terrains it creates last 30s instead of 20s.', color: '#8ad84a', terrainTime: 30 },
   sitrusBerry: berry('Sitrus Berry', 'Restores 25% of max HP when it falls below half.', (g, me, k) => g.heal(me, me.maxHp * 0.25 * k)),
   lumBerry: {

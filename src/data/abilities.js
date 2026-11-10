@@ -12,7 +12,12 @@ export const isContact = m => !!(m.melee || m.dash || m.slam || m.contact) || m.
 export const isRanged = m => !!(m.shot || m.beam || m.stream || m.shockwave) || m.ai === 'ranged';
 export const isPunch = m => m.melee?.fx === 'punch' || !!m.punch;
 // A Terastallized Pokémon is purely its Tera type (until an ability changes its type again).
-export const typesOf = mon => mon.typeOverride ?? (mon.tera ? [mon.tera] : mon.species.types);
+export function typesOf(mon) {
+  const t = mon.typeOverride ?? (mon.tera ? [mon.tera] : mon.species.types);
+  // Roost: a Flying type that has landed to heal loses its Flying type for 3s (pure Flying becomes Normal).
+  if (mon.roostT > 0 && t.includes('flying')) return t.length > 1 ? t.filter(x => x !== 'flying') : ['normal'];
+  return t;
+}
 
 import { OFFICIAL } from './abilities-official.js';
 import { Ripple, Glare } from '../effects.js';
@@ -211,7 +216,7 @@ export const ABILITIES = {
   torrent: { name: 'Torrent', ...pinch('water', 'TORRENT', '#5a8ef0') },
   ironFist: { name: 'Iron Fist', desc: 'Punching moves hit 25% harder.', dealMult: (g, me, foe, move) => (isPunch(move) ? 1.25 : 1) },
   intimidate: {
-    name: 'Intimidate', desc: "On entry, glares at the foe: its attack falls 20% for 6s.", color: '#ff4a4a',
+    name: 'Intimidate', desc: "On entry, glares at the foe: its Attack falls one stage.", color: '#ff4a4a',
     onEnter(g, me) {
       const f = me.foe;
       if (!f?.alive || f.hidden) return;
@@ -223,7 +228,7 @@ export const ABILITIES = {
         return g.abilityPop(f, 'Attack rose instead!');
       }
       if (fa.noIntimidate) return g.abilityPop(f, "It wasn't intimidated!");
-      g.buff(f, 'atk', 0.8, 6, me);
+      g.stage(f, { atk: -1 }, me);
       fa.onIntimidated?.(g, f);
     },
   },

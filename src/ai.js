@@ -152,6 +152,9 @@ export class OpponentAI {
     if (u.kind === 'regen') return !me.regen && me.hp < me.maxHp * 0.8 ? 1.2 : 0;
     if (u.kind === 'buff') return !(me.buffs[u.stat]?.t > 0) && dist > 110 ? 1.2 : 0;
     if (u.kind === 'guard') return foe.action && dist < 160 && Math.random() < (this.cfg?.guard ?? 0.6) ? 4 : 0;
+    // Setup while at a safe distance and not already boosted; status moves on a foe that has none.
+    if (u.kind === 'stages') return dist > 100 && Object.keys(u.self).some(k => u.self[k] > 0 && (me.stages[k] ?? 0) < 2) ? 1.5 : 0;
+    if (u.kind === 'ray') return dist < 280 && (u.seed ? !foe.seeded : !Object.values(foe.status).some(v => v > 0)) ? 1.6 : 0;
     // Field moves: set weather or terrain when it isn't already up; lay hazards while the foe has others to send in.
     if (u.kind === 'weather') return game.weather !== u.weather && dist > 90 ? 1.4 : 0;
     if (u.kind === 'terrain') return game.terrain?.kind !== u.terrain && dist > 90 ? 1.4 : 0;
@@ -179,6 +182,7 @@ export class OpponentAI {
       // typeAware 0–1: how strongly it favours super-effective moves and avoids resisted ones.
       const aware = this.cfg?.typeAware === true ? 1 : +(this.cfg?.typeAware ?? 1);
       const eff = typeMultiplier(mv.type, foe.species.types);
+      if (eff === 0) continue; // never a move the foe is immune to
       options.push([id, w * (eff > 1 ? 1 + aware : eff < 1 ? 1 - 0.5 * aware : 1)]);
     }
     const total = options.reduce((s, [, w]) => s + w, 0);

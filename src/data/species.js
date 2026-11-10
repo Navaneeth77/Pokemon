@@ -12,7 +12,8 @@ import { DIMS } from './dims.js';
 import { MEGA_STATS } from './mega-stats.js';
 import { NATIONAL, OFFICIAL_ABILITIES, DEX } from './national.js';
 import { NATIONAL_DIMS } from './national-dims.js';
-import { officialAbility } from './abilities.js';
+import { SMOGON_ABILITIES } from './smogon.js';
+import { officialAbility, ABILITIES } from './abilities.js';
 
 const BASE = { atk: 1, def: 1, weight: 1, class: 'regular' };
 
@@ -166,6 +167,10 @@ for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, cls, x]
     spa: r2(0.85 + sa / 400), spdef: r2(0.8 + sd / 400), sprite: x.sprite, ...(x.hover && hover(...x.hover)),
   }));
 }
+// Castform's weather forms (Forecast) are loaded with it.
+const castform = LIST.find(x => x.id === 'castform');
+if (castform) castform.forms = ['castform-sunny', 'castform-rainy', 'castform-snowy'];
+
 // Field moves (moves.js) for the Pokémon known for them: they replace the fourth move.
 const FIELD_MOVES = {
   stealthRock: ['tyranitar', 'garchomp', 'skarmory', 'hippowdon', 'excadrill', 'heatran', 'rhyperior', 'golem', 'aerodactyl', 'landorus', 'tingLu', 'glimmora', 'probopass', 'gigalith', 'coalossal', 'stonjourner', 'garganacl', 'kleavor'],
@@ -186,10 +191,12 @@ for (const [move, ids] of Object.entries(FIELD_MOVES)) for (const id of ids) {
   if (s && !s.moves.includes(move)) s.moves = [...s.moves.slice(0, 3), move];
 }
 
-// Official abilities for every fully evolved Pokémon: its first one the game implements (see abilities.js).
+// Official abilities for every fully evolved Pokémon: the one Smogon's sets play it with (Chlorophyll for
+// Venusaur, Rough Skin for Garchomp…), else its first official one the game implements (see abilities.js).
 for (const s of LIST) {
   s.dex = DEX[s.id] ?? s.kanto;
-  const pick = OFFICIAL_ABILITIES[s.id] && officialAbility(OFFICIAL_ABILITIES[s.id]);
+  const smogon = SMOGON_ABILITIES[s.id]?.find(a => ABILITIES[a]);
+  const pick = smogon ?? (OFFICIAL_ABILITIES[s.id] && officialAbility(OFFICIAL_ABILITIES[s.id]));
   if (pick) Object.assign(s, { ability: pick, abilities: OFFICIAL_ABILITIES[s.id] });
 }
 

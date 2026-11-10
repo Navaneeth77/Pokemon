@@ -7,6 +7,11 @@ import { Ripple } from '../effects.js';
 import { ITEMS } from './items.js';
 
 const STATUSES = ['burn', 'poison', 'para', 'freeze', 'slow', 'stun', 'sleep'];
+const FORECAST = {
+  sun: { name: 'Sunny Form', type: 'fire', sprite: 'castform-sunny', color: '#ff9a3a' },
+  rain: { name: 'Rainy Form', type: 'water', sprite: 'castform-rainy', color: '#5a8ef0' },
+  snow: { name: 'Snowy Form', type: 'ice', sprite: 'castform-snowy', color: '#9fd8ff' },
+};
 const dec = (me, k, dt) => (me.ab[k] = Math.max(0, (me.ab[k] ?? 0) - dt));
 const hasStatus = me => me.frozen > 0 || STATUSES.some(k => me.status[k] > 0);
 const onField = mon => mon?.alive && !mon.hidden;
@@ -62,7 +67,8 @@ function whileOn(test, text, label, color, extra = {}) {
 }
 
 const inWeather = w => (g, me) => g.weather === w;
-const weatherSpeed = (w, label, color, text) => whileOn(inWeather(w), text, label, color, { speedMult: me => (me.ab.on ? 1.35 : 1) });
+// Chlorophyll, Swift Swim, Sand Rush, Slush Rush: Speed doubles in their weather (stats.js effective Speed).
+const weatherSpeed = (w, label, color, text) => whileOn(inWeather(w), text, label, color, { speedMult: me => (me.ab.on ? 2 : 1) });
 const weatherDodge = (w, label, color) => whileOn(inWeather(w), 'Hidden by the weather!', label, color, {
   evade(g, me) {
     if (!me.ab.on || Math.random() > 0.2) return false;
@@ -426,7 +432,7 @@ export const OFFICIAL = {
   toxicChain: { name: 'Toxic Chain', desc: 'Its attacks may badly poison the foe (25%).', ...inflicts(() => true, 'poison', 0.25, 'A toxic chain!') },
   corrosion: { name: 'Corrosion', desc: 'Can poison even Steel and Poison types.', corrosion: true, ...inflicts((m, i) => i.type === 'poison', 'poison', 0.2, 'It corroded the foe!') },
   stench: { name: 'Stench', weak: true, desc: 'Its attacks may make the foe flinch (10%).', ...inflicts(() => true, 'stun', 0.1, 'The stench made the foe flinch!') },
-  compoundEyes: { name: 'Compound Eyes', desc: 'Its ranged moves land with precision: +10% damage and +10% critical-hit chance.', ...boost(m => special(m), 1.1, 'Precise aim!'), crit: m => (special(m) ? 0.1 : 0) },
+  compoundEyes: { name: 'Compound Eyes', desc: 'Its moves are 30% more accurate.', compoundEyes: true },
   keenEye: { name: 'Keen Eye', weak: true, desc: "Evasion abilities don't fool it.", keenEye: true },
   victoryStar: { name: 'Victory Star', desc: '+10% damage and +10% critical-hit chance.', dealMult: () => 1.1, crit: () => 0.1 },
   defeatist: {
@@ -607,17 +613,17 @@ export const OFFICIAL = {
   whiteSmoke: { name: 'White Smoke', desc: "Its stats can't be lowered.", noDebuff: true },
   mirrorArmor: { name: 'Mirror Armor', desc: 'Stat drops aimed at it are reflected back at the foe.', mirror: true },
   defiant: {
-    name: 'Defiant', desc: 'When the foe lowers its stats, its attack rises 30%.',
+    name: 'Defiant', desc: 'When the foe lowers its stats, its Attack rises two stages.',
     onDebuffed(g, me) {
-      g.buff(me, 'atk', 1.3, 6);
-      g.abilityPop(me, 'Defiant! Attack rose!');
+      g.abilityPop(me, 'Defiant!');
+      g.stage(me, { atk: 2 });
     },
   },
   competitive: {
-    name: 'Competitive', desc: 'When the foe lowers its stats, its attack rises 30%.',
+    name: 'Competitive', desc: 'When the foe lowers its stats, its Sp. Atk rises two stages.',
     onDebuffed(g, me) {
-      g.buff(me, 'atk', 1.3, 6);
-      g.abilityPop(me, 'Competitive! Attack rose!');
+      g.abilityPop(me, 'Competitive!');
+      g.stage(me, { spa: 2 });
     },
   },
   contrary: { name: 'Contrary', desc: 'Stat changes work in reverse: drops become boosts.', contrary: true },
@@ -672,14 +678,14 @@ export const OFFICIAL = {
     },
   },
   earlyBird: { name: 'Early Bird', weak: true, desc: 'Wakes up twice as fast.', statusDur: n => (n === 'sleep' ? 0.5 : 1) },
-  quickFeet: { name: 'Quick Feet', desc: 'While it has a status condition, it is 40% faster.', speedMult: me => (hasStatus(me) ? 1.4 : 1), pill: me => (hasStatus(me) ? ['QUICK FEET', '#ff9a5a'] : null) },
+  quickFeet: { name: 'Quick Feet', desc: 'While it has a status condition, its Speed rises 50% (and paralysis doesn\'t slow it).', quickFeet: true, speedMult: me => (hasStatus(me) ? 1.5 : 1), pill: me => (hasStatus(me) ? ['QUICK FEET', '#ff9a5a'] : null) },
   poisonHeal: { name: 'Poison Heal', desc: 'Poison heals it instead of hurting.', poisonHeal: true },
 
   // ── Weather ──
-  swiftSwim: weatherSpeed('rain', 'SWIFT SWIM', '#5a8ef0', 'It swims swiftly in the rain!'),
-  chlorophyll: weatherSpeed('sun', 'CHLOROPHYLL', '#62b947', 'The sunlight sped it up!'),
-  sandRush: weatherSpeed('sand', 'SAND RUSH', '#c8a060', 'It rushes through the sand!'),
-  slushRush: weatherSpeed('snow', 'SLUSH RUSH', '#7ab8e8', 'It rushes through the snow!'),
+  swiftSwim: { ...weatherSpeed('rain', 'SWIFT SWIM', '#5a8ef0', 'It swims swiftly in the rain!'), name: 'Swift Swim', desc: 'Its Speed doubles in the rain.' },
+  chlorophyll: { ...weatherSpeed('sun', 'CHLOROPHYLL', '#62b947', 'The sunlight sped it up!'), name: 'Chlorophyll', desc: 'Its Speed doubles in harsh sunlight.' },
+  sandRush: { ...weatherSpeed('sand', 'SAND RUSH', '#c8a060', 'It rushes through the sand!'), name: 'Sand Rush', desc: 'Its Speed doubles in a sandstorm; sandstorms don\'t hurt it.', sandProof: true },
+  slushRush: { ...weatherSpeed('snow', 'SLUSH RUSH', '#7ab8e8', 'It rushes through the snow!'), name: 'Slush Rush', desc: 'Its Speed doubles in snow.' },
   sandVeil: { ...weatherDodge('sand', 'SAND VEIL', '#c8a060'), name: 'Sand Veil', weak: true, sandProof: true, desc: 'In a sandstorm, it sometimes slips out of sight (20%) and takes no sandstorm damage.' },
   snowCloak: { ...weatherDodge('snow', 'SNOW CLOAK', '#7ab8e8'), name: 'Snow Cloak', weak: true, desc: 'In snow, it sometimes slips out of sight (20%).' },
   rainDish: { ...weatherHeal('rain', 'RAIN DISH', '#5a8ef0'), name: 'Rain Dish', weak: true, desc: 'Heals 2% max HP every 1.5s in the rain.' },
@@ -687,34 +693,40 @@ export const OFFICIAL = {
   flowerGift: { ...whileOn(inWeather('sun'), 'It bloomed in the sun!', 'FLOWER GIFT', '#ff9ad5', { dealMult: (g, me) => (me.ab.on ? 1.25 : 1), takeMult: (g, me) => (me.ab.on ? 0.85 : 1) }), name: 'Flower Gift', desc: 'In harsh sunlight it hits 25% harder and takes 15% less.' },
   protosynthesis: {
     ...whileOn((g, me) => g.weather === 'sun' || me.item === 'boosterEnergy', 'Protosynthesis activated!', 'PROTOSYNTHESIS', '#ff9a3a', {
-      dealMult: (g, me) => (me.ab.on ? 1.3 : 1), speedMult: me => (me.ab.on && me.species.speed >= 100 ? 1.3 : 1),
+      dealMult: (g, me) => (me.ab.on ? 1.3 : 1), speedMult: me => (me.ab.on && me.species.speed >= 100 ? 1.5 : 1),
     }), name: 'Protosynthesis', desc: 'In harsh sunlight (or with Booster Energy) its best stats rise 30%.',
   },
   quarkDrive: {
     ...whileOn((g, me) => g.terrain?.kind === 'electric' || me.item === 'boosterEnergy', 'Quark Drive activated!', 'QUARK DRIVE', '#7ab8ff', {
-      dealMult: (g, me) => (me.ab.on ? 1.3 : 1), speedMult: me => (me.ab.on && me.species.speed >= 100 ? 1.3 : 1),
+      dealMult: (g, me) => (me.ab.on ? 1.3 : 1), speedMult: me => (me.ab.on && me.species.speed >= 100 ? 1.5 : 1),
     }), name: 'Quark Drive', desc: 'On Electric Terrain (or with Booster Energy) its best stats rise 30%.',
   },
-  surgeSurfer: { ...whileOn((g) => g.terrain?.kind === 'electric', 'It surfs the current!', 'SURGE SURFER', '#ffd84a', { speedMult: me => (me.ab.on ? 1.4 : 1) }), name: 'Surge Surfer', desc: 'On Electric Terrain it is 40% faster.' },
+  surgeSurfer: { ...whileOn((g) => g.terrain?.kind === 'electric', 'It surfs the current!', 'SURGE SURFER', '#ffd84a', { speedMult: me => (me.ab.on ? 2 : 1) }), name: 'Surge Surfer', desc: 'On Electric Terrain its Speed doubles.' },
   grassPelt: { ...whileOn((g) => g.terrain?.kind === 'grassy', 'Its pelt toughened!', 'GRASS PELT', '#62b947', { takeMult: (g, me) => (me.ab.on ? 0.75 : 1) }), name: 'Grass Pelt', desc: 'On Grassy Terrain it takes 25% less damage.' },
+  // Castform: changes form with the weather — its sprite and its type — the moment the weather changes.
   forecast: {
-    name: 'Forecast', desc: 'Changes type with the weather: Fire in sun, Water in rain, Ice in snow.',
+    name: 'Forecast', desc: 'Changes form with the weather: Sunny Form (Fire) in harsh sunlight, Rainy Form (Water) in rain, Snowy Form (Ice) in snow.',
     tick(g, me) {
-      const t = { sun: 'fire', rain: 'water', snow: 'ice' }[g.weather] ?? null;
-      if ((me.typeOverride?.[0] ?? null) === t) return;
-      me.typeOverride = t ? [t] : null;
-      if (t) g.abilityPop(me, `It became ${t.toUpperCase()}-type!`);
+      const form = FORECAST[g.weather] ?? null, now = me.ab.form ?? null;
+      if (form?.sprite === (now?.sprite ?? null) || (!form && !now)) return;
+      me.ab.form = form;
+      me.typeOverride = form ? [form.type] : null;
+      g.setForm(me, form?.sprite ?? null);
+      g.abilityPop(me, form ? `It transformed into its ${form.name}!` : 'It returned to its Normal Form!');
+      g.emit('form', { mon: me, form: form?.name ?? 'Normal Form', type: form?.type ?? 'normal' });
     },
+    onLeave(g, me) { if (me.ab.form) g.setForm(me, null); },
+    glow: me => (me.ab.form ? ['#ffffff', me.ab.form.color, me.ab.form.color] : null),
   },
 
   // ── Held items ──
   unburden: {
-    name: 'Unburden', desc: 'Once its held item is used up or lost, it moves 50% faster.',
+    name: 'Unburden', desc: 'Once its held item is used up or lost, its Speed doubles.',
     onItemLost(g, me) {
       me.ab.free = true;
       g.abilityPop(me, 'Unburdened: speed rose!');
     },
-    speedMult: me => (me.ab.free ? 1.5 : 1),
+    speedMult: me => (me.ab.free ? 2 : 1),
     pill: me => (me.ab.free ? ['UNBURDEN', '#ff9a5a'] : null),
   },
   gluttony: { name: 'Gluttony', desc: 'Eats its berry at half HP instead of a quarter.' },

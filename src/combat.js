@@ -1,19 +1,14 @@
 import { typeMultiplier } from './data/types.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
+import { stageOf, stageMult } from './stats.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { prepareReaction, resolveReaction } from './elemental.js';
 import { sfx } from './audio.js';
 
-// Real-time battles are short, so type matchups are softened (2× → 1.5×, ½× → 0.7×) and
-// immunities become resistances so every move stays usable.
-export function soften(m) {
-  if (m === 0) return 0.5;
-  if (m > 1) return m >= 4 ? 2 : 1.5;
-  if (m < 1) return m <= 0.25 ? 0.5 : 0.7;
-  return 1;
-}
+// Type matchups use the games' multipliers: 2× and 4× super effective, ½× and ¼× resisted, 0 immune.
+export const soften = m => m;
 
 // Combo roles from a move's own properties: quick openers chain into launchers, launchers into finishers.
 export const comboRole = m => (m.ultimate || m.cat === 'status' ? 3 : m.cooldown <= 1.6 ? 0 : m.cooldown <= 2.5 ? 1 : 2);
@@ -28,9 +23,10 @@ function moveType(attacker, move, A) {
   return [move.type, 1];
 }
 
-function weatherMult(game, type) {
-  if (game.weather === 'rain') return type === 'water' ? 1.3 : type === 'fire' ? 0.7 : 1;
-  if (game.weather === 'sun') return type === 'fire' ? 1.3 : type === 'water' ? 0.7 : 1;
+// The games' weather modifiers: rain powers Water ×1.5 and weakens Fire ×0.5; harsh sun the reverse.
+export function weatherMult(game, type) {
+  if (game.weather === 'rain') return type === 'water' ? 1.5 : type === 'fire' ? 0.5 : 1;
+  if (game.weather === 'sun') return type === 'fire' ? 1.5 : type === 'water' ? 0.5 : 1;
   return 1;
 }
 
@@ -65,6 +61,21 @@ export function applyHit(game, attacker, target, move, o = {}) {
     return false;
   }
 
+  // Accuracy (moves below 100): rolled once per move use. No Guard always hits; Compound Eyes +30%.
+  if (move.acc != null && move.acc < 100 && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
+    stack.accRolled = true;
+    stack.missed = Math.random() * 100 >= move.acc * (A.compoundEyes ? 1.3 : 1);
+  }
+  if (stack.missed) {
+    if (!stack.missShown) {
+      stack.missShown = true;
+      game.spawn(new FloatText(target.x, head - 10, 'MISSED!', '#c9d2de'));
+      game.ui.log(`${attacker.species.name}'s attack missed!`, attacker.side);
+      game.emit?.('miss', { attacker, target, move });
+    }
+    return false;
+  }
+
   // King's Shield / Quick Guard: most of the hit is blocked; contact against King's Shield saps attack.
   const guard = !o.unblockable && !(A.unseenFist && isContact(move)) && target.guard;
   if (guard && guard.mult === 0) {
@@ -85,9 +96,20 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const raw = typeMultiplier(type, hitTypes, winds);
   const calmed = winds && raw < typeMultiplier(type, defTypes);
   let eff = soften(raw);
-  if ((A.pierce === type || A.tinted) && eff < 1) eff = 1;
-  // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped.
-  if (move.ultimate) eff = Math.min(eff, 1.5);
+  if (A.pierce === type && eff < 1 && eff > 0) eff = 1;
+  if (A.tinted && eff < 1 && eff > 0) eff *= 2;
+  // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped at 2×.
+  if (move.ultimate) eff = Math.min(eff, 2);
+  // Type immunity: no damage and no added effects.
+  if (eff === 0) {
+    if (!stack.immune) {
+      stack.immune = true;
+      game.spawn(new FloatText(target.x, head - 10, 'NO EFFECT', '#c9d2de'));
+      game.ui.log(`It doesn't affect ${target.species.name}…`);
+      game.emit?.('immune', { attacker, target, move });
+    }
+    return false;
+  }
   const contact = isContact(move) && !(I.noContactPunch && isPunch(move));
   const info = { type, eff, contact };
 
@@ -102,8 +124,13 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Foul Play turns the target's own attack against it.
   const atkSrc = move.foul ? target : attacker;
   // Unaware ignores the other side's stat changes.
-  const stats = ((move.cat === 'special' ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1)) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * (atkSrc.buffT > 0 ? 1.3 : 1))
-    / ((move.cat === 'special' ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')));
+  // Stat stages (stats.js): Attack/Sp. Atk against Defense/Sp. Def by category. Unaware ignores the other
+  // side's stages; a critical hit ignores the attacker's drops and the defender's boosts.
+  const special = move.cat === 'special', aStat = special ? 'spa' : 'atk', dStat = special ? 'spd' : 'def';
+  let aStage = D.unaware ? 0 : stageOf(atkSrc, aStat), dStage = A.unaware ? 0 : stageOf(target, dStat);
+  if (crit) { aStage = Math.max(0, aStage); dStage = Math.min(0, dStage); }
+  const stats = ((special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1)) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * stageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
+    / ((special ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')) * stageMult(dStage));
   const auraMult = [attacker, target].reduce((m, mon) => {
     const au = abilityOf(mon).aura;
     return m * (au && au.type === type && !mon.hidden && mon.alive ? au.mult : 1);
@@ -142,8 +169,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const sv = game.survival;
   if (sv) dmg *= attacker.side === 'opponent' ? sv.foePower * (sv.def ?? 1) : (sv.atk ?? 1) * sv.foeGuard;
   // Snow toughens Ice types against physical hits; a sandstorm toughens Rock types against special ones.
-  if (game.weather === 'snow' && defTypes.includes('ice') && move.cat === 'physical') dmg *= 0.7;
-  if (game.weather === 'sand' && defTypes.includes('rock') && move.cat === 'special') dmg *= 0.7;
+  if (game.weather === 'snow' && defTypes.includes('ice') && move.cat === 'physical') dmg *= 2 / 3;
+  if (game.weather === 'sand' && defTypes.includes('rock') && move.cat === 'special') dmg *= 2 / 3;
   // Abilities that change the damage show it the moment they do (at most every few seconds).
   const dealt = A.dealMult?.(game, attacker, target, move, info) ?? 1;
   dmg *= dealt;

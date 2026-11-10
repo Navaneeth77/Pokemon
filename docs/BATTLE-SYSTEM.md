@@ -37,7 +37,7 @@ How it works today:
 
 ## Phases
 
-- [ ] **1. Core rules**: stat stages; effective Speed (movement + recharge); real immunities; weather ×1.5/×0.5,
+- [x] **1. Core rules** (done 10 Nov: `tests/battle-rules.test.js` covers the acceptance table): stat stages; effective Speed (movement + recharge); real immunities; weather ×1.5/×0.5,
       timed ability weather, Solar Beam/Thunder/Hurricane/Blizzard weather rules, accuracy and misses;
       Chlorophyll/Swift Swim/Sand Rush/Slush Rush ×2 Speed; Castform forms (sprites + type); setup, recovery,
       Leech Seed, Toxic, Protect, Thunder Wave, sleep; acceptance tests.

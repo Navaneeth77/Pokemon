@@ -11,7 +11,7 @@ import { bossSpritesFor } from './data/skins.js';
 import { reactionBetween } from './reactions.js';
 import { abilityOf, typesOf } from './data/abilities.js';
 import { ITEMS, itemOf, cleanKit, randomKit } from './data/items.js';
-import { applyStatus, addBuff, benchStatus } from './status.js';
+import { applyStatus, addBuff, benchStatus, changeStage } from './status.js';
 import { comboRole, soften, grounded } from './combat.js';
 import { typeMultiplier } from './data/types.js';
 import { Showcase, Finale } from './cinema.js';
@@ -20,7 +20,7 @@ import { loadSpecies, measureDims } from './assets.js';
 import { WINGS } from './data/wings.js';
 import { addFlapAnim } from './flap.js';
 import { TYPE_COLORS } from './data/types.js';
-import { MOVES, chargedMove } from './moves.js';
+import { MOVES, chargedMove, adaptMove } from './moves.js';
 import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
@@ -52,6 +52,8 @@ const ARENA_EVENTS = {
   indigo: { name: 'LIGHTNING STRIKE!', hit: 'ZAP!', n: 3, r: 24, color: '#ffe066', status: 'para',
     fx: (g, z) => { g.spawn(new Lightning(z.x, z.y - 240, z.x, z.y, 0.3)); electricBurst(g, z.x, z.y, 6); g.marks.burn(z.x, z.y, 16); sfx.thunder(); } },
 };
+const WEATHER_START = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!', snow: 'It started to snow!' };
+const WEATHER_END = { rain: 'The rain stopped.', sun: 'The harsh sunlight faded.', sand: 'The sandstorm subsided.', snow: 'The snow stopped.' };
 const HAZARD_MAX = { rocks: 1, spikes: 3, toxic: 2, web: 1 };
 const HAZARD_NAME = { rocks: 'Stealth Rock', spikes: 'Spikes', toxic: 'Toxic Spikes', web: 'Sticky Web' };
 const HAZARD_COLOR = { rocks: '#e8dcc0', spikes: '#d8b878', toxic: '#e0a0f0', web: '#ffffff' };
@@ -519,7 +521,12 @@ export class Game {
       user.busy = 0;
       user.chainT = 0;
     }
-    const move = chargedMove(base, chargeLevel);
+    const move = adaptMove(this, user, chargedMove(base, chargeLevel));
+    if (move.sunCharged) {
+      this.spawn(new FloatText(user.x, user.y - user.headZ - 26, 'SUNLIGHT!', '#ffe680', 7, 1));
+      this.ui.log(`${user.species.name} absorbed the sunlight instantly!`, user.side);
+    }
+    this.emit('move', { user, move });
     if (!NOT_COPYABLE.has(id)) this.lastUsed[user.side] = id;
     this.startCooldown(user, id, base.cooldown);
     user.action = new move.Action(move, user, this);
@@ -715,6 +722,52 @@ export class Game {
 
   buff(mon, stat, mult, dur, source) {
     return addBuff(this, mon, stat, mult, dur, source);
+  }
+
+  // Leech Seed: the seeded Pokémon loses 1/8 of its max HP every 3s and whoever is out on the seeder's side
+  // heals that much. Grass types can't be seeded; switching out or Rapid Spin removes the seed.
+  seed(mon, by) {
+    if (mon.seeded) return this.floatText(mon, 'ALREADY SEEDED', '#c9d2de');
+    mon.seeded = { side: by.side, t: 0 };
+    leafBurst(this, mon.x, mon.y, mon.bodyZ, 6);
+    this.ui.log(`${mon.species.name} was seeded!`, mon.side);
+    this.emit('seed', { mon, by });
+  }
+
+  tickSeeds(dt) {
+    for (const mon of [this.player, this.opponent]) {
+      const s = mon?.seeded;
+      if (!s || !mon.alive || mon.hidden || (s.t += dt) < 3) continue;
+      s.t = 0;
+      const healer = s.side === 'player' ? this.player : this.opponent, amount = mon.maxHp / 8;
+      if (abilityOf(mon).noIndirect) continue;
+      this.dotDamage(mon, 1 / 8, '#62b947');
+      this.ui.log(`${mon.species.name}'s health is sapped by Leech Seed!`, mon.side);
+      // Green motes flow from the seeded Pokémon to the one it feeds.
+      if (healer?.alive && !healer.hidden) {
+        for (let i = 0; i < 8; i++) this.particles.spawn({ x: mon.x + rand(-6, 6), y: mon.y, z: mon.bodyZ, vx: (healer.x - mon.x) / 0.7, vy: (healer.y - mon.y) / 0.7, vz: rand(-10, 10), life: 0.7, size: rand(2, 3), colors: ['#e0ffc0', '#62b947'] });
+        if (abilityOf(mon).liquidOoze) this.dotDamage(healer, amount / healer.maxHp, '#a040a0');
+        else this.heal(healer, amount);
+      }
+      this.emit('leech', { mon, healer, amount });
+    }
+  }
+
+  // Stat stages (stats.js): `changes` like { atk: 1, spe: 1 }.
+  stage(mon, changes, source) {
+    return changeStage(this, mon, changes, source);
+  }
+
+  // ── Battle events: mechanics announce what happened (weather start/end, form change, stat stage, miss,
+  // protect, immunity, ability…) and the log, HUD, animations and tests listen to the same events. ──
+  on(type, fn) {
+    ((this.listeners ??= new Map()).get(type) ?? this.listeners.set(type, []).get(type)).push(fn);
+    return () => this.listeners.get(type).splice(this.listeners.get(type).indexOf(fn) >>> 0, 1);
+  }
+
+  emit(type, data = {}) {
+    for (const fn of this.listeners?.get(type) ?? []) fn(data);
+    for (const fn of this.listeners?.get('*') ?? []) fn(type, data);
   }
 
   applyStatus(mon, name, opts) {
@@ -1277,6 +1330,7 @@ export class Game {
       this.foeSwitchCD = Math.max(0, (this.foeSwitchCD ?? 0) - dt);
       this.updateWeather(dt);
       this.updateArenaEvents();
+      this.tickSeeds(dt);
       this.online?.processEvents();
       if (this.story?.spare) this.checkSpare(dt);
       if (!this.practice && (this.musicT -= dt) <= 0) {
@@ -1355,10 +1409,10 @@ export class Game {
     }
   }
 
-  // Weather: set by abilities while their Pokémon is on the field (the most recent arrival wins), or for a
-  // while by a move or an ability like Sand Spit, which overrides an ability's weather set before it.
-  // Air Lock and Cloud Nine cancel all of it while they are out.
-  setWeather(w, dur) {
+  // Weather, as in the games since Gen 6: Drizzle, Drought, Sand Stream and Snow Warning start it when their
+  // Pokémon comes in, and weather moves start it; either way it lasts 25s (40s with the matching rock),
+  // and the newest replaces the old. Air Lock and Cloud Nine cancel its effects while they are out.
+  setWeather(w, dur = 25) {
     this.timedWeather = { w, t: dur, at: this.time };
   }
 
@@ -1492,16 +1546,26 @@ export class Game {
 
   updateWeather(dt) {
     const field = [this.player, this.opponent].filter(m => m?.alive && !m.hidden);
-    const src = field.filter(m => abilityOf(m).weather && abilityOf(m).weather !== 'delta').sort((a, b) => (b.enteredAt ?? 0) - (a.enteredAt ?? 0))[0];
-    if (this.timedWeather && (this.timedWeather.t -= dt) <= 0) this.timedWeather = null;
-    const tw = this.timedWeather;
-    let w = tw && (!src || tw.at >= (src.enteredAt ?? 0)) ? tw.w : src ? abilityOf(src).weather : null;
+    // A weather ability starts its weather once each time its Pokémon (or its Mega form) comes in.
+    for (const m of field) {
+      const ab = abilityOf(m), key = `${m.species.id}:${m.enteredAt}`;
+      if (!ab.weather || ab.weather === 'delta' || m.abWeatherKey === key || m.remote) continue;
+      m.abWeatherKey = key;
+      this.abilityPop(m, WEATHER_START[ab.weather]);
+      this.setWeather(ab.weather, ITEMS[m.item]?.rock === ab.weather ? 40 : 25);
+    }
+    if (this.timedWeather && (this.timedWeather.t -= dt) <= 0) {
+      this.ui.log(WEATHER_END[this.timedWeather.w]);
+      this.timedWeather = null;
+    }
+    let w = this.timedWeather?.w ?? null;
     if (w && field.some(m => abilityOf(m).noWeather)) w = null;
     if (w !== this.weather && w) {
-      const label = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!', snow: 'It started to snow!' }[w];
+      const label = WEATHER_START[w];
       this.hud.showBanner(label.toUpperCase(), { color: '#ffffff', y: 300, life: 1.2, size: 15 });
       this.ui.log(label);
     }
+    if (w !== this.weather) this.emit('weather', { from: this.weather, to: w });
     this.weather = w;
     if (this.terrain && (this.terrain.t -= dt) <= 0) {
       this.ui.log('The terrain returned to normal.');
@@ -1519,11 +1583,15 @@ export class Game {
       else if (w === 'snow') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: rand(60, 120), vx: rand(-20, 10), vz: rand(-60, -40), life: 1.6, size: rand(1.5, 2.5), colors: ['#ffffff', '#e0f4ff'] });
       else this.particles.spawn({ x: rand(-40, 360), y: rand(60, 640), z: rand(2, 40), vx: rand(160, 240), vy: rand(-10, 20), life: 0.5, size: rand(1.5, 2.5), colors: ['#e8d8b0', '#c8b080'] });
     }
-    if (w === 'sand' && (this.weatherT += dt) >= 1.5) {
+    // Sandstorm: 1/16 of max HP every 3s (a "turn") to anything that isn't Rock, Ground or Steel.
+    if (w === 'sand' && (this.weatherT += dt) >= 3) {
       this.weatherT = 0;
       for (const m of field) {
-        const ab = abilityOf(m), immune = typesOf(m).some(t => t === 'rock' || t === 'ground' || t === 'steel') || ab.sandProof || ab.weather === 'sand';
-        if (!immune) this.dotDamage(m, 0.01, '#c8b080');
+        const ab = abilityOf(m), immune = typesOf(m).some(t => t === 'rock' || t === 'ground' || t === 'steel') || ab.sandProof || ab.weather === 'sand' || ITEMS[m.item]?.id === 'safetyGoggles';
+        if (!immune) {
+          this.dotDamage(m, 1 / 16, '#c8b080');
+          this.ui.log(`${m.species.name} is buffeted by the sandstorm!`, m.side);
+        }
       }
     }
     for (const m of field) abilityOf(m).weatherTick?.(this, m, dt, w);

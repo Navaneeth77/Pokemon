@@ -65,7 +65,7 @@ export class Pokemon {
       elementAura: null, reactionUntil: 0, reactionComboUntil: 0, reactionCount: 0,
       action: null, cooldowns: {}, busy: 0, root: 0, stagger: 0, frozen: 0, status: this.status ?? {}, sGuard: {}, buffs: {},
       combo: { n: 0, uses: 0, t: 0, chain: 0, lastRole: -1, foe: null }, chainT: 0, chainRole: -1, comboHits: 0, comboTimer: 0, escapeT: 0,
-      ab: {}, it: {}, stages: {}, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
+      ab: {}, it: {}, stages: {}, seeded: null, roostT: 0, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
       flash: 0, flashColor: '#fff', appear: 0, recallT: 0, landT: 0, zOverride: null, invuln: false, phasing: false, held: false,
       fainted: !this.alive, faintT: 0, moving: false, windT: 0, flyT: 0, auraT: 0, hidden: true,
       dodgeT: 0, dodgeInv: 0, dodgeCD: 0, dodgeDir: { x: 0, y: 1 }, ghostT: 0, buffT: 0,
@@ -257,6 +257,7 @@ export class Pokemon {
     this.appear = Math.max(0, this.appear - dt * 2.5);
     this.landT = Math.max(0, this.landT - dt);
     this.abilityOff = Math.max(0, this.abilityOff - dt);
+    this.roostT = Math.max(0, this.roostT - dt);
     const ab = abilityOf(this);
     const held = itemOf(this);
     // Effective Speed (stats.js) also sets how fast moves recharge.
@@ -436,6 +437,7 @@ export class Pokemon {
     const cap = this.appear > 0.05 || this.recallT > 0 ? 1 : 0.65;
     this.sprite.draw(ctx, this.x, this.y - this.lift + sink, this.dir, { alpha, scale, flash: Math.min(flash, cap), flashColor: color });
     if (this.tera) this.drawTera(ctx, alpha, scale, sink);
+    if (this.seeded) this.drawSeed(ctx);
     if (this.guard) this.drawGuard(ctx);
     if (this.frozen > 0) this.drawIce(ctx);
     if (this.status.sleep > 0) this.drawSleep(ctx);
@@ -461,6 +463,22 @@ export class Pokemon {
     ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.fillRect(x - 1.5, y - 3, 1.5, 3);
+    ctx.restore();
+  }
+
+  // Leech Seed: vines curl up around its feet.
+  drawSeed(ctx) {
+    const t = performance.now() / 400;
+    ctx.save();
+    ctx.strokeStyle = '#4aa83a';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) {
+      const a = i * 2.1 + t * 0.3, x = this.x + Math.cos(a) * this.radius * 0.8, y = this.y + Math.sin(a) * 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + Math.sin(t + i) * 5, y - 8, x + Math.cos(t + i) * 3, y - 14 - this.lift);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

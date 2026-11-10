@@ -4,7 +4,7 @@ import { LegendaryBeam, AeroblastBeam } from './raid-art.js';
 import { skyLegend, CastEnergy, Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
 import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
 import { applyHit } from './combat.js';
-import { itemOf } from './data/items.js';
+import { itemOf, ITEMS } from './data/items.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
 import {
@@ -661,7 +661,10 @@ const UTIL_FX = {
     g.heal(u, u.maxHp * c.pct);
     g.spawn(new Glow(u.x, u.y, u.bodyZ, 34, [140, 255, 170], 0.45));
     g.spawn(new Ring(u.x, u.y, { r0: 34, r1: 6, life: 0.4, color: '#9fffc8', width: 3 }));
-    if (c.land) u.landT = 1.2; // Roost: touches down to rest
+    if (c.land) {
+      u.landT = 1.2; // Roost: touches down to rest, and loses its Flying type while it does
+      u.roostT = 3;
+    }
     sfx.pulse();
   },
   regen(a, g, u, c) {
@@ -669,8 +672,30 @@ const UTIL_FX = {
     g.spawn(new Ring(u.x, u.y, { r0: 8, r1: 30, life: 0.5, color: '#9fd8ff', width: 3 }));
     waterSplash(g, u.x, u.y);
   },
+  // Stat stages, each setup move with its own look around the user.
+  stages(a, g, u, c) {
+    g.stage(u, g.weather === 'sun' && c.sun ? c.sun : c.self);
+    SETUP_LOOK[c.look]?.(g, u);
+  },
+  // A status move aimed at the foe (see the moves above).
+  ray(a, g, u, c) {
+    const f = u.foe;
+    if (!f?.alive || f.hidden) return;
+    g.spawn(new BeamLine(u.x, u.y - u.bodyZ, f.x, f.y - f.bodyZ, 0.25, c.color, 3));
+    const types = f.typeOverride ?? (f.tera ? [f.tera] : f.species.types);
+    if (f.untouchable || u.distTo(f) > 300) return g.floatText(f, 'MISSED!', '#c9d2de');
+    if (c.acc < 100 && !(c.sureFor && u.species.types.includes(c.sureFor)) && Math.random() * 100 >= c.acc) return g.floatText(f, 'MISSED!', '#c9d2de');
+    if (c.immune?.some(t => types.includes(t)) || (c.powder && (types.includes('grass') || ITEMS[f.item]?.powderProof))) {
+      g.floatText(f, 'NO EFFECT', '#c9d2de');
+      return g.ui.log(`It doesn't affect ${f.species.name}…`);
+    }
+    if (f.guard?.mult === 0) return g.floatText(f, 'BLOCKED!', f.guard.color);
+    g.spawn(new Ring(f.x, f.y, { z: f.bodyZ, r0: 4, r1: f.radius + 14, life: 0.3, color: c.color, width: 3, layer: 'air' }));
+    if (c.seed) return g.seed(f, u);
+    g.applyStatus(f, c.status, { source: u, dur: c.dur, toxic: c.toxic });
+  },
   weather(a, g, u, c) {
-    g.setWeather(c.weather, c.dur);
+    g.setWeather(c.weather, ITEMS[u.item]?.rock === c.weather ? 40 : 25);
     fieldBurst(g, u, c.color);
   },
   terrain(a, g, u, c) {
@@ -694,6 +719,27 @@ const UTIL_FX = {
   },
 };
 
+// What each setup move looks like: Dragon Dance's spiralling draconic flames, Calm Mind's psychic rings,
+// Nasty Plot's dark sparks, Bulk Up's flexing pulse, Quiver Dance's butterfly dust, Shell Smash's shell
+// shards, Agility's afterimages, Iron Defense's steel sheen, Growth's rising leaves.
+const spiral = (g, u, colors, n = 14, rise = 60) => {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 4;
+    g.particles.spawn({ x: u.x + Math.cos(a) * (u.radius + 6), y: u.y + Math.sin(a) * 4, z: 2 + (i / n) * u.headZ, vx: -Math.sin(a) * 30, vz: rise, life: 0.7, size: rand(2, 4), sizeEnd: 1, colors });
+  }
+};
+const SETUP_LOOK = {
+  dragon(g, u) { spiral(g, u, ['#ffffff', '#b090ff', '#5a3ad8'], 20, 80); g.spawn(new Ring(u.x, u.y, { r0: 8, r1: 46, life: 0.5, color: '#8a6aff', width: 4 })); sfx.roar(); },
+  mind(g, u) { for (let i = 0; i < 3; i++) g.spawn(new Ring(u.x, u.y, { z: u.headZ, r0: 4, r1: 20 + i * 10, life: 0.4 + i * 0.12, color: '#ff8ad0', width: 2, layer: 'air' })); sfx.pulse(); },
+  plot(g, u) { spiral(g, u, ['#c8a0ff', '#6a3a8a', '#1a0f24'], 12, 40); g.spawn(new Glow(u.x, u.y, u.headZ, 22, [110, 60, 170], 0.4)); },
+  bulk(g, u) { g.spawn(new Ring(u.x, u.y, { r0: u.radius, r1: u.radius + 22, life: 0.35, color: '#ff9a5a', width: 5 })); g.shake(3, 0.2); sfx.clang(); },
+  quiver(g, u) { spiral(g, u, ['#ffffff', '#f0ffd0', '#a8d848'], 18, 30); },
+  smash(g, u) { for (let i = 0; i < 10; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: rand(-90, 90), vy: rand(-40, 40), vz: rand(60, 140), g: 300, life: 0.7, size: rand(2, 4), colors: ['#e8dcc0', '#a08a60'] }); g.shake(4, 0.25); sfx.explosion(); },
+  agility(g, u) { for (let i = 0; i < 3; i++) g.spawn(new Afterimage(u, 0.25 + i * 0.1, '#ffd0f0')); sfx.whoosh(); },
+  iron(g, u) { g.spawn(new Glow(u.x, u.y, u.bodyZ, 30, [220, 230, 245], 0.4)); metalSparks(g, u.x, u.y, u.bodyZ, 8); sfx.clang(); },
+  growth(g, u) { spiral(g, u, ['#e0ffc0', '#8ad84f', '#3f8f2c'], 14, 50); leafBurst(g, u.x, u.y, u.bodyZ, 8); },
+};
+
 // A weather or terrain move: rings of its colour burst out from the user.
 function fieldBurst(g, u, color) {
   for (let i = 0; i < 3; i++) g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 60 + i * 30, life: 0.5 + i * 0.12, color, width: 4 - i }));
@@ -708,6 +754,7 @@ class Spin extends MoveAction {
   start() {
     const c = this.move.spin;
     this.game.clearHazards?.(this.user.side, this.user);
+    this.user.seeded = null;
     this.allowMove = true;
     this.hits = 0;
     this.tickT = 0.05;
@@ -2474,7 +2521,34 @@ const util = (name, type, cooldown, tag, u, more = {}) => ({ name, type, power: 
 Object.assign(NEW_MOVES, {
   swordsDance: util('Swords Dance', 'normal', 7, 'Attack +40% for 6s', { kind: 'buff', stat: 'atk', mult: 1.4, dur: 6, anim: 'Pose' }),
   roost: util('Roost', 'flying', 9, 'Lands to heal 25% HP', { kind: 'heal', pct: 0.25, land: true }),
-  recover: util('Recover', 'normal', 10, 'Heals 30% HP', { kind: 'heal', pct: 0.3 }),
+  recover: util('Recover', 'normal', 10, 'Heals 50% HP', { kind: 'heal', pct: 0.5 }),
+
+  // Setup: stat stages (stats.js), each with its own look.
+  dragonDance: util('Dragon Dance', 'dragon', 6, 'Attack +1, Speed +1', { kind: 'stages', self: { atk: 1, spe: 1 }, look: 'dragon', anim: 'Pose', end: 0.7 }),
+  calmMind: util('Calm Mind', 'psychic', 6, 'Sp. Atk +1, Sp. Def +1', { kind: 'stages', self: { spa: 1, spd: 1 }, look: 'mind', end: 0.6 }),
+  nastyPlot: util('Nasty Plot', 'dark', 7, 'Sp. Atk +2', { kind: 'stages', self: { spa: 2 }, look: 'plot', end: 0.6 }),
+  bulkUp: util('Bulk Up', 'fighting', 6, 'Attack +1, Defense +1', { kind: 'stages', self: { atk: 1, def: 1 }, look: 'bulk', anim: 'Pose', end: 0.6 }),
+  quiverDance: util('Quiver Dance', 'bug', 6, 'Sp. Atk, Sp. Def and Speed +1', { kind: 'stages', self: { spa: 1, spd: 1, spe: 1 }, look: 'quiver', anim: 'Pose', end: 0.7 }),
+  shellSmash: util('Shell Smash', 'normal', 9, 'Attack, Sp. Atk, Speed +2 · Defenses −1', { kind: 'stages', self: { atk: 2, spa: 2, spe: 2, def: -1, spd: -1 }, look: 'smash', end: 0.6 }),
+  agility: util('Agility', 'psychic', 6, 'Speed +2', { kind: 'stages', self: { spe: 2 }, look: 'agility', end: 0.4 }),
+  ironDefense: util('Iron Defense', 'steel', 6, 'Defense +2', { kind: 'stages', self: { def: 2 }, look: 'iron', end: 0.5 }),
+  growth: util('Growth', 'normal', 6, 'Attack, Sp. Atk +1 (+2 in harsh sunlight)', { kind: 'stages', self: { atk: 1, spa: 1 }, sun: { atk: 2, spa: 2 }, look: 'growth', end: 0.6 }),
+  // Recovery.
+  slackOff: util('Slack Off', 'normal', 10, 'Heals 50% HP', { kind: 'heal', pct: 0.5 }),
+  synthesis: util('Synthesis', 'grass', 10, 'Heals 50% HP · 67% in sun, 25% in other weather', { kind: 'heal', pct: 0.5, weatherHeal: true }),
+  moonlight: util('Moonlight', 'fairy', 10, 'Heals 50% HP · 67% in sun, 25% in other weather', { kind: 'heal', pct: 0.5, weatherHeal: true }),
+  morningSun: util('Morning Sun', 'normal', 10, 'Heals 50% HP · 67% in sun, 25% in other weather', { kind: 'heal', pct: 0.5, weatherHeal: true }),
+  // Status moves aimed at the foe: a ray of the move's colour; it can be dodged, misses on a failed
+  // accuracy roll, and respects type immunities (Electric types can't be paralysed, Grass types aren't
+  // seeded or put to sleep by powders, Fire types aren't burned…).
+  thunderWave: util('Thunder Wave', 'electric', 8, 'Paralyses the foe (Speed halved, sometimes can\'t move)', { kind: 'ray', status: 'para', acc: 90, color: '#ffe066', immune: ['ground', 'electric'] }),
+  toxic: util('Toxic', 'poison', 8, 'Badly poisons the foe: damage grows every tick', { kind: 'ray', status: 'poison', toxic: true, acc: 90, color: '#a848a8', sureFor: 'poison' }),
+  willOWisp: util('Will-O-Wisp', 'fire', 8, 'Burns the foe', { kind: 'ray', status: 'burn', acc: 85, color: '#7a6aff' }),
+  spore: util('Spore', 'grass', 12, 'Puts the foe to sleep', { kind: 'ray', status: 'sleep', dur: 3, acc: 100, color: '#d8c890', powder: true }),
+  sleepPowder: util('Sleep Powder', 'grass', 12, 'Puts the foe to sleep', { kind: 'ray', status: 'sleep', dur: 3, acc: 75, color: '#c8b0e8', powder: true }),
+  leechSeed: util('Leech Seed', 'grass', 9, 'Seeds the foe: drains 1/8 of its HP every 3s to heal you', { kind: 'ray', seed: true, acc: 90, color: '#62b947', immune: ['grass'] }),
+  // Protection: blocks every attack that would hit it for a moment (not ultimates).
+  protect: util('Protect', 'normal', 6, 'Blocks every attack for 0.9s', { kind: 'guard', dur: 0.9, mult: 0, color: '#9fe8ff', label: 'PROTECT', at: 0.02, end: 0.25 }),
 
   // Field moves: weather and terrain for 20s, and entry hazards on the foe's side (cleared by Rapid Spin).
   rainDance: util('Rain Dance', 'water', 14, 'Rain for 20s · Water +30%, Fire −30%', { kind: 'weather', weather: 'rain', dur: 20, anim: 'Pose', color: '#5a8ef0' }),
@@ -2840,6 +2914,9 @@ const FAMILY = {
   wind: ['hurricane', 'heatWave', 'airSlash'],
 };
 for (const [tag, ids] of Object.entries(FAMILY)) for (const id of ids) if (MOVES[id]) MOVES[id][tag] = true;
+// Weather rules (adaptMove): Solar Beam's charge; Hurricane's accuracy in rain and sun.
+MOVES.solarBeam.solar = true;
+Object.assign(MOVES.hurricane, { acc: 70, weatherAcc: { rain: 100, sun: 50 } });
 // Slicing moves (Gallade's Sharpness).
 for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw', 'crossPoison', 'slash', 'smartStrike', 'wingAttack']) MOVES[id].slice = true;
 // Moves that drag the foe toward the user instead of pushing it away.
@@ -2850,6 +2927,26 @@ const CHARGEABLE = ['hyperBeam', 'solarBeam', 'dragonPulse', 'lugiaWaterPulse', 
   'energyBall', 'sludgeBomb', 'moonblastShot', 'waterPulse', 'fireBlast', 'extrasensory', 'psyshock', 'powerGem', 'hex', 'discharge', 'hyperVoice',
   'dazzlingGleam', 'nightDaze', 'heatWave', 'searingShot'];
 for (const id of CHARGEABLE) MOVES[id].chargeable = true;
+
+// Moves that change with the battle state, as in the games: Solar Beam fires at once in harsh sunlight and
+// at half power in other weather; Thunder and Hurricane never miss in rain and are inaccurate in sun;
+// Blizzard never misses in snow; Weather Ball takes the weather's type at double power; Synthesis-style
+// healing depends on the weather; Facade doubles when statused; Acrobatics doubles without an item.
+export function adaptMove(game, user, m) {
+  const w = game.weather && game.weather !== 'delta' ? game.weather : null;
+  let c = m;
+  const set = patch => (c = { ...c, ...patch });
+  if (m.solar) {
+    if (w === 'sun') set({ sunCharged: true, beam: m.beam && { ...m.beam, charge: 0.06 } });
+    else if (w) set({ power: Math.round(m.power / 2) });
+  }
+  if (m.weatherAcc?.[w] != null) set({ acc: m.weatherAcc[w] });
+  if (m.weatherBall && w) set({ type: { sun: 'fire', rain: 'water', sand: 'rock', snow: 'ice' }[w], power: m.power * 2 });
+  if (m.facade && Object.values(user.status).some(v => v > 0)) set({ power: m.power * 2 });
+  if (m.acrobatics && !user.item) set({ power: m.power * 2 });
+  if (m.util?.weatherHeal) set({ util: { ...m.util, pct: w === 'sun' ? 2 / 3 : w ? 1 / 4 : 1 / 2 } });
+  return c;
+}
 
 export function chargedMove(m, lvl) {
   if (!lvl) return m;

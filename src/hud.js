@@ -2,7 +2,7 @@ import { outlinedText, roundRect, pokeball, megaSymbol } from './draw.js';
 import { TYPE_COLORS } from './data/types.js';
 import { WORLD_W } from './arena.js';
 import { abilityOf, typesOf } from './data/abilities.js';
-import { statusPills, buffPills } from './status.js';
+import { statusPills, buffPills, stagePills } from './status.js';
 
 const BAR_W = 116;
 
@@ -270,7 +270,7 @@ export class Hud {
   drawTags(ctx) {
     for (const mon of [this.game.player, this.game.opponent]) {
       if (mon.hidden || !mon.alive) continue;
-      const tags = [...statusPills(mon), ...buffPills(mon)];
+      const tags = [...statusPills(mon), ...stagePills(mon), ...buffPills(mon)];
       const ab = abilityOf(mon).pill?.(mon);
       if (ab) tags.push(ab);
       if (mon.shield > 0 && !ab) tags.push(['SHIELD', '#ff70b0']);
