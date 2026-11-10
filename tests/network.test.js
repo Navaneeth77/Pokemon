@@ -3,8 +3,13 @@ import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 const port=18879;
-const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,PORT:String(port),LEADERBOARD_FILE:'/tmp/chaos-arena-test-records.json',MAX_RAIDS:'4',MAX_MATCHES:'8'},stdio:['ignore','pipe','pipe']});
+// A fresh data folder per run, so records and wallets from earlier runs can't leak into these tests.
+const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'chaos-arena-test-'));
+const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,PORT:String(port),LEADERBOARD_FILE:path.join(dataDir,'records.json'),ECONOMY_FILE:path.join(dataDir,'economy.json'),MAX_RAIDS:'4',MAX_MATCHES:'8'},stdio:['ignore','pipe','pipe']});
 let logs='';server.stderr.on('data',b=>logs+=b);
 await once(server.stdout,'data');
 function client(id){const ws=new WebSocket(`ws://127.0.0.1:${port}`),messages=[];ws.on('message',raw=>messages.push(JSON.parse(raw)));return {ws,messages,send:m=>ws.send(JSON.stringify(m)),async wait(t,p=()=>true){for(let i=0;i<400;i++){const k=messages.findIndex(m=>m.t===t&&p(m));if(k>=0)return messages.splice(k,1)[0];await new Promise(r=>setTimeout(r,25));}throw new Error(`Timed out ${t}: ${logs}`);},async hello(extra={}){await once(ws,'open');this.send({t:'hello',v:2,pid:id,name:'Test',...extra});await this.wait('welcome');}}}
@@ -76,7 +81,7 @@ test('lobby shows where players are: raids and drafts by queue, and survives a r
   await Promise.all([x.wait('matched'),y.wait('matched')]);l=await lobby();assert.equal(l.modes[3].battling,2,'ordinary matches are counted too');[x,y].forEach(z=>z.ws.close());
  }finally{[a,b,c].forEach(x=>x.ws.close());}
 });
-test.after(()=>server.kill());
+test.after(()=>{server.kill();fs.rmSync(dataDir,{recursive:true,force:true});});
 
 test('ranked draft uses authoritative Elo; unranked queue remains a separate mode',async()=>{
  const cs=await pair('ranked-draft');try{
