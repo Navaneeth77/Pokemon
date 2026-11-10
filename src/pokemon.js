@@ -5,7 +5,8 @@ import { abilityOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
 import { TYPE_COLORS } from './data/types.js';
 import { skyLegend } from './legendary-effects.js';
-import { tickStatus, statusSpeed, tickBuffs, buffMult } from './status.js';
+import { tickStatus, tickBuffs, buffMult } from './status.js';
+import { speedRatio, moveFactor, rechargeFactor } from './stats.js';
 
 const RECALL_TIME = 0.4;
 const DODGE_TIME = 0.2;
@@ -64,7 +65,7 @@ export class Pokemon {
       elementAura: null, reactionUntil: 0, reactionComboUntil: 0, reactionCount: 0,
       action: null, cooldowns: {}, busy: 0, root: 0, stagger: 0, frozen: 0, status: this.status ?? {}, sGuard: {}, buffs: {},
       combo: { n: 0, uses: 0, t: 0, chain: 0, lastRole: -1, foe: null }, chainT: 0, chainRole: -1, comboHits: 0, comboTimer: 0, escapeT: 0,
-      ab: {}, it: {}, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
+      ab: {}, it: {}, stages: {}, abilityOverride: null, abilityOff: 0, charging: null, typeOverride: null, shield: 0, chill: 0, form: null, air: null, guard: null, regen: null,
       flash: 0, flashColor: '#fff', appear: 0, recallT: 0, landT: 0, zOverride: null, invuln: false, phasing: false, held: false,
       fainted: !this.alive, faintT: 0, moving: false, windT: 0, flyT: 0, auraT: 0, hidden: true,
       dodgeT: 0, dodgeInv: 0, dodgeCD: 0, dodgeDir: { x: 0, y: 1 }, ghostT: 0, buffT: 0,
@@ -258,7 +259,8 @@ export class Pokemon {
     this.abilityOff = Math.max(0, this.abilityOff - dt);
     const ab = abilityOf(this);
     const held = itemOf(this);
-    const cdRate = (ab.cdRate ?? 1) * (held?.cdRate ?? 1) * (this.side === 'player' ? game.survival?.cd ?? 1 : 1) * (this.foe && !this.foe.hidden && this.foe.alive ? abilityOf(this.foe).foeCdRate ?? 1 : 1);
+    // Effective Speed (stats.js) also sets how fast moves recharge.
+    const cdRate = rechargeFactor(speedRatio(this, game)) * (ab.cdRate ?? 1) * (held?.cdRate ?? 1) * (this.side === 'player' ? game.survival?.cd ?? 1 : 1) * (this.foe && !this.foe.hidden && this.foe.alive ? abilityOf(this.foe).foeCdRate ?? 1 : 1);
     for (const id in this.cooldowns) this.cooldowns[id] = Math.max(0, this.cooldowns[id] - dt * cdRate);
 
     this.x += this.vx * dt;
@@ -334,7 +336,7 @@ export class Pokemon {
       // Normalised so diagonals are no faster than straight movement.
       const nx = this.input.x / Math.max(1, len), ny = this.input.y / Math.max(1, len);
       const speed = this.species.speed * (this.action ? 0.55 : 1) * (this.buffT > 0 ? 1.3 : 1) * buffMult(this, 'spd')
-        * statusSpeed(this) * (ab.speedMult?.(this, game) ?? 1) * (itemOf(this)?.speedMult?.() ?? 1) * (this.charging ? 0.4 : 1);
+        * moveFactor(speedRatio(this, game)) * (this.status.slow > 0 ? 0.6 : 1) * (this.charging ? 0.4 : 1);
       this.x += nx * speed * dt;
       this.y += ny * speed * dt;
       this.lastMove.x = nx / Math.hypot(nx, ny);
