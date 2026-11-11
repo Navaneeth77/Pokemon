@@ -3060,6 +3060,24 @@ for (const id of TAIL_MOVES) {
   if (steps.length) m.impact = [...(m.impact ?? []), ...steps];
 }
 
+// The rarely used status moves: a modest accent by kind, added to each one's existing look (visual only).
+const STATUS_TAIL = ['ironDefense', 'stickyWeb', 'taunt', 'rockPolish', 'defog', 'strengthSap', 'sleepPowder', 'haze', 'shiftGear', 'slackOff', 'coil', 'moonlight', 'morningSun', 'tidyUp', 'healBell', 'glare', 'stunSpore', 'bellyDrum', 'honeClaws', 'spore', 'milkDrink', 'softBoiled', 'cosmicPower', 'aromatherapy', 'takeHeart', 'tailGlow', 'shoreUp', 'hypnosis', 'autotomize', 'cottonGuard'];
+for (const id of STATUS_TAIL) {
+  const m = MOVES[id];
+  if (!m?.util) continue;
+  const c = TYPE_COLORS[m.type]?.[0] ?? '#ffffff', k = m.util.kind;
+  const steps = k === 'heal' || k === 'weatherHeal'
+    ? [{ at: 0.05, burst: { colors: ['#ffffff', '#c8ffd8', '#7ae0a0'], n: 14, up: 120 }, rings: { colors: ['#ffffff', '#9fffc8'], r: 36 }, where: 'user' }]
+    : k === 'stages'
+      ? [{ at: 0.05, rings: { colors: ['#ffffff', c], r: 40 }, where: 'user' }, { at: 0.2, rings: { colors: [c], r: 56 }, where: 'user' }]
+      : k === 'ray'
+        ? [{ at: 0.3, burst: { colors: ['#ffffff', c], n: 12, up: 70 } }]
+        : k === 'hazard'
+          ? [{ at: 0.05, toss: { n: 3, style: 'crystal', rgb: [235, 235, 220], scale: 0.9 } }]
+          : [{ at: 0.05, rings: { colors: ['#ffffff', c], r: 40 }, where: 'user' }];
+  m.fx = [...(m.fx ?? []), ...steps];
+}
+
 // Faster pace: every regular move recovers 30% sooner (ultimates charge a meter instead).
 for (const m of Object.values(MOVES)) if (!m.ultimate && m.cooldown) m.cooldown = Math.max(0.6, Math.round(m.cooldown * 7) / 10);
 
