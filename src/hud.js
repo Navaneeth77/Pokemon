@@ -1,6 +1,11 @@
 import { outlinedText, roundRect, pokeball, megaSymbol } from './draw.js';
 import { TYPE_COLORS } from './data/types.js';
 import { WORLD_W } from './arena.js';
+
+// The top bar: both panels, and under them a row for each side's stat changes.
+const HUD_H = 58;
+const STAGE_LABEL = { atk: 'ATK', def: 'DEF', spa: 'SP.ATK', spd: 'SP.DEF', spe: 'SPE', accuracy: 'ACC', evasion: 'EVA' };
+const BUFF_LABEL = { atk: 'ATK', def: 'DEF', spd: 'SPE' };
 import { abilityOf, typesOf } from './data/abilities.js';
 import { statusPills, buffPills, stagePills } from './status.js';
 
@@ -63,19 +68,21 @@ export class Hud {
 
   draw(ctx) {
     const g = this.game;
-    const top = ctx.createLinearGradient(0, 0, 0, 48);
+    const top = ctx.createLinearGradient(0, 0, 0, HUD_H);
     top.addColorStop(0, 'rgba(12,16,26,0.9)');
     top.addColorStop(1, 'rgba(12,16,26,0.6)');
     ctx.fillStyle = top;
-    ctx.fillRect(0, 0, WORLD_W, 48);
+    ctx.fillRect(0, 0, WORLD_W, HUD_H);
     ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.fillRect(0, 48, WORLD_W, 1);
+    ctx.fillRect(0, HUD_H, WORLD_W, 1);
     this.drawPanel(ctx, g.player, g.playerTeam, false);
     this.drawPanel(ctx, g.opponent, g.opponentTeam, true);
+    this.drawStats(ctx, g.player, false);
+    this.drawStats(ctx, g.opponent, true);
     this.drawTimer(ctx);
     if (g.online?.server) {
       const ping=g.online.ping,unstable=(g.online.jitter??0)>80;
-      outlinedText(ctx,ping==null?'CONNECTING':`${ping}ms${unstable?' · JITTER':''}`,354,72,{size:6,color:unstable?'#ffb077':'#b7e9cf',align:'right',lw:2});
+      outlinedText(ctx,ping==null?'CONNECTING':`${ping}ms${unstable?' · JITTER':''}`,354,82,{size:6,color:unstable?'#ffb077':'#b7e9cf',align:'right',lw:2});
     }
     this.drawSwitch(ctx);
     if (this.callouts.player) this.drawCallout(ctx, this.callouts.player, false);
@@ -173,11 +180,33 @@ export class Hud {
     if (glow > 0) roundRect(ctx, right ? W / 2 + 4 : 2, 2, W / 2 - 6, 44, 6, `rgba(255,255,255,${0.35 * glow})`);
   }
 
+  // Stat changes under each panel, always in view: stages (ATK +2, SPE −1) and timed boosts (ATK ×1.3 4s),
+  // gold for up and blue for down.
+  drawStats(ctx, mon, right) {
+    if (!mon || mon.hidden) return;
+    const chips = [
+      ...Object.entries(mon.stages ?? {}).filter(([, n]) => n).map(([k, n]) => [`${STAGE_LABEL[k] ?? k.toUpperCase()} ${n > 0 ? '+' : '−'}${Math.abs(n)}`, n > 0]),
+      ...Object.entries(mon.buffs ?? {}).filter(([, b]) => b.t > 0 && b.m !== 1).map(([k, b]) => [`${BUFF_LABEL[k] ?? k.toUpperCase()} ×${b.m.toFixed(1)} ${Math.ceil(b.t)}s`, b.m > 1]),
+    ];
+    if (mon.buffT > 0) chips.push([`POWER UP ${Math.ceil(mon.buffT)}s`, true]);
+    if (!chips.length) return;
+    ctx.font = '400 8.5px "Luckiest Guy"';
+    let x = right ? WORLD_W - 5 : 5;
+    for (const [label, up] of chips) {
+      const w = Math.ceil(ctx.measureText(label).width) + 10;
+      if (right ? x - w < WORLD_W / 2 + 18 : x + w > WORLD_W / 2 - 18) break;
+      const cx = right ? x - w : x;
+      roundRect(ctx, cx, 46.5, w, 11, 5.5, up ? '#b07c10' : '#2f5aa8', up ? '#ffe28a' : '#9fc0ff', 0.9);
+      outlinedText(ctx, label, cx + w / 2, 55.3, { size: 8.5, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
+      x += right ? -(w + 2) : w + 2;
+    }
+  }
+
   drawTimer(ctx) {
     const s = Math.floor(this.game.time);
     const label = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    roundRect(ctx, WORLD_W / 2 - 16, 51, 32, 12, 6, 'rgba(16,20,30,0.88)', 'rgba(255,255,255,0.12)', 0.8);
-    outlinedText(ctx, label, WORLD_W / 2, 60.5, { size: 8, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
+    roundRect(ctx, WORLD_W / 2 - 16, 61, 32, 12, 6, 'rgba(16,20,30,0.88)', 'rgba(255,255,255,0.12)', 0.8);
+    outlinedText(ctx, label, WORLD_W / 2, 70.5, { size: 8, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
   }
 
   // Shared team switch cooldown, shown under the player's panel.
@@ -190,13 +219,13 @@ export class Hud {
     const label = none ? 'NO SWITCH' : cd > 0 ? `SWITCH ${cd}S` : touch ? 'SWITCH READY' : 'SWITCH [Q]';
     ctx.font = '400 7px "Luckiest Guy"';
     const w = Math.ceil(ctx.measureText(label).width) + 12;
-    roundRect(ctx, 5, 51, w, 11, 5.5, cd > 0 || none ? 'rgba(16,20,30,0.88)' : 'rgba(40,120,70,0.92)', 'rgba(255,255,255,0.15)', 0.8);
-    outlinedText(ctx, label, 5 + w / 2, 59.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: cd > 0 || none ? '#c9d2de' : '#ffffff' });
+    roundRect(ctx, 5, 61, w, 11, 5.5, cd > 0 || none ? 'rgba(16,20,30,0.88)' : 'rgba(40,120,70,0.92)', 'rgba(255,255,255,0.15)', 0.8);
+    outlinedText(ctx, label, 5 + w / 2, 69.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: cd > 0 || none ? '#c9d2de' : '#ffffff' });
     const dcd = g.player.dodgeCD;
     const dl = dcd > 0 ? `DODGE ${dcd.toFixed(1)}S` : touch ? 'DODGE READY' : 'DODGE [SPACE]';
     const dw = Math.ceil(ctx.measureText(dl).width) + 12, dx = 5 + w + 4;
-    roundRect(ctx, dx, 51, dw, 11, 5.5, dcd > 0 ? 'rgba(16,20,30,0.88)' : 'rgba(40,90,150,0.92)', 'rgba(255,255,255,0.15)', 0.8);
-    outlinedText(ctx, dl, dx + dw / 2, 59.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: dcd > 0 ? '#c9d2de' : '#ffffff' });
+    roundRect(ctx, dx, 61, dw, 11, 5.5, dcd > 0 ? 'rgba(16,20,30,0.88)' : 'rgba(40,90,150,0.92)', 'rgba(255,255,255,0.15)', 0.8);
+    outlinedText(ctx, dl, dx + dw / 2, 69.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0, color: dcd > 0 ? '#c9d2de' : '#ffffff' });
   }
 
   // The games' ability banner: slides in from the Pokémon's side of the screen with whose ability it is,
@@ -208,7 +237,7 @@ export class Hud {
     const nameW = ctx.measureText(title).width;
     ctx.font = '700 6px "Pixelify Sans"';
     const w = Math.ceil(Math.max(nameW, ctx.measureText(text).width, 60)) + 22, h = 31;
-    const x = (right ? WORLD_W - w : 0) + (right ? 1 : -1) * slide * w, y = 80;
+    const x = (right ? WORLD_W - w : 0) + (right ? 1 : -1) * slide * w, y = 90;
     // A slanted inner edge, like the games' banner.
     const pts = right ? [[x - 8, y], [x + w, y], [x + w, y + h], [x, y + h]] : [[x, y], [x + w + 8, y], [x + w, y + h], [x, y + h]];
     ctx.save();
@@ -235,7 +264,7 @@ export class Hud {
     if (c?.t > 0 && c.n >= 2) {
       const pop = 1 + Math.max(0, (c.t - 1.3) / 0.2) * 0.3;
       ctx.save();
-      ctx.translate(x, 110);
+      ctx.translate(x, 120);
       ctx.scale(pop, pop);
       outlinedText(ctx, `${c.n} HITS`, 0, 0, { family: 'Luckiest Guy', weight: 400, size: 14, color: c.n >= 5 ? '#ffd84a' : '#ffffff', stroke: '#24100c', lw: 3, align });
       ctx.restore();
@@ -244,7 +273,7 @@ export class Hud {
       const a = note.t > 1.4 ? Math.max(0, 1 - (note.t - 1.4) / 0.4) : 1;
       ctx.save();
       ctx.globalAlpha = a;
-      outlinedText(ctx, note.text, x, 121, { family: 'Luckiest Guy', weight: 400, size: note.big ? 10 : 7, color: note.big ? '#ff9a3a' : '#bff3ff', stroke: '#24100c', lw: 2.5, align });
+      outlinedText(ctx, note.text, x, 131, { family: 'Luckiest Guy', weight: 400, size: note.big ? 10 : 7, color: note.big ? '#ff9a3a' : '#bff3ff', stroke: '#24100c', lw: 2.5, align });
       ctx.restore();
     }
   }
@@ -260,8 +289,8 @@ export class Hud {
     const ws = chips.map(([t]) => Math.ceil(ctx.measureText(t).width) + 12), total = ws.reduce((a, b) => a + b, 0) + (chips.length - 1) * 4;
     let x = WORLD_W / 2 - total / 2;
     chips.forEach(([text, color], i) => {
-      roundRect(ctx, x, 66, ws[i], 11, 5.5, color, 'rgba(255,255,255,0.2)', 0.8);
-      outlinedText(ctx, text, x + ws[i] / 2, 74.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
+      roundRect(ctx, x, 76, ws[i], 11, 5.5, color, 'rgba(255,255,255,0.2)', 0.8);
+      outlinedText(ctx, text, x + ws[i] / 2, 84.6, { size: 7, family: 'Luckiest Guy', weight: 400, align: 'center', lw: 0 });
       x += ws[i] + 4;
     });
   }
@@ -299,7 +328,7 @@ export class Hud {
     const x = right ? WORLD_W - 6 - w : 6;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(x + w / 2, 66 + h / 2);
+    ctx.translate(x + w / 2, 76 + h / 2);
     ctx.scale(scale, scale);
     roundRect(ctx, -w / 2, -h / 2, w, h, h / 2, '#f7efd6', '#2b2420', 1.2);
     outlinedText(ctx, c.text, 0, 3, { size: 8, italic: true, align: 'center', color: '#3b2a1f', lw: 0 });
