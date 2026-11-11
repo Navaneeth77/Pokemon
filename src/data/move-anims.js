@@ -555,3 +555,16 @@ addImpact('braveBird', [{ at: 0, fx: 'feathers', n: 12 }]);
 addImpact('doubleEdge', [{ at: 0, rings: { colors: [W, '#f0f0d8'], r: 40 }, fx: 'dust', n: 8 }]);
 addImpact('ironHead', [{ at: 0, rings: { colors: [W, '#dfe7f2'], r: 30 } }]);
 addImpact('energyBall', [{ at: 0, fx: 'leaves', n: 10, rings: { colors: [W, '#c8ff8a', '#3f9a3a'], r: 34 } }]);
+
+// Batch 3 refinements for status moves (added to their existing looks).
+const addFx = (id, steps) => look(id, { fx: [...(MOVE_ANIMS[id]?.fx ?? []), ...steps] });
+addFx('swordsDance', [{ at: 0, blades: { life: 0.65 } }]);
+addFx('stealthRock', [{ at: 0.05, toss: { n: 4, style: 'boulder', rgb: [170, 160, 140], scale: 0.8 } }]);
+addFx('spikes', [{ at: 0.05, toss: { n: 3, style: 'crystal', rgb: [150, 150, 165], scale: 0.9 } }]);
+addFx('toxicSpikes', [{ at: 0.05, toss: { n: 3, style: 'crystal', rgb: [170, 80, 190], scale: 0.9 } }]);
+addFx('shellSmash', [{ at: 0.05, burst: { colors: [W, '#f0e6d0', '#b8a888'], n: 18, up: 120 }, rings: { colors: [W, '#f0e6d0'], r: 36 }, where: 'user' }]);
+addFx('roost', [{ at: 0.1, fx: 'feathers', n: 10, where: 'user' }]);
+addFx('wish', [{ at: 0, meteors: { n: 1, style: 'star', rgb: [255, 240, 150], spread: 0, dur: 0.5 } }]);
+addFx('calmMind', [{ at: 0.1, rings: { colors: [W, '#ffd0ec'], r: 40 }, where: 'user' }, { at: 0.28, rings: { colors: ['#ffd0ec'], r: 56 }, where: 'user' }, { at: 0.46, rings: { colors: ['#ffe8f4'], r: 70 }, where: 'user' }]);
+addFx('nastyPlot', [{ at: 0.05, fx: 'wisps', n: 12, burst: { colors: ['#c8a0ff', '#6a3a8a'], n: 10, up: 60 }, where: 'user' }]);
+addFx('toxic', [{ at: 0.3, fx: 'sludge', n: 10 }]);

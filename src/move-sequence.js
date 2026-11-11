@@ -14,6 +14,8 @@
 //   missile   a projectile flying from the user to the spot ({ style, dur, rgb, scale })
 //   orb       that projectile forming at the user's mouth before it is thrown ({ style, life, rgb, scale })
 //   siphon    motes of energy drifting from the spot back into the user ({ colors, n })
+//   blades    swords circling the user (Swords Dance) ({ life })
+//   toss      small things thrown from the user to land around the foe (hazards) ({ n, style, rgb, scale, spread })
 //   wave      a wave sweeping through the spot ({ rgb, foam })
 //   rings     expanding rings at the spot ({ colors, r })
 //   burst     particles bursting from the spot ({ colors, n, up })
@@ -35,7 +37,7 @@
 // The move's mechanics (accuracy, secondary effects, stat changes…) all resolve inside `hit` (combat.js),
 // so what the player sees and what happens can never drift apart.
 import { applyHit } from './combat.js';
-import { rand, Glow, Ring, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb,
+import { rand, Glow, Ring, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
 import { sfx } from './audio.js';
 import { WEATHER_TINT } from './data/move-anims.js';
@@ -116,6 +118,14 @@ export function scheduleSteps(action, steps, spot) {
         const ms = step.missile, m = action.mouth();
         const rgb = step.weatherTint ? WEATHER_TINT[g.weather] ?? ms.rgb : ms.rgb;
         g.spawn(new Missile(m.x, m.y, spot.x, spot.y, m.z, ms.dur ?? 0.35, ms.style ?? 'orb', () => {}, rgb ?? [255, 255, 255], ms.scale ?? 1));
+      }
+      if (step.blades) g.spawn(new OrbitBlades(user, step.blades.life ?? 0.65));
+      if (step.toss && t) {
+        const s = step.toss;
+        for (let i = 0; i < (s.n ?? 3); i++) {
+          const x = t.x + rand(-(s.spread ?? 34), s.spread ?? 34), y = t.y + rand(-(s.spread ?? 34), s.spread ?? 34) * 0.6;
+          action.at(action.t + i * 0.05, () => g.spawn(new Missile(user.x, user.y, x, y, 22, s.dur ?? 0.32, s.style ?? 'boulder', () => dustCloud(g, x, y, 3, 3), s.rgb ?? [170, 160, 140], s.scale ?? 0.8)));
+        }
       }
       if (step.siphon) {
         const s = step.siphon;

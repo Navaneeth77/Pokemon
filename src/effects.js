@@ -1586,3 +1586,35 @@ export class ItemFly extends Effect {
     ctx.restore();
   }
 }
+
+// Swords Dance: four swords circle the user, closing in and spinning faster, then fade.
+export class OrbitBlades extends Effect {
+  constructor(mon, life = 0.65) {
+    super('air', life);
+    this.mon = mon;
+  }
+
+  draw(ctx) {
+    const m = this.mon, t = this.age / this.life, r = 30 - 14 * t, spin = this.age * (6 + 10 * t), a = t > 0.75 ? 1 - (t - 0.75) / 0.25 : Math.min(1, this.age / 0.08);
+    ctx.save();
+    ctx.globalAlpha = a;
+    for (let i = 0; i < 4; i++) {
+      const ang = spin + (i / 4) * Math.PI * 2, x = m.x + Math.cos(ang) * r, y = m.y - m.bodyZ + Math.sin(ang) * r * 0.55;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang + Math.PI / 2);
+      // Blade, edge highlight, guard and hilt.
+      ctx.fillStyle = '#dfe7f2';
+      ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(2, -2); ctx.lineTo(-2, -2); ctx.closePath(); ctx.fill();
+      ctx.fillRect(-2, -2, 4, 7);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-0.5, -9, 1, 13);
+      ctx.fillStyle = '#c8a040';
+      ctx.fillRect(-4, 5, 8, 2);
+      ctx.fillStyle = '#6a4a20';
+      ctx.fillRect(-1, 7, 2, 4);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
