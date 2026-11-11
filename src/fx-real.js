@@ -3,7 +3,10 @@
 // 2 for a huge one.
 //
 //   elementBurst(g, type, x, y, z, s)
-import { rand, Glow, Ring, Lightning, FIRE } from './effects.js';
+import { rand, FIRE } from './effects.js';
+import { PixelGlow, PixelRing, PixelBolt } from './fx-anime.js';
+
+const rgbCss = c => (Array.isArray(c) ? `rgb(${c.join(',')})` : c);
 
 const n = (base, s) => Math.max(1, Math.round(base * s));
 
@@ -38,7 +41,7 @@ const BURST = {
     for (let i = 0; i < n(10, s); i++) {
       g.particles.spawn({ x, y, z, vx: rand(-90, 90) * s, vy: rand(-50, 50), vz: rand(40, 160), gz: 90, drag: 0.8, life: rand(0.6, 1.2), size: rand(1, 2), colors: ['#fff6c0', '#ffb040', '#ff6a1f'], fade: true });
     }
-    g.spawn(new Glow(x, y, z, 26 * s, [255, 140, 60], 0.25));
+    g.spawn(new PixelGlow(x, y, z, 26 * s, rgbCss([255, 140, 60]), 0.25));
     smoke(g, x, y, z + 10, s * 0.8);
   },
   water(g, x, y, z, s) {
@@ -48,16 +51,16 @@ const BURST = {
       g.particles.spawn({ x, y, z, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: rand(110, 210) * Math.sqrt(s), gz: 620, life: rand(0.45, 0.75), size: rand(1.5, 3), sizeEnd: 1, colors: ['#ffffff', '#bfe6ff', '#5aa6f0'], round: true });
     }
     for (let i = 0; i < n(5, s); i++) g.particles.spawn({ x: x + rand(-10, 10), y, z, vx: rand(-20, 20), vz: rand(10, 30), drag: 1.5, life: rand(0.5, 0.8), size: 6 * s, sizeEnd: 16 * s, colors: ['#e8f6ff'], alpha: 0.28, round: true });
-    g.spawn(new Ring(x, y, { r0: 4, r1: 26 * s, life: 0.4, color: 'rgba(230,246,255,0.9)', width: 2 }));
+    g.spawn(new PixelRing(x, y, { r0: 4, r1: 26 * s, life: 0.4, color: '#e6f6ff', width: 2 }));
   },
   electric(g, x, y, z, s) {
     // Branching arcs crawling outward, white-hot sparks falling under gravity, a blue-white afterglow.
     for (let i = 0; i < n(4, s); i++) {
       const a = rand(0, Math.PI * 2), r = rand(22, 40) * s;
-      g.spawn(new Lightning(x, y - z, x + Math.cos(a) * r, y - z + Math.sin(a) * r * 0.7, 0.12, { width: 1.5, branches: 2, glow: 'rgba(255,240,140,0.5)' }));
+      g.spawn(new PixelBolt(x, y - z, x + Math.cos(a) * r, y - z + Math.sin(a) * r * 0.7, 0.12, '#fff27a'));
     }
     chunks(g, x, y, z, s, ['#ffffff', '#fff6a0', '#ffd040'], { count: 16, speed: 170, up: 120, size: [1, 2], grav: 700, life: [0.25, 0.55] });
-    g.spawn(new Glow(x, y, z, 30 * s, [200, 220, 255], 0.2));
+    g.spawn(new PixelGlow(x, y, z, 30 * s, rgbCss([200, 220, 255]), 0.2));
   },
   ice(g, x, y, z, s) {
     // Glittering shards, a puff of freezing mist, glints.
@@ -88,7 +91,7 @@ const BURST = {
   steel(g, x, y, z, s) {
     // A shower of white-hot sparks skittering off metal.
     chunks(g, x, y, z, s, ['#ffffff', '#fff2c0', '#ffb040'], { count: 18, speed: 200, up: 100, size: [1, 2], grav: 800, life: [0.2, 0.45] });
-    g.spawn(new Ring(x, y, { z, r0: 3, r1: 20 * s, life: 0.15, color: '#ffffff', width: 2, layer: 'air' }));
+    g.spawn(new PixelRing(x, y, { z, r0: 3, r1: 20 * s, life: 0.15, color: '#ffffff', width: 2, layer: 'air' }));
   },
   fighting(g, x, y, z, s) {
     chunks(g, x, y, z, s, ['#ffffff', '#ffd0b0', '#e07040'], { count: 8, speed: 130, up: 60, size: [1.5, 3], life: [0.2, 0.4] });
@@ -101,7 +104,7 @@ const BURST = {
   flying(g, x, y, z, s) {
     // Feathers drifting down, a gust ring.
     for (let i = 0; i < n(8, s); i++) g.particles.spawn({ x, y, z, vx: rand(-80, 80), vy: rand(-30, 30), vz: rand(30, 90), gz: 70, drag: 2.5, life: rand(0.8, 1.3), size: rand(2, 3), colors: ['#ffffff', '#e8f0ff'] });
-    g.spawn(new Ring(x, y, { z, r0: 6, r1: 34 * s, life: 0.3, color: 'rgba(255,255,255,0.8)', width: 2, layer: 'air' }));
+    g.spawn(new PixelRing(x, y, { z, r0: 6, r1: 34 * s, life: 0.3, color: '#ffffff', width: 2, layer: 'air' }));
   },
   poison(g, x, y, z, s) {
     // Bubbles of venom popping and a toxic haze.
@@ -109,13 +112,13 @@ const BURST = {
     smoke(g, x, y, z, s * 0.7, ['#a060b0', '#6a2a7a', '#3a1040'], 0.28);
   },
   psychic(g, x, y, z, s) {
-    for (let i = 0; i < 3; i++) g.spawn(new Ring(x, y, { z, r0: 6 + i * 6, r1: (26 + i * 10) * s, life: 0.3 + i * 0.06, color: ['#ffffff', '#ffb0e0', '#c060a0'][i], width: 2, layer: 'air' }));
+    for (let i = 0; i < 3; i++) g.spawn(new PixelRing(x, y, { z, r0: 6 + i * 6, r1: (26 + i * 10) * s, life: 0.3 + i * 0.06, color: ['#ffffff', '#ffb0e0', '#c060a0'][i], width: 2, layer: 'air' }));
     chunks(g, x, y, z, s, ['#ffffff', '#ffc0e8'], { count: 8, speed: 80, up: 60, size: [1, 2], grav: 0, life: [0.3, 0.6] });
   },
   ghost(g, x, y, z, s) {
     // Cold wisps curling up and fading.
     for (let i = 0; i < n(8, s); i++) g.particles.spawn({ x: x + rand(-10, 10), y, z, vx: rand(-20, 20), vz: rand(20, 50), gz: -15, drag: 1, life: rand(0.6, 1), size: rand(3, 5) * s, sizeEnd: 1, colors: ['#e0c8ff', '#7a48b8', '#2a1838'], round: true, alpha: 0.7 });
-    g.spawn(new Glow(x, y, z, 24 * s, [120, 70, 190], 0.3));
+    g.spawn(new PixelGlow(x, y, z, 24 * s, rgbCss([120, 70, 190]), 0.3));
   },
   dragon(g, x, y, z, s) {
     // Draconic fire: violet-blue flame and glittering scales.
@@ -133,7 +136,7 @@ const BURST = {
       const a = rand(0, Math.PI * 2), sp = rand(30, 90);
       g.particles.spawn({ x, y, z, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: rand(10, 60), drag: 2.5, life: rand(0.5, 1), size: rand(1.5, 3), colors: ['#ffffff', '#ffe0f0', '#ffffff', '#f080b0'], fade: true });
     }
-    g.spawn(new Glow(x, y, z, 26 * s, [255, 180, 220], 0.3));
+    g.spawn(new PixelGlow(x, y, z, 26 * s, rgbCss([255, 180, 220]), 0.3));
   },
 };
 
