@@ -122,7 +122,7 @@ export class OpponentAI {
     }
 
     if (this.planT <= 0) {
-      const close = me.species.moves.some(id => ['melee', 'dash', 'area'].includes(MOVES[id].ai) && me.cooldown(id) <= 0);
+      const close = me.moves.some(id => ['melee', 'dash', 'area'].includes(MOVES[id].ai) && me.cooldown(id) <= 0);
       this.plan = close && Math.random() < 0.55 ? 'melee' : 'range';
       this.planT = 2 + Math.random() * 2.5;
     }
@@ -211,7 +211,7 @@ export class OpponentAI {
   // Weighted pick among ready moves that suit the current distance, favouring good type matchups.
   pickMove(me, foe, dist, game) {
     const options = [];
-    for (const id of me.species.moves) {
+    for (const id of me.moves) {
       const mv = MOVES[id];
       if (me.cooldown(id) > 0) continue;
       if (me.encore?.t > 0 && id !== me.encore.id) continue;

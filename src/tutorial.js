@@ -45,7 +45,7 @@ function steps(name) {
       keys: touch() ? '① ② ③ ④ buttons' : `${k('1')} ${k('2')} ${k('3')} ${k('4')}`,
       start: t => { t.hp0 = t.game.opponent.hp; },
       check: t => t.game.opponent.hp < t.hp0,
-      hint: t => ({ key: '1', label: `to use ${MOVES[t.game.player.species.moves[0]].name}`, el: touch() ? '.t-move[data-i="0"]' : '#moves .move' }),
+      hint: t => ({ key: '1', label: `to use ${MOVES[t.game.player.moves[0]].name}`, el: touch() ? '.t-move[data-i="0"]' : '#moves .move' }),
     },
     {
       title: 'ULTIMATE', goal: 'Unleash the ultimate',
@@ -81,7 +81,7 @@ function steps(name) {
       keys: 'try Earthquake, Iron Tail, Volt Tackle or Extreme Speed',
       check: t => !!t.game.opponent.air,
       hint: t => {
-        const moves = t.game.player.species.moves, i = moves.findIndex(id => MOVES[id].launch);
+        const moves = t.game.player.moves, i = moves.findIndex(id => MOVES[id].launch);
         if (i < 0) return null;
         return { key: String(i + 1), label: `to launch with ${MOVES[moves[i]].name}`, el: touch() ? `.t-move[data-i="${i}"]` : `#moves .move:nth-child(${i + 1})` };
       },

@@ -106,3 +106,19 @@ test('state updates carry stat stages separately from the stagger flag (Intimida
  for(const k of sides){assert.equal(typeof dropped.s[k].sx,'object');assert.ok(dropped.s[k].sg===0||dropped.s[k].sg===1,'sg stays the stagger flag');}
  }finally{cs.forEach(c=>c.ws.close());}
 });
+test('picked moves: the server keeps legal picks, strips illegal ones, tells both players and fires them from keys 1–4',async()=>{
+ const cs=await pair('moves');try{
+ const picked=['hurricane','fireBlast','roost','airSlash'];
+ cs[0].send({t:'queue',format:3,team:['charizard','snorlax','lapras'],lead:0,mega:{},kit:{charizard:{moves:picked},snorlax:{moves:['spore','crunch','crunch','rest']}}});
+ cs[1].send({t:'queue',format:3,team:['gyarados','raichu','lucario'],lead:0,mega:{}});
+ const ms=await Promise.all(cs.map(c=>c.wait('matched')));assert.equal(ms[0].id,ms[1].id);
+ assert.deepEqual(ms[0].me.kit.charizard.moves,picked);
+ assert.deepEqual(ms[1].foe.kit.charizard.moves,picked,'the foe\'s screen learns the picked moves too');
+ assert.deepEqual(ms[0].me.kit.snorlax.moves,['crunch','rest','bodySlam','earthquake'],'Spore is not in Snorlax\'s pool; the repeat goes; defaults fill the gaps');
+ assert.equal(ms[1].me.kit.gyarados.moves,null);
+ cs.forEach((c,i)=>c.send({t:'loaded',id:ms[i].id}));await Promise.all(cs.map(c=>c.wait('start')));
+ const mine=ms[0].you==='A'?'player':'opponent';
+ const press=setInterval(()=>cs[0].send({t:'act',id:ms[0].id,k:'press',i:1}),250);
+ try{await cs[0].wait('b',m=>m.e?.some(e=>e.t==='move'&&e.side===mine&&e.id==='fireBlast'));}finally{clearInterval(press);}
+ }finally{cs.forEach(c=>c.ws.close());}
+});

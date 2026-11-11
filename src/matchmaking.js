@@ -684,7 +684,7 @@ export class Matchmaker {
       if (g.dodge(p, held ? v.x : p.x - o.x || 0.01, held ? v.y : p.y - o.y || 1)) pr.dodge = now;
       return;
     }
-    const id = p.species.moves[i], m = MOVES[id];
+    const id = p.moves[i], m = MOVES[id];
     if (!m || m.copy || m.ultimate) return;
     if (kind === 'press') {
       if (m.chargeable) {
@@ -705,7 +705,7 @@ export class Matchmaker {
   }
 
   tryMove(i, now) {
-    const g = this.game, id = g.player.species.moves[i];
+    const g = this.game, id = g.player.moves[i];
     if (!g.useMove(g.player, id)) return false;
     this.pred.moves.push({ id, at: now });
     this.pred.buffer = null;
@@ -770,7 +770,7 @@ export class Matchmaker {
         if (mon.hidden || mon.fainted) continue;
         if (loc === 'player' && this.confirm(e.id)) continue; // already playing: we started it ourselves
         g.useMove(mon, e.id, e.l ?? 0, true, e.cp);
-        const k = mon.species.moves.indexOf(e.id);
+        const k = mon.moves.indexOf(e.id);
         if (loc === 'player' && k >= 0) g.ui.pressed(k, true);
       } else if (e.t === 'dodge') {
         if (loc === 'player' && this.pred?.dodge) {

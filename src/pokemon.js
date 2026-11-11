@@ -31,6 +31,8 @@ export class Pokemon {
     this.faceFoeWhileMoving = false;
   }
 
+  // The four moves it fights with: the ones picked in its kit (kept through Mega Evolution), else its form's own.
+  get moves() { return this.moveset ?? this.species.moves; }
   get maxHp() { return this.species.hp; }
   get radius() { return this.species.radius; }
   get alive() { return this.hp > 0; }

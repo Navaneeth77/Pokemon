@@ -465,7 +465,7 @@ class Match {
     o.input.y = fighting ? -v.y : 0;
     if (fighting && this.bufB) {
       this.bufB.t -= STEP;
-      if (g.useMove(o, o.species.moves[this.bufB.i]) || this.bufB.t <= 0) this.bufB = null;
+      if (g.useMove(o, o.moves[this.bufB.i]) || this.bufB.t <= 0) this.bufB = null;
     }
     if (fighting && this.megaQueuedB > 0) {
       this.megaQueuedB -= STEP;
@@ -501,11 +501,11 @@ class Match {
     }
     const o = g.opponent, p = g.player;
     if (k === 'press' && i >= 0 && i < 4) {
-      const id = o.species.moves[i];
+      const id = o.moves[i];
       if (!id || (MOVES[id]?.chargeable && g.beginCharge(o, id))) return;
       if (!g.useMove(o, id) && o.alive && !o.charging && g.moveCD(o, id) <= 0.25) this.bufB = { i, t: 0.3 };
     } else if (k === 'release' && i >= 0 && i < 4) {
-      if (o.charging?.id === o.species.moves[i]) g.releaseCharge(o);
+      if (o.charging?.id === o.moves[i]) g.releaseCharge(o);
     } else if (k === 'dodge') {
       const v = this.vec.B, held = v.x || v.y;
       g.dodge(o, held ? -v.x : o.x - p.x || 0.01, held ? -v.y : o.y - p.y || -1);

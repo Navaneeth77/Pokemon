@@ -9,12 +9,13 @@ import { ABILITIES } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
+import { movePool } from './data/movepool.js';
 import { ownsShiny, itemById } from './economy.js';
 import { SHINY } from './data/national-dims.js';
 
 const $ = sel => document.querySelector(sel);
 const TEAMS_KEY = 'msb.teams';
-const KITS_KEY = 'msb.kits'; // each Pokémon's held item, Tera type and shiny switch, by species
+const KITS_KEY = 'msb.kits'; // each Pokémon's held item, Tera type, chosen moves and shiny switch, by species
 const SHINY_SET = new Set(SHINY);
 const hpColor = r => (r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
 const portrait = s => `/sprites/${s.sprite}/portrait.png`;
@@ -349,7 +350,7 @@ export class UI {
         <div class="tp">${typeChips(s.types)}</div></div>
         <div class="mi-stats"><span>HP<b>${s.hp}</b></span><span>SPD<b>${s.speed}</b></span><span>ATK<b>${Math.round(s.atk * 100)}</b></span><span>DEF<b>${Math.round(s.def * 100)}</b></span></div></div>
       <div class="abil"><u>${ab.name}</u> — ${esc(ab.desc)}</div>
-      <ul class="mi-moves">${s.moves.map(mv).join('')}${mv(s.ultimate)}</ul>${megas ? `<div class="mega-line">Mega Evolves into <u>${megas}</u></div>` : ''}`;
+      <ul class="mi-moves">${this.movesOf(id).map(mv).join('')}${mv(s.ultimate)}</ul>${megas ? `<div class="mega-line">Mega Evolves into <u>${megas}</u></div>` : ''}`;
   }
 
   // Details card for one Pokémon (team select and the battle-setup Pokédex share it).
@@ -365,7 +366,7 @@ export class UI {
         <div class="tp">${typeChips(s.types)}</div></div></div>
       <div class="stats">${stat('HP', s.hp, 1900)}${stat('SPD', s.speed, 130)}${stat('ATK', Math.round(s.atk * 100), 150)}${stat('DEF', Math.round(s.def * 100), 140)}${stat('SP.ATK', Math.round((s.spa??s.atk)*100),180)}${stat('SP.DEF', Math.round((s.spdef??s.def)*100),180)}</div>
       <div class="abil"><u>${ab.name}</u> — ${esc(ab.desc)}</div>
-      <ul class="mv">${s.moves.map(moveLine).join('')}${moveLine(s.ultimate)}</ul>${megas}`;
+      <ul class="mv">${this.movesOf(id).map(moveLine).join('')}${moveLine(s.ultimate)}</ul>${megas}`;
   }
 
   // The team can't change once READY is pressed (friend room) or while searching for a match.
@@ -408,6 +409,11 @@ export class UI {
     return cleanKit(SPECIES[id], this.kits[id], sid => this.ownsShiny(sid));
   }
 
+  // The four moves this Pokémon brings: the ones picked in its kit, else its defaults.
+  movesOf(id) {
+    return this.kitOf(id).moves ?? SPECIES[id].moves;
+  }
+
   teamKits(ids = this.selection) {
     return Object.fromEntries(ids.map(id => [id, this.kitOf(id)]));
   }
@@ -425,10 +431,25 @@ export class UI {
     overlay.className = 'kit-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-label', `${s.name}'s kit`);
+    // Moves: tap a slot, then a move from the pool to put in it (tapping a move already picked swaps the two).
+    let slot = 0;
+    const pool = movePool(s), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
+    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${m.power}`} · ${m.sure ? '—' : `${m.acc}%`}`;
+    const poolBtn = (mid, chosen) => {
+      const m = MOVES[mid], at = chosen.indexOf(mid);
+      return `<button data-mv="${mid}" class="${at >= 0 ? 'on' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
+        + `<b>${at >= 0 ? `<i>${at + 1}</i>` : ''}${m.name}</b><small>${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></button>`;
+    };
     const draw = () => {
-      const k = this.kitOf(id), owned = this.ownsShiny(id), price = itemById(`shiny-${id}`)?.price;
+      const k = this.kitOf(id), owned = this.ownsShiny(id), price = itemById(`shiny-${id}`)?.price, chosen = k.moves ?? s.moves;
+      const attacks = pool.filter(m => MOVES[m].cat !== 'status'), status = pool.filter(m => MOVES[m].cat === 'status');
       overlay.innerHTML = `<section class="kit-panel">
         <header><img src="${portrait(s)}" alt=""><div><h2>${s.name}</h2><p><b>${esc(ab?.name ?? '')}</b> · ${esc(ab?.desc ?? '')}</p></div><button class="kit-x" aria-label="Close">×</button></header>
+        <h3>MOVES <small>Pick 4 from its competitive pool (${pool.length} moves). Tap a slot, then a move to put there; keys 1–4 follow this order. Mega forms keep these moves, and its ultimate (${MOVES[s.ultimate]?.name ?? '—'}) stays.</small></h3>
+        <div class="kit-moves">${chosen.map((mid, i) => `<button data-slot="${i}" class="${i === slot ? 'on' : ''}" style="--tc:${TYPE_COLORS[MOVES[mid].type][0]}"><i>${i + 1}</i><b>${MOVES[mid].name}</b><small>${meta(MOVES[mid])}</small></button>`).join('')}</div>
+        ${k.moves ? '<button class="kit-reset" data-reset>Reset to its default moves</button>' : ''}
+        <div class="kit-pool">${attacks.map(m => poolBtn(m, chosen)).join('')}</div>
+        ${status.length ? `<h4 class="kit-sub">STATUS MOVES</h4><div class="kit-pool">${status.map(m => poolBtn(m, chosen)).join('')}</div>` : ''}
         <h3>HELD ITEM <small>${k.item ? esc(ITEMS[k.item].desc) : 'Holds nothing.'}</small></h3>
         <div class="kit-items"><button data-item="" class="${k.item ? '' : 'on'}">None</button>${ITEM_LIST.map(i => `<button data-item="${i}" class="${k.item === i ? 'on' : ''}" title="${esc(ITEMS[i].desc)}">${ITEMS[i].name}</button>`).join('')}</div>
         <h3>TERA TYPE <small>Press M in battle to Terastallize (once per battle, instead of a Mega Evolution).</small></h3>
@@ -439,6 +460,16 @@ export class UI {
           : `<p class="kit-note">Buy Shiny ${s.name} in the Trainer Guild shop (${price} Chaos Coins), then switch it on here.</p>`}
       </section>`;
       overlay.querySelector('.kit-x').onclick = () => overlay.remove();
+      overlay.querySelectorAll('[data-slot]').forEach(b => (b.onclick = () => { slot = +b.dataset.slot; draw(); }));
+      overlay.querySelectorAll('[data-mv]').forEach(b => (b.onclick = () => {
+        const next = [...chosen], mid = b.dataset.mv, at = next.indexOf(mid);
+        if (at >= 0) [next[at], next[slot]] = [next[slot], next[at]];
+        else next[slot] = mid;
+        slot = at >= 0 ? slot : (slot + 1) % 4;
+        this.setKit(id, { moves: next });
+        draw();
+      }));
+      overlay.querySelector('[data-reset]')?.addEventListener('click', () => { slot = 0; this.setKit(id, { moves: null }); draw(); });
       overlay.querySelectorAll('[data-item]').forEach(b => (b.onclick = () => { this.setKit(id, { item: b.dataset.item || null }); draw(); }));
       overlay.querySelectorAll('[data-tera]').forEach(b => (b.onclick = () => { this.setKit(id, { tera: b.dataset.tera }); draw(); }));
       overlay.querySelector('[data-shiny]')?.addEventListener('click', () => { this.setKit(id, { shiny: !k.shiny }); draw(); });
@@ -683,8 +714,8 @@ export class UI {
   // Under each team member: its held item, Tera type and shiny star; tapping any of them opens its kit.
   kitChips(id) {
     const k = this.kitOf(id);
-    return `<span class="kit-chips" data-kit="${id}" title="Item, Tera type and shiny">`
-      + `<em>${k.item ? esc(ITEMS[k.item].name) : '+ ITEM'}</em><em class="tera" style="--tc:${TYPE_COLORS[k.tera][0]}">${k.tera.slice(0, 3).toUpperCase()}</em>${k.shiny ? '<em class="sh">✦</em>' : ''}</span>`;
+    return `<span class="kit-chips" data-kit="${id}" title="Moves, item, Tera type and shiny">`
+      + `<em class="mvs${k.moves ? ' on' : ''}">${k.moves ? '✎ MOVES' : 'MOVES'}</em><em>${k.item ? esc(ITEMS[k.item].name) : '+ ITEM'}</em><em class="tera" style="--tc:${TYPE_COLORS[k.tera][0]}">${k.tera.slice(0, 3).toUpperCase()}</em>${k.shiny ? '<em class="sh">✦</em>' : ''}</span>`;
   }
 
   renderSelection() {
@@ -799,7 +830,7 @@ export class UI {
   setActive(mon) {
     const box = $('#moves');
     box.innerHTML = '';
-    this.moveEls = mon.species.moves.map((id, i) => {
+    this.moveEls = mon.moves.map((id, i) => {
       const m = MOVES[id];
       const [c1, c2] = TYPE_COLORS[m.type];
       const btn = document.createElement('button');

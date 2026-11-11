@@ -4,6 +4,7 @@
 // for the rest of the battle (Harvest and Cud Chew can bring a berry back). Every item shows itself when
 // it acts: the item banner (g.itemPop) names it.
 import { isContact, isPunch, abilityOf } from './abilities.js';
+import { cleanMoves } from './movepool.js';
 
 const dec = (me, k, dt) => (me.it[k] = Math.max(0, (me.it[k] ?? 0) - dt));
 const STATUSES = ['burn', 'poison', 'para', 'slow', 'stun', 'sleep'];
@@ -183,15 +184,16 @@ export function itemOf(mon) {
 
 export const TERA_TYPES = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'];
 
-// A kit is what a Pokémon brings besides its moves: { item, tera, shiny }. Anything unknown is dropped, so
-// the server can accept kits straight from a client. Shiny is cosmetic and only kept when `shinyOk` says
-// the player owns it.
+// A kit is what a Pokémon brings: { item, tera, shiny, moves }. Anything unknown is dropped, so the server can
+// accept kits straight from a client. Shiny is cosmetic and only kept when `shinyOk` says the player owns it.
+// moves is the four picked from its pool (data/movepool.js), or null for its default four.
 export function cleanKit(species, kit, shinyOk = () => false) {
   const k = kit && typeof kit === 'object' ? kit : {};
   return {
     item: ITEMS[k.item] ? k.item : null,
     tera: TERA_TYPES.includes(k.tera) ? k.tera : species.types[0],
     shiny: !!k.shiny && shinyOk(species.id),
+    moves: cleanMoves(species, k.moves),
   };
 }
 

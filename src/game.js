@@ -102,11 +102,11 @@ export class Game {
     this.hud = new Hud(this);
     this.red = new Trainer('red', 'Red', 180, 598);
     this.gold = new Trainer('gold', 'Gold', 180, 104);
-    // Each Pokémon's kit (data/items.js): its held item, Tera type and, if owned, its shiny colours.
+    // Each Pokémon's kit (data/items.js): its held item, Tera type, chosen moves and, if owned, its shiny colours.
     this.makeTeam = (ids, side, trainer, kits = {}) => new Team(side, trainer, ids.map(id => {
       const s = SPECIES[id], k = cleanKit(s, kits[id], () => true), shiny = k.shiny && sprites[`${s.sprite}~shiny`];
       const mon = new Pokemon(s, shiny || sprites[s.sprite], side);
-      Object.assign(mon, { item: k.item, teraType: k.tera, shiny: !!shiny });
+      Object.assign(mon, { item: k.item, teraType: k.tera, shiny: !!shiny, moveset: k.moves });
       return mon;
     }));
     this.selection = [...DEFAULT_TEAM];
@@ -573,7 +573,7 @@ export class Game {
   // one closest to ready usable again, so there are always at least two moves to pick from.
   startCooldown(user, id, t) {
     user.cooldowns[id] = Math.max(user.cooldowns[id] ?? 0, t);
-    const cooling = user.species.moves.filter(m => m !== id && (user.cooldowns[m] ?? 0) > 0);
+    const cooling = user.moves.filter(m => m !== id && (user.cooldowns[m] ?? 0) > 0);
     cooling.sort((a, b) => user.cooldowns[a] - user.cooldowns[b]);
     while (cooling.length > 1) user.cooldowns[cooling.shift()] = 0;
   }
@@ -615,7 +615,7 @@ export class Game {
         this.startCooldown(user, 'sleepTalk', 1);
         return false;
       }
-      const options = user.species.moves.filter(m => m !== 'sleepTalk' && MOVES[m] && !MOVES[m].ultimate && !MOVES[m].copy && !MOVES[m].twoTurn);
+      const options = user.moves.filter(m => m !== 'sleepTalk' && MOVES[m] && !MOVES[m].ultimate && !MOVES[m].copy && !MOVES[m].twoTurn);
       if (!options.length) return false;
       pick = options[Math.floor(Math.random() * options.length)];
     }
@@ -1017,7 +1017,7 @@ export class Game {
     if (this.state !== 'fighting') return;
     if (this.online?.intent) return this.online.intent('press', i);
     initAudio();
-    const id = this.player.species.moves[i];
+    const id = this.player.moves[i];
     if (MOVES[id]?.chargeable && this.beginCharge(this.player, id)) {
       this.ui.pressed(i, true);
       return;
@@ -1027,7 +1027,7 @@ export class Game {
 
   playerRelease(i) {
     if (this.online?.intent) return this.online.intent('release', i);
-    const p = this.player, id = p.species.moves[i];
+    const p = this.player, id = p.moves[i];
     if (p.charging?.id === id) this.releaseCharge(p);
   }
 
@@ -1058,7 +1058,7 @@ export class Game {
   playerMove(i) {
     if (this.state !== 'fighting') return;
     initAudio();
-    const id = this.player.species.moves[i];
+    const id = this.player.moves[i];
     if (!id) return;
     const ok = this.useMove(this.player, id);
     // Presses during the last moments of a recovery are buffered instead of dropped.
@@ -1424,7 +1424,7 @@ export class Game {
       }
       if (this.buffered) {
         this.buffered.t -= dt;
-        const id = p.species.moves[this.buffered.i];
+        const id = p.moves[this.buffered.i];
         if (this.useMove(p, id)) {
           this.ui.pressed(this.buffered.i, true);
           this.buffered = null;

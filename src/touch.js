@@ -137,7 +137,7 @@ export class TouchControls {
     if (this.teamRef !== g.playerTeam) this.buildTeam();
     const p = g.player;
     const locked = g.state !== 'fighting' || !p.alive || g.switching;
-    p.species.moves.forEach((id, i) => {
+    p.moves.forEach((id, i) => {
       const b = this.moves[i], m = MOVES[id], cd = g.moveCD(p, id);
       const key = `${id}|${Math.ceil(cd * 10)}|${locked}|${p.charging?.id === id}`;
       if (b.dataset.k === key) return;

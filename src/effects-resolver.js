@@ -241,7 +241,7 @@ export function statusMove(game, user, move) {
     // ── The competitive pools' status moves (field.js has the side conditions) ──
     case 'encore': {
       const id = game.lastUsed[foe?.side];
-      if (!onField(foe) || !id || id === 'encore' || foe.encore || !foe.species.moves.includes(id)) return fail(game, user);
+      if (!onField(foe) || !id || id === 'encore' || foe.encore || !foe.moves.includes(id)) return fail(game, user);
       foe.encore = { id, t: 5 };
       game.floatText(foe, 'ENCORE!', '#ffd84a');
       return say(`${foe.species.name} received an encore! It must keep using ${MOVE_TABLE[id]?.name ?? 'that move'}.`);
@@ -343,7 +343,7 @@ export function statusMove(game, user, move) {
       game.floatText(user, 'GETTING PUMPED!', '#ffb070');
       return say(`${user.species.name} is getting pumped!`);
     case 'conversion': {
-      const t = MOVE_TABLE[user.species.moves[0]]?.type;
+      const t = MOVE_TABLE[user.moves[0]]?.type;
       if (!t || (typesOf(user).length === 1 && typesOf(user)[0] === t)) return fail(game, user);
       user.typeOverride = [t];
       game.floatText(user, `${t.toUpperCase()} TYPE!`, '#9fe8ff');
