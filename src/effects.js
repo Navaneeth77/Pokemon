@@ -18,17 +18,6 @@ const PARTICLE_DEFAULTS = {
   colors: ['#fff'], round: false, fade: true, alpha: 1, layer: 'air', age: 0,
 };
 
-// Row spans of a pixel-art disc of radius r: [dy, half-width] pairs, cached per radius.
-const DISCS = [];
-function discSpans(r) {
-  r = Math.min(r, 24);
-  if (!DISCS[r]) {
-    DISCS[r] = [];
-    for (let dy = -r; dy <= r; dy++) DISCS[r].push([dy, Math.floor(Math.sqrt(r * r - dy * dy + r * 0.8))]);
-  }
-  return DISCS[r];
-}
-
 export class ParticleSystem {
   constructor() {
     this.list = [];
@@ -85,9 +74,9 @@ export class ParticleSystem {
       ctx.globalAlpha = p.alpha * (p.fade ? 1 - t * t : 1);
       ctx.fillStyle = p.colors[Math.min(p.colors.length - 1, Math.floor(t * p.colors.length))];
       if (p.round) {
-        // A pixel disc (one art pixel per world unit), drawn as horizontal spans so it keeps the pixel-art look.
-        const cx = Math.round(p.x), cy = Math.round(p.y - p.z);
-        for (const [dy, hw] of discSpans(Math.max(1, Math.round(s / 2)))) ctx.fillRect(cx - hw, cy + dy, hw * 2 + 1, 1);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - p.z, Math.max(0.5, s / 2), 0, Math.PI * 2);
+        ctx.fill();
       } else {
         const r = Math.max(1, Math.round(s));
         ctx.fillRect(Math.round(p.x - r / 2), Math.round(p.y - p.z - r / 2), r, r);
