@@ -3,7 +3,6 @@ import '@fontsource/pixelify-sans/700.css';
 import '@fontsource/luckiest-guy/400.css';
 import './style.css';
 import { preloadImpactSprite } from './effects.js';
-import { preloadFxSheets } from './fx-sprites.js';
 import { loadSpecies } from './assets.js';
 import { DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
 import { Game, prepareSprites } from './game.js';
@@ -16,7 +15,6 @@ export async function main() {
   const [sprites] = await Promise.all([
     loadSpecies(first),
     preloadImpactSprite().catch(()=>{}),
-    preloadFxSheets().catch(()=>{}),
     document.fonts.load('700 16px "Pixelify Sans"'),
     document.fonts.load('400 16px "Luckiest Guy"'),
   ]);

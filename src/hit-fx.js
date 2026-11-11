@@ -8,35 +8,11 @@
 import { ImpactFrame, FocusLines } from './fx-anime.js';
 import { elementBurst } from './fx-real.js';
 import { TYPE_COLORS } from './data/types.js';
-import { FxSprite } from './fx-sprites.js';
-
-// The hand-drawn hit animation for each type: [hard hit, ordinary hit], each [sheet, tint?] (public/fx).
-const HIT_FX = {
-  normal: [['weaponhit'], ['weaponhit']],
-  fighting: [['vortex'], ['weaponhit', '#ffb080']],
-  fire: [['sunburn'], ['flamelash']],
-  water: [['bubbles'], ['magickahit']],
-  electric: [['radialspark'], ['spark']],
-  grass: [['felspell'], ['felspell']],
-  ice: [['nebula'], ['freezing']],
-  poison: [['felspell', '#c050e0'], ['plasmaburst', '#c060d0']],
-  ground: [['gravityburst', '#c8a060'], ['weaponhit', '#e0c090']],
-  flying: [['phantom'], ['weaponhit']],
-  psychic: [['gravityburst', '#ff70c0'], ['magicspell']],
-  bug: [['felspell', '#b8e040'], ['plasmaburst', '#a8d040']],
-  rock: [['gravityburst', '#b8a070'], ['weaponhit', '#d8c8a0']],
-  ghost: [['midnight'], ['darkbolt']],
-  dragon: [['gravityburst'], ['vortex', '#8a5cff']],
-  dark: [['darkbolt'], ['vortex', '#5a2a8a']],
-  steel: [['phantom'], ['weaponhit', '#dfe7f2']],
-  fairy: [['magicspell'], ['bubbles', '#ff9ad0']],
-};
 
 const light = type => TYPE_COLORS[type]?.[0] ?? '#ffffff';
 
 export function installHitFx(game) {
   let lastFrame = -Infinity, battle = null;
-  const lastSprite = new WeakMap();
   game.on('hit', ({ target, move, dmg, crit, eff, guard }) => {
     if (game.headless || !target) return;
     const frac = dmg / Math.max(1, target.maxHp), z = target.bodyZ;
@@ -49,12 +25,6 @@ export function installHitFx(game) {
       lastFrame = game.time;
       game.spawn(new ImpactFrame(target.x, target.y - z, Math.min(2, 0.8 + frac * 4), light(move.type)));
       game.hitstop(0.06);
-    }
-    // The hand-drawn hit animation (one at a time per target, so flurries and ultimates don't pile them up).
-    const [hardFx, softFx] = HIT_FX[move.type] ?? HIT_FX.normal, [key, tint] = hard ? hardFx : softFx;
-    if ((!move.ultimate || frac >= 0.06 || hard) && !(game.time - (lastSprite.get(target) ?? -9) < 0.12 && game.time >= (lastSprite.get(target) ?? -9))) {
-      lastSprite.set(target, game.time);
-      game.spawn(new FxSprite(key, target.x + (Math.random() - 0.5) * 6, target.y, z, { tint, flip: Math.random() < 0.5 }));
     }
     if (crit) game.spawn(new FocusLines(target.x, target.y - z, 0.3, '#ffe14d', { follow: target, inner: 34, outer: 200, n: 18 }));
   });
