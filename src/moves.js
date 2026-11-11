@@ -889,7 +889,12 @@ class Earthquake extends MoveAction {
 
   quake() {
     const u = this.user, g = this.game, R = this.move.radius;
-    g.marks.fracture(u.x, u.y, R * 0.7, 6.5);
+    // A wide crack network reaching past the hit area, with smaller cracks splintering off near its edge.
+    g.marks.fracture(u.x, u.y, R * 1.3, 6.5);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + rand(-0.4, 0.4), d = R * rand(0.95, 1.2);
+      g.marks.fracture(u.x + Math.cos(a) * d, u.y + Math.sin(a) * d * 0.72, rand(18, 26), 6.5);
+    }
     g.spawn(new Ring(u.x, u.y, { r0: 10, r1: R, life: 0.5, color: '#d8c098', width: 5 }));
     g.spawn(new Ring(u.x, u.y, { r0: 6, r1: R * 0.7, life: 0.35, color: '#fff4dc', width: 3 }));
     // The wave rolls outward: pebbles hop and dust puffs up along it (visual only).
