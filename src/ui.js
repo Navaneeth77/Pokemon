@@ -335,6 +335,7 @@ export class UI {
 
   showInfo(id) {
     $('#mon-info').innerHTML = id ? this.infoCompact(id) : '<p class="mi-empty">Tap a Pokémon to see its stats and moves, and tap again to remove it.</p>';
+    $('#mon-info .mi-edit')?.addEventListener('click', () => this.openKit(id));
   }
 
   // Team screen: everything needed to pick a Pokémon in a few lines.
@@ -350,7 +351,7 @@ export class UI {
         <div class="tp">${typeChips(s.types)}</div></div>
         <div class="mi-stats"><span>HP<b>${s.hp}</b></span><span>SPD<b>${s.speed}</b></span><span>ATK<b>${Math.round(s.atk * 100)}</b></span><span>DEF<b>${Math.round(s.def * 100)}</b></span></div></div>
       <div class="abil"><u>${ab.name}</u> — ${esc(ab.desc)}</div>
-      <ul class="mi-moves">${this.movesOf(id).map(mv).join('')}${mv(s.ultimate)}</ul>${megas ? `<div class="mega-line">Mega Evolves into <u>${megas}</u></div>` : ''}`;
+      <ul class="mi-moves">${this.movesOf(id).map(mv).join('')}${mv(s.ultimate)}</ul><button class="mi-edit">✎ EDIT MOVES · item · Tera</button>${megas ? `<div class="mega-line">Mega Evolves into <u>${megas}</u></div>` : ''}`;
   }
 
   // Details card for one Pokémon (team select and the battle-setup Pokédex share it).
@@ -714,8 +715,9 @@ export class UI {
   // Under each team member: its held item, Tera type and shiny star; tapping any of them opens its kit.
   kitChips(id) {
     const k = this.kitOf(id);
-    return `<span class="kit-chips" data-kit="${id}" title="Moves, item, Tera type and shiny">`
-      + `<em class="mvs${k.moves ? ' on' : ''}">${k.moves ? '✎ MOVES' : 'MOVES'}</em><em>${k.item ? esc(ITEMS[k.item].name) : '+ ITEM'}</em><em class="tera" style="--tc:${TYPE_COLORS[k.tera][0]}">${k.tera.slice(0, 3).toUpperCase()}</em>${k.shiny ? '<em class="sh">✦</em>' : ''}</span>`;
+    return `<span class="kit-chips" data-kit="${id}" title="Item, Tera type and shiny">`
+      + `<em>${k.item ? esc(ITEMS[k.item].name) : '+ ITEM'}</em><em class="tera" style="--tc:${TYPE_COLORS[k.tera][0]}">${k.tera.slice(0, 3).toUpperCase()}</em>${k.shiny ? '<em class="sh">✦</em>' : ''}</span>`
+      + `<span class="edit-moves${k.moves ? ' edited' : ''}" data-kit="${id}" role="button" title="Choose ${esc(SPECIES[id].name)}'s 4 moves">✎ ${k.moves ? 'MOVES ✓' : 'EDIT MOVES'}</span>`;
   }
 
   renderSelection() {
