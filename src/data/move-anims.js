@@ -540,3 +540,18 @@ look('bodyPress', { impact: [
 look('fireBlast', { impact: [{ at: 0, fx: 'dai' }] });
 // Psyshock: the psychic shards shatter into pink fragments.
 look('psyshock', { impact: [{ at: 0, burst: { colors: [W, '#ffb0e0', '#c040a0'], n: 14, up: 80 }, rings: { colors: [W, '#ffb0e0'], r: 30 } }] });
+
+// Batch 2 refinements: each adds to the move's existing landing flourish.
+const addImpact = (id, steps) => look(id, { impact: [...(MOVE_ANIMS[id]?.impact ?? []), ...steps] });
+addImpact('gigaDrain', [{ at: 0.02, siphon: { n: 18 } }, { at: 0.12, siphon: { n: 14 } }, { at: 0.22, siphon: { n: 10 } }]);
+addImpact('drainPunch', [{ at: 0.02, siphon: { n: 16 } }, { at: 0.12, siphon: { n: 10 } }]);
+addImpact('sludgeBomb', [{ at: 0, fx: 'sludge', n: 18, mark: 'energy', markRgb: [160, 60, 170], markSize: 22 }]);
+addImpact('gunkShotAtk', [{ at: 0, fx: 'sludge', n: 22, mark: 'energy', markRgb: [140, 50, 160], markSize: 26 }]);
+addImpact('scald', [{ at: 0, fx: 'steam', n: 10 }, { at: 0.05, fx: 'splash' }]);
+addImpact('liquidation', [{ at: 0, fx: 'splash' }, { at: 0.04, rings: { colors: [W, '#86ccff'], r: 30 } }]);
+addImpact('flipTurn', [{ at: 0, fx: 'splash' }]);
+addImpact('playRough', [{ at: 0, fx: 'scuffle' }]);
+addImpact('braveBird', [{ at: 0, fx: 'feathers', n: 12 }]);
+addImpact('doubleEdge', [{ at: 0, rings: { colors: [W, '#f0f0d8'], r: 40 }, fx: 'dust', n: 8 }]);
+addImpact('ironHead', [{ at: 0, rings: { colors: [W, '#dfe7f2'], r: 30 } }]);
+addImpact('energyBall', [{ at: 0, fx: 'leaves', n: 10, rings: { colors: [W, '#c8ff8a', '#3f9a3a'], r: 34 } }]);

@@ -13,6 +13,7 @@
 //   spikes    stone or ice spikes bursting out of the ground ({ n, style, spread })
 //   missile   a projectile flying from the user to the spot ({ style, dur, rgb, scale })
 //   orb       that projectile forming at the user's mouth before it is thrown ({ style, life, rgb, scale })
+//   siphon    motes of energy drifting from the spot back into the user ({ colors, n })
 //   wave      a wave sweeping through the spot ({ rgb, foam })
 //   rings     expanding rings at the spot ({ colors, r })
 //   burst     particles bursting from the spot ({ colors, n, up })
@@ -116,6 +117,13 @@ export function scheduleSteps(action, steps, spot) {
         const rgb = step.weatherTint ? WEATHER_TINT[g.weather] ?? ms.rgb : ms.rgb;
         g.spawn(new Missile(m.x, m.y, spot.x, spot.y, m.z, ms.dur ?? 0.35, ms.style ?? 'orb', () => {}, rgb ?? [255, 255, 255], ms.scale ?? 1));
       }
+      if (step.siphon) {
+        const s = step.siphon;
+        for (let i = 0; i < (s.n ?? 12); i++) {
+          const life = rand(0.55, 0.8), x = spot.x + rand(-12, 12), y = spot.y + rand(-6, 6);
+          g.particles.spawn({ x, y, z: rand(8, 26), vx: (user.x - x) / life, vy: (user.y - y) / life, vz: rand(-10, 10), life, size: rand(3, 4.5), sizeEnd: 2, colors: s.colors ?? ['#ffffff', '#d8ffb0', '#7ae050'], fade: false });
+        }
+      }
       if (step.orb) {
         const o = step.orb, m = action.mouth();
         g.spawn(new ChargeOrb(m.x, m.y, m.z, o.life ?? 0.3, o.style ?? 'orb', o.rgb, o.scale ?? 1));
@@ -171,6 +179,24 @@ const FX = {
         g.particles.spawn({ x: p.x, y: p.y, z: 8, vx: dx * sp, vy: dy * sp * 0.75, vz: rand(10, 40), drag: 1.4, life: rand(0.35, 0.55), size: rand(4, 7), sizeEnd: 1, colors: FIRE });
       }
     }
+  },
+  // Sludge splattering out and falling, with a few bubbles rising.
+  sludge: (g, p, s) => {
+    for (let i = 0; i < (s.n ?? 16); i++) { const a = rand(0, Math.PI * 2), sp = rand(70, 150); g.particles.spawn({ x: p.x, y: p.y, z: 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.55, vz: rand(50, 130), gz: 420, life: rand(0.45, 0.75), size: rand(3, 5), sizeEnd: 2, colors: ['#e0a0f0', '#a040c0', '#5a1a6a'] }); }
+    for (let i = 0; i < 5; i++) g.particles.spawn({ x: p.x + rand(-10, 10), y: p.y + rand(-5, 5), z: 2, vz: rand(15, 35), life: rand(0.5, 0.8), size: rand(2, 3), colors: ['#f0c0ff', '#c060d0'], round: true });
+  },
+  // Scalding steam: soft white puffs rising and spreading.
+  steam: (g, p, s) => {
+    for (let i = 0; i < (s.n ?? 10); i++) g.particles.spawn({ x: p.x + rand(-10, 10), y: p.y + rand(-5, 5), z: rand(6, 18), vx: rand(-15, 15), vz: rand(25, 55), drag: 1.2, life: rand(0.6, 1), size: rand(4, 6), sizeEnd: rand(9, 13), colors: ['#ffffff', '#f0f4f8', '#dde4ea'], alpha: 0.55, round: true });
+  },
+  // Play Rough's scuffle: a puffy dust cloud with stars popping out of it.
+  scuffle: (g, p) => {
+    for (let i = 0; i < 10; i++) g.particles.spawn({ x: p.x + rand(-14, 14), y: p.y + rand(-6, 6), z: rand(6, 26), vx: rand(-25, 25), vz: rand(-5, 15), drag: 2, life: rand(0.45, 0.7), size: rand(6, 9), sizeEnd: rand(10, 13), colors: ['#fff0f8', '#ffd0e8', '#f0b0d0'], alpha: 0.85, round: true });
+    for (let i = 0; i < 6; i++) g.particles.spawn({ x: p.x, y: p.y, z: 18, vx: rand(-80, 80), vy: rand(-40, 40), vz: rand(40, 100), gz: 200, life: rand(0.4, 0.6), size: 2.5, colors: ['#fff6a0', '#ffffff'] });
+  },
+  // Feathers flung out, fluttering down.
+  feathers: (g, p, s) => {
+    for (let i = 0; i < (s.n ?? 10); i++) g.particles.spawn({ x: p.x, y: p.y, z: 14, vx: rand(-90, 90), vy: rand(-40, 40), vz: rand(30, 90), gz: 70, drag: 2.5, life: rand(0.7, 1.1), size: rand(2, 3), colors: ['#ffffff', '#f0f0f0', '#d8d8d8'] });
   },
   // Wisps of shadow curling up and fading.
   wisps: (g, p, s) => {
