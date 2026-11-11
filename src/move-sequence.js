@@ -107,18 +107,19 @@ function throwSequence(action, spot) {
   });
   const later = new Set(groups.flatMap(gp => gp.steps));
   scheduleSteps(action, steps.filter(s => !later.has(s) && !missiles.includes(s)), spot);
-  for (const gp of groups) action.at(gp.missile.at ?? 0, () => action.game.spawn(new SeqShot(action, gp)));
+  groups.forEach((gp, k) => action.at(gp.missile.at ?? 0, () => action.game.spawn(new SeqShot(action, gp, k, groups.length))));
   action.at(seq.end ?? 1, () => action.finish(seq.recover ?? 0.1));
 }
 
 class SeqShot {
-  constructor(action, gp) {
+  constructor(action, gp, k = 0, n = 1) {
     const P = action.move.targeting, t = action.target, m = action.mouth(), ms = gp.missile.missile;
     Object.assign(this, { action, gp, P, x: m.x, y: m.y, z0: m.z, layer: 'air', isProjectile: true, dead: false, age: 0, traveled: 0, turned: 0 });
     // A projectile like any other (game.js clashes): its own move, owner and target (Rapid Spin can bat it back).
     Object.assign(this, { move: action.move, user: action.user, target: t, elem: action.move.type, radius: P.hitbox, reacted: new Set() });
-    // Thrown at where the foe is now.
-    this.angle = Math.atan2(t.y - m.y, t.x - m.x);
+    // Thrown at where the foe is now; a volley with a fan (targeting.js) deploys its shots across it, left to
+    // right, and they curve back in on the foe (Leaf Storm's look).
+    this.angle = Math.atan2(t.y - m.y, t.x - m.x) + (P.fan && n > 1 ? (k / (n - 1) - 0.5) * P.fan : 0);
     this.span = Math.max(30, Math.hypot(t.x - m.x, t.y - m.y));
     this.reach = reachOf(action.move);
     this.visual = action.game.spawn(new Missile(m.x, m.y, m.x, m.y, m.z, 99, ms.style ?? 'orb', () => {}, ms.rgb ?? [255, 255, 255], ms.scale ?? 1));
@@ -134,7 +135,7 @@ class SeqShot {
     const P = this.P, t = this.target;
     this.age += dt;
     // Homing: turns toward the foe at its tracking rate, for its tracking time, by no more than its turn limit.
-    if (P.track > 0 && this.age <= P.trackTime && this.turned < P.maxTurn && t.alive && !t.hidden) {
+    if (P.track > 0 && this.age >= (P.spreadT ?? 0) && this.age <= P.trackTime && this.turned < P.maxTurn && t.alive && !t.hidden) {
       const want = wrap(Math.atan2(t.y - this.y, t.x - this.x) - this.angle), left = P.maxTurn - this.turned;
       const turn = Math.max(-P.track * dt, Math.min(P.track * dt, want)), k = Math.max(-left, Math.min(left, turn));
       this.angle += k;

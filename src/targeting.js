@@ -18,6 +18,7 @@
 //   trackTime  how long it keeps tracking after it is released (s)
 //   maxTurn    the most it may turn in total while tracking (rad)
 //   acquire    'release': aims at the foe as it is thrown; 'cast': locks the foe's position when the move starts
+//   fan        volleys: the shots deploy across this angle (rad), fly straight for spreadT seconds, then home back in
 //
 // Accuracy is separate (combat.js): the move's official accuracy, the accuracy/evasion stages and abilities are
 // rolled only once the move has physically reached the foe. A projectile that is dodged or falls short never rolls.
@@ -40,6 +41,13 @@ export const TARGETING_TUNING = {
   earthPower: { track: 45 }, photonGeyser: { track: 55 }, expandingForce: { track: 40 }, grassKnot: { track: 70 }, flowerTrick: { track: 90 },
   makeItRain: { track: 30 }, thousandArrows: { track: 50 }, surf: { track: 20, range: 240 },
 };
+// Volleys that deploy in a fan and follow the foe, like Leaf Storm's leaves.
+const FAN = { kind: 'homing', track: 4.4, trackTime: 1.2, maxTurn: 2.2, spreadT: 0.1 };
+Object.assign(TARGETING_TUNING, {
+  pinMissile: { ...FAN, fan: 1.1, speed: 440 },
+  scaleShot: { ...FAN, fan: 1.2, speed: 420 },
+  rockBlast: { ...FAN, fan: 1.0, speed: 400 },
+});
 // Never-miss moves the move database doesn't cover home in like the rest.
 for (const id of ['swift', 'magicalLeaf', 'shockWave', 'aerialAce', 'magnetBomb', 'disarmingVoice']) TARGETING_TUNING[id] = { ...TARGETING_TUNING[id], kind: 'homing', ...SURE_HOMING };
 
