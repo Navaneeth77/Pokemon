@@ -1,0 +1,11 @@
+Effect sprite sheets in this folder, all free for commercial use. Credit is not required by any of them; it is given here anyway.
+
+- magicspell, bluefire, magickahit, flamelash, firespin, protection, weaponhit, fire, nebula, vortex, phantom, sunburn,
+  felspell, midnight, freezing, bubbles: "Free Pixel Effects Pack" by CodeManu (Pixel FX Designer), public domain (CC0).
+  https://opengameart.org/content/free-pixel-effects-pack
+- spark, lightning, darkbolt, firebomb: "Gothicvania Magic Pack 9" by Luis Zuno (ansimuz), CC0 / free for any use.
+  https://opengameart.org/content/gothicvania-magic-pack-9
+- gravityburst, plasmaburst, plasmasparkle: "Plasma Electric Effect Animations" by Reactorcore, CC0.
+  https://opengameart.org/content/plasma-electric-effect-animations
+- radialspark: "Radial lightning effect" (pixelated version) by 13rice, CC0.
+  https://opengameart.org/content/radial-lightning-effect
