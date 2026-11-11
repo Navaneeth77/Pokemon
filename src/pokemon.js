@@ -326,7 +326,9 @@ export class Pokemon {
     if (this.charging) game.updateCharge(this, dt);
 
     if (this.action) {
-      this.action.update(dt);
+      // A normal move's animation never shakes the screen or pushes the camera in (game.shake / game.punch).
+      game.muteShake = !this.action.move?.ultimate;
+      try { this.action.update(dt); } finally { game.muteShake = false; }
       if (this.action?.done) this.action = null;
     }
 

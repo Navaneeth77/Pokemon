@@ -541,7 +541,8 @@ export class Game {
     this.emit('move', { user, move });
     if (!NOT_COPYABLE.has(id)) this.lastUsed[user.side] = id;
     this.startCooldown(user, id, base.cooldown);
-    user.action = new move.Action(move, user, this);
+    this.muteShake = !move.ultimate;
+    try { user.action = new move.Action(move, user, this); } finally { this.muteShake = false; }
     this.hud.callout(user.side, chargeLevel >= 1 ? `${base.name}! MAX` : `${base.name}!`);
     this.ui.log(`${user.species.name} used ${base.name}!`, user.side);
     if (base.selfBuff && !base.dex) this.buff(user, ...base.selfBuff);
@@ -1129,7 +1130,10 @@ export class Game {
     return effect;
   }
 
-  shake(mag, dur = 0.25) {
+  // `muteShake` is set while a normal (non-ultimate) move's own animation runs: moves never shake the screen or push
+  // the camera in. Game events (a knockout, a clash) pass `force` to shake anyway.
+  shake(mag, dur = 0.25, force = false) {
+    if (this.muteShake && !force) return;
     if (this.shakeT <= 0 || mag >= this.shakeMag * (this.shakeT / this.shakeDur)) {
       this.shakeMag = mag;
       this.shakeDur = dur;
@@ -1150,6 +1154,7 @@ export class Game {
 
   // Quick camera push-in on a big impact.
   punch(x, y, amount, dur) {
+    if (this.muteShake) return;
     Object.assign(this, { punchT: dur, punchDur: dur, punchAmt: amount, punchAt: { x, y } });
   }
 
@@ -1205,7 +1210,7 @@ export class Game {
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
     this.hitstop(0.12);
-    this.shake(6, 0.4);
+    this.shake(6, 0.4, true);
     sfx.faint();
     if (this.state !== 'fighting') return;
     if (next < 0) {
@@ -1772,7 +1777,7 @@ export class Game {
     this.marks.fracture(x, y, big ? 30 : 16, 5);
     this.hitstopT = Math.max(this.hitstopT, 0.06);
     this.slowT = big ? 0.45 : 0.25;
-    this.shake(big ? 10 : 6, 0.4);
+    this.shake(big ? 10 : 6, 0.4, true);
     sfx.explosion();
   }
 
