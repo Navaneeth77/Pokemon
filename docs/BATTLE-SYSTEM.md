@@ -57,6 +57,10 @@ How it works today:
         effects inside its beats).
 - [ ] **4. Validation and polish**: validation script, visual review of representative moves per type,
       performance pass, online (server) parity.
+      - 11 Nov: move visuals refined, visual only (an earlier anime/impact-frame layer was scrapped: it added hit-pause
+        and buried the Pokémon). Every move's existing look was refined in batches, most-used first, with before/after
+        review: the 5-move sample, batches 1–5 (≈70 moves), the 144-move long tail (type accents) and 30 rarely used
+        status moves. Each batch was checked for identical hit and end frames and the same damage against the old code.
       - Done so far: `scripts/validate-moves.mjs`; online stat stages fixed (they shared the `sg` key with the stagger flag; now `sx`,
         with a network test). Visual review done for the type ultimates and legendary batch 1; legendary batches 2–4 and
         the fan-favourite batches 5–6 render every frame without errors and leave nothing behind (checked in the browser), but still
