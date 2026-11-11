@@ -625,3 +625,7 @@ export const TAIL_EXTRA = {
 };
 // Applied in moves.js, where each move's type is known.
 export const TAIL_TYPES = TYPE_ACCENT;
+
+// No screen shake or camera push-in on Brave Bird and Spirit Break (the player found it jarring); the rest of their
+// landing flourish stays.
+for (const id of ['braveBird', 'spiritBreak']) look(id, { impact: (MOVE_ANIMS[id]?.impact ?? []).map(({ shake, punch, ...step }) => step) });
