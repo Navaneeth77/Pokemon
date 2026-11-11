@@ -101,11 +101,17 @@ function throwSequence(action, spot) {
   const seq = action.move.seq, steps = seq.steps;
   const hits = steps.filter(s => s.hit).sort(byAt), last = hits[hits.length - 1].at ?? 0;
   const missiles = steps.filter(s => s.missile && (s.at ?? 0) <= last).sort(byAt);
-  const groups = hits.map((h, k) => {
+  let groups = hits.map((h, k) => {
     const from = h.at ?? 0, to = k + 1 < hits.length ? hits[k + 1].at ?? 0 : Infinity;
     return { missile: missiles[k], hitAt: from, steps: steps.filter(s => (s.at ?? 0) >= from && (s.at ?? 0) < to && !missiles.includes(s)) };
   });
+  // Steps that play when a shot lands (not on the move's own clock).
   const later = new Set(groups.flatMap(gp => gp.steps));
+  // One hit thrown as several shots (Air Slash, Power Gem, Tri Attack…): every shot flies and carries an equal part.
+  if (hits.length === 1 && missiles.length > 1) {
+    const n = missiles.length, last = groups[0], part = s => (s.hit ? { ...s, hit: { ...s.hit, part: 1 / n } } : s);
+    groups = missiles.map((ms, k) => ({ missile: ms, hitAt: last.hitAt, steps: k === n - 1 ? last.steps.map(part) : [part(hits[0])] }));
+  }
   scheduleSteps(action, steps.filter(s => !later.has(s) && !missiles.includes(s)), spot);
   groups.forEach((gp, k) => action.at(gp.missile.at ?? 0, () => action.game.spawn(new SeqShot(action, gp, k, groups.length))));
   action.at(seq.end ?? 1, () => action.finish(seq.recover ?? 0.1));
@@ -119,7 +125,9 @@ class SeqShot {
     Object.assign(this, { move: action.move, user: action.user, target: t, elem: action.move.type, radius: P.hitbox, reacted: new Set() });
     // Thrown at where the foe is now; a volley with a fan (targeting.js) deploys its shots across it, left to
     // right, and they curve back in on the foe (Leaf Storm's look).
-    this.angle = Math.atan2(t.y - m.y, t.x - m.x) + (P.fan && n > 1 ? (k / (n - 1) - 0.5) * P.fan : 0);
+    // The fan narrows up close, so every shot can still turn back onto a foe that's near.
+    const near = Math.min(1, Math.max(0.3, Math.hypot(t.x - m.x, t.y - m.y) / 260));
+    this.angle = Math.atan2(t.y - m.y, t.x - m.x) + (P.fan && n > 1 ? (k / (n - 1) - 0.5) * P.fan * near : 0);
     this.span = Math.max(30, Math.hypot(t.x - m.x, t.y - m.y));
     this.reach = reachOf(action.move);
     this.visual = action.game.spawn(new Missile(m.x, m.y, m.x, m.y, m.z, 99, ms.style ?? 'orb', () => {}, ms.rgb ?? [255, 255, 255], ms.scale ?? 1));
@@ -302,7 +310,8 @@ export function scheduleSteps(action, steps, spot) {
         const h = step.hit, near = t.alive && !t.hidden && Math.hypot(t.x - spot.x, t.y - spot.y) <= (h.r ?? 30) + t.radius;
         if (near) {
           const a = Math.atan2(t.y - spot.y, t.x - spot.x) || action.aim;
-          const landed = applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a) });
+          const landed = applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a),
+            ...(h.part && { power: Math.max(1, Math.round(move.power * h.part)) }) }); // one shot of a split volley
           sparkBurst(g, t.x, t.y, t.bodyZ, true);
           // The move's own landing flourish (visual only), once, as for strikes.
           if (landed && move.impact && !action.impactShown) {

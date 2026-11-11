@@ -44,9 +44,15 @@ export const TARGETING_TUNING = {
 // Volleys that deploy in a fan and follow the foe, like Leaf Storm's leaves.
 const FAN = { kind: 'homing', track: 4.4, trackTime: 1.2, maxTurn: 2.2, spreadT: 0.1 };
 Object.assign(TARGETING_TUNING, {
-  pinMissile: { ...FAN, fan: 1.1, speed: 440 },
-  scaleShot: { ...FAN, fan: 1.2, speed: 420 },
-  rockBlast: { ...FAN, fan: 1.0, speed: 400 },
+  pinMissile: { ...FAN, fan: 1.1, speed: 440 }, scaleShot: { ...FAN, fan: 1.2, speed: 420 }, rockBlast: { ...FAN, fan: 1.0, speed: 400 },
+  bulletSeed: { ...FAN, fan: 1.1, speed: 460 }, icicleSpear: { ...FAN, fan: 1.0, speed: 460 },
+  seedBomb: { ...FAN, fan: 0.9, speed: 420 }, iceShard: { ...FAN, fan: 0.8, speed: 560 }, mudShot: { ...FAN, fan: 0.9, speed: 420 },
+  ancientPower: { ...FAN, fan: 1.0, speed: 380 }, sludgeBomb: { ...FAN, fan: 0.9, speed: 420 },
+  airSlash: { ...FAN, fan: 0.7, speed: 520 }, psyshock: { ...FAN, fan: 0.8, speed: 460 }, powerGem: { ...FAN, fan: 1.0, speed: 440 },
+  triAttack: { ...FAN, fan: 1.0, speed: 420 }, swift: { ...FAN, fan: 1.2, speed: 440 },
+  // Older single projectiles fired in a spread (Shot): the same fan.
+  magicalLeaf: { ...FAN, fan: 0.9 }, razorLeaf: { ...FAN, fan: 0.75 }, acidSpray: { ...FAN, fan: 0.7 }, dragonDarts: { ...FAN, fan: 0.7 },
+  boneRush: { ...FAN, fan: 1.1 }, bonemerang: { ...FAN, fan: 0.8 }, twineedle: { ...FAN, fan: 0.6 }, waterShuriken: { ...FAN, fan: 1.1 },
 });
 // Never-miss moves the move database doesn't cover home in like the rest.
 for (const id of ['swift', 'magicalLeaf', 'shockWave', 'aerialAce', 'magnetBomb', 'disarmingVoice']) TARGETING_TUNING[id] = { ...TARGETING_TUNING[id], kind: 'homing', ...SURE_HOMING };

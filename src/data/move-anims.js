@@ -420,7 +420,7 @@ function volley(type, n, o = {}) {
   const steps = [{ at: 0, anim: 'Charge', gather: { colors: e.colors, until: c, radius: o.radius ?? 28 }, ...(o.orbit && { orbit: { colors: e.colors, until: c, r: 22 } }) }];
   for (let i = 0; i < n; i++) {
     steps.push({ at: c + i * gap, ...(i === 0 && { anim: 'Shoot' }), missile: { style: o.style ?? 'orb', dur: d, rgb: o.rgb ?? e.rgb, scale: o.scale ?? 1.1 } });
-    steps.push({ at: c + i * gap + d, ...(i === n - 1 && { fx: o.fx ?? e.fx, rings: { colors: e.colors, r: o.r ?? 32 }, ...(e.mark && { mark: e.mark, markRgb: e.rgb, markSize: o.markSize ?? 18 }), ...(o.shake && { shake: o.shake }), ...(o.glow && { glow: { at: 'spot', rgb: e.rgb, r: 30 } }), ...(o.dome && { dome: { r: o.dome, rgb: e.rgb, life: 0.4 } }), ...(o.sound && { sound: o.sound }) }), ...((!o.single || i === n - 1) && { hit: { r: o.hitR ?? 26, knockback: i === n - 1 ? o.kb ?? 160 : 40, stagger: o.stagger ?? 0.3 } }) });
+    steps.push({ at: c + i * gap + d, ...(i === n - 1 && { fx: o.fx ?? e.fx, rings: { colors: e.colors, r: o.r ?? 32 }, ...(e.mark && { mark: e.mark, markRgb: e.rgb, markSize: o.markSize ?? 18 }), ...(o.shake && { shake: o.shake }), ...(o.glow && { glow: { at: 'spot', rgb: e.rgb, r: 30 } }), ...(o.dome && { dome: { r: o.dome, rgb: e.rgb, life: 0.4 } }), ...(o.sound && { sound: o.sound }) }), ...((!o.single || i === n - 1) && { hit: { r: o.hitR ?? 26, knockback: i === n - 1 ? o.kb ?? 160 : 40, stagger: o.stagger ?? 0.3, ...(o.part && { part: 1 / n }) } }) });
   }
   return { seq: { aim: 'target', end: c + (n - 1) * gap + d + 0.25, steps } };
 }
@@ -703,3 +703,15 @@ look('lovelyKiss', { fx: [{ at: 0.25, burst: { colors: ['#ffffff', '#ff8ad0', '#
 look('acidArmor', { fx: [{ at: 0.05, fx: 'sludge', where: 'user' }, { at: 0.18, rings: { colors: ['#ffffff', '#c060d0'], r: 40 }, where: 'user' }] });
 look('spikyShield', { fx: [{ at: 0.02, fx: 'leaves', where: 'user' }] });
 look('banefulBunker', { fx: [{ at: 0.02, fx: 'sludge', where: 'user' }] });
+
+// More multi-shot moves, deployed in a fan that follows the foe (targeting.js FAN): Bullet Seed and Icicle Spear fire
+// five full-power shots like Pin Missile; single-hit moves become three shots that share the hit (`part`).
+Object.assign(MOVE_ANIMS, {
+  bulletSeed: volley('grass', 5, { style: 'seed', rgb: [140, 210, 90], gap: 0.05, dur: 0.24, scale: 1, charge: 0.1 }),
+  icicleSpear: volley('ice', 5, { style: 'crystal', rgb: [200, 240, 255], gap: 0.05, dur: 0.22, scale: 0.9, charge: 0.12 }),
+  seedBomb: volley('grass', 3, { style: 'seed', rgb: [140, 200, 80], gap: 0.07, scale: 1.3, part: true, sound: 'explosion' }),
+  iceShard: volley('ice', 3, { style: 'crystal', rgb: [200, 240, 255], gap: 0.04, charge: 0.04, dur: 0.16, scale: 1, part: true }),
+  mudShot: volley('ground', 3, { style: 'bomb', rgb: [150, 110, 60], gap: 0.07, scale: 1.05, part: true }),
+  ancientPower: volley('rock', 3, { style: 'boulder', rgb: [220, 190, 140], gap: 0.08, scale: 1.3, charge: 0.35, orbit: true, glow: true, part: true }),
+  sludgeBomb: volley('poison', 3, { style: 'bomb', rgb: [170, 90, 210], gap: 0.07, scale: 1.25, part: true }),
+});

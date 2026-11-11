@@ -201,7 +201,7 @@ export class Orb extends Projectile {
     const t = this.target;
     // Within the move's tracking limits (targeting.js): turn rate, tracking time and total turn.
     const P = this.move.targeting, rate = P?.track ?? this.s.homing ?? 0;
-    if (rate && t.alive && !t.hidden && this.age <= (P?.trackTime ?? Infinity) && (this.turned ?? 0) < (P?.maxTurn ?? Infinity)) {
+    if (rate && t.alive && !t.hidden && this.age >= (P?.spreadT ?? 0) && this.age <= (P?.trackTime ?? Infinity) && (this.turned ?? 0) < (P?.maxTurn ?? Infinity)) {
       const want = Math.atan2(t.y - this.y, t.x - this.x), left = (P?.maxTurn ?? Infinity) - (this.turned ?? 0);
       const k = Math.max(-left, Math.min(left, Math.max(-rate * dt, Math.min(rate * dt, Math.atan2(Math.sin(want - this.angle), Math.cos(want - this.angle))))));
       this.angle += k;

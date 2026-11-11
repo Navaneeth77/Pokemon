@@ -517,7 +517,10 @@ class Shot extends MoveAction {
     const c = this.move.shot, s = c.speed ?? 0.85, a = this.anim(c.anim ?? 'Shoot', s);
     const hit = this.t + this.timeTo(a, a.hitFrame ?? 2, s);
     if(skyLegend(this.user))this.game.spawn(new CastEnergy(this.user,Math.max(.1,hit-this.t),true));
-    const spread = c.spread ?? [0];
+    // A fan (targeting.js) spreads the shots evenly across it; they fly out, then home back in.
+    const n = (c.spread ?? [0]).length, t = this.target, near = t ? Math.min(1, Math.max(0.3, Math.hypot(t.x - this.user.x, t.y - this.user.y) / 260)) : 1;
+    const fan = this.move.targeting?.fan && this.move.targeting.fan * near;
+    const spread = fan && n > 1 ? Array.from({ length: n }, (_, i) => (i / (n - 1) - 0.5) * fan) : c.spread ?? [0];
     spread.forEach((off, i) => this.at(hit + i * (c.stagger ?? 0), () => this.fire(off, i)));
     const last = hit + (spread.length - 1) * (c.stagger ?? 0);
     this.at(Math.max(this.t + this.timeTo(a, a.frames, s), last + 0.1), () => this.finish(c.recovery ?? 0.12));
