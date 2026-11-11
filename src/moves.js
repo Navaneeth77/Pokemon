@@ -853,9 +853,9 @@ class Thunderbolt extends MoveAction {
         life: 0.15, size: 1.5, colors: ['#ffffff', '#fff27a'],
       });
     }
-    if (Math.random() < 0.25) {
-      const z = u.bodyZ;
-      g.spawn(new Lightning(u.x - 9, u.y - z + rand(-6, 6), u.x + 9, u.y - z + rand(-6, 6), 0.08, { width: 1, branches: 0 }));
+    if (Math.random() < 0.45) {
+      const z = u.bodyZ, a0 = rand(0, Math.PI * 2), a1 = a0 + rand(1.2, 2.6), r = u.radius + 3;
+      g.spawn(new Lightning(u.x + Math.cos(a0) * r, u.y - z + Math.sin(a0) * r * 0.7, u.x + Math.cos(a1) * r, u.y - z + Math.sin(a1) * r * 0.7, 0.08, { width: 1, branches: 0 }));
     }
   }
 
@@ -867,7 +867,13 @@ class Thunderbolt extends MoveAction {
     const reach = t.alive && !t.hidden && u.distTo(t) <= this.move.range && off < 0.5;
     const p = reach ? t : this.front(this.move.range);
     const z = reach ? t.bodyZ : 6;
-    g.spawn(new Lightning(m.x, m.y - m.z, p.x, p.y - z, 0.3, { width: 2, branches: 3 }));
+    g.spawn(new Lightning(m.x, m.y - m.z, p.x, p.y - z, 0.3, { width: 2.5, branches: 4 }));
+    // Two thinner forks off the main bolt, and a crackle ring where it lands.
+    for (const s of [-1, 1]) {
+      const mx = (m.x + p.x) / 2, my = (m.y - m.z + p.y - z) / 2;
+      g.spawn(new Lightning(mx, my, p.x + s * rand(10, 18), p.y - z + rand(-6, 6), 0.2, { width: 1.2, branches: 1 }));
+    }
+    g.spawn(new Ring(p.x, p.y, { z, r0: 4, r1: 26, life: 0.25, color: '#fff27a', width: 2, layer: 'air' }));
     electricBurst(g, p.x, p.y, z, 16);
     g.marks.burn(p.x, p.y + 2, 8);
     sfx.thunderbolt();
@@ -1376,8 +1382,10 @@ class PsychicThrow extends MoveAction {
       const to = { x: clampX(t.x + Math.cos(a) * 50), y: clampY(t.y + Math.sin(a) * 50) };
       sfx.whoosh();
       telekinesis(this, t, to, 0.3, 30, () => {
-        g.marks.fracture(t.x, t.y, 18, 5.5);
+        g.marks.fracture(t.x, t.y, 26, 5.5);
         g.spawn(new Ring(t.x, t.y, { r0: 6, r1: 34, life: 0.3, color: '#ff9fd0', width: 3 }));
+        g.spawn(new Ring(t.x, t.y, { r0: 4, r1: 52, life: 0.45, color: '#ffffff', width: 1.5 }));
+        for (let i = 0; i < 14; i++) g.particles.spawn({ x: t.x, y: t.y, z: 6, vx: rand(-90, 90), vy: rand(-50, 50), vz: rand(40, 110), gz: 260, life: rand(0.4, 0.65), size: rand(2, 3), sizeEnd: 1, colors: ['#ffffff', '#ffb0e0', '#c040a0'] });
         dustCloud(g, t.x, t.y, 10, 5);
         debris(g, t.x, t.y, 10, 110);
         g.shake(5, 0.3);

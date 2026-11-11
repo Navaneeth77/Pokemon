@@ -140,8 +140,13 @@ export function scheduleSteps(action, steps, spot) {
         const h = step.hit, near = t.alive && !t.hidden && Math.hypot(t.x - spot.x, t.y - spot.y) <= (h.r ?? 30) + t.radius;
         if (near) {
           const a = Math.atan2(t.y - spot.y, t.x - spot.x) || action.aim;
-          applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a) });
+          const landed = applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a) });
           sparkBurst(g, t.x, t.y, t.bodyZ, true);
+          // The move's own landing flourish (visual only), once, as for strikes.
+          if (landed && move.impact && !action.impactShown) {
+            action.impactShown = true;
+            scheduleSteps(action, move.impact.map(s => ({ ...s, at: action.t + (s.at ?? 0) })), { x: t.x, y: t.y });
+          }
         }
       }
     });
@@ -158,6 +163,15 @@ const FX = {
   debris: (g, p, s) => debris(g, p.x, p.y, s.n ?? 16, 140),
   wind: (g, p, s) => windBurst(g, p.x, p.y, 10, s.n ?? 20, s.colors),
   dust: (g, p, s) => dustCloud(g, p.x, p.y, s.n ?? 10, 5),
+  // Fire Blast's 大: flames streak out along the five strokes of the kanji from the point of impact.
+  dai: (g, p) => {
+    for (const [dx, dy] of [[0, -1], [-1, -0.15], [1, -0.15], [-0.75, 0.7], [0.75, 0.7]]) {
+      for (let i = 0; i < 9; i++) {
+        const sp = 60 + i * 14;
+        g.particles.spawn({ x: p.x, y: p.y, z: 8, vx: dx * sp, vy: dy * sp * 0.75, vz: rand(10, 40), drag: 1.4, life: rand(0.35, 0.55), size: rand(4, 7), sizeEnd: 1, colors: FIRE });
+      }
+    }
+  },
   // Wisps of shadow curling up and fading.
   wisps: (g, p, s) => {
     for (let i = 0; i < (s.n ?? 14); i++) g.particles.spawn({ x: p.x + rand(-12, 12), y: p.y + rand(-5, 5), z: rand(6, 24), vx: rand(-20, 20), vz: rand(30, 70), gz: -20, drag: 1, life: rand(0.5, 0.9), size: rand(2, 4), sizeEnd: 1, colors: ['#c8a0ff', '#7a48b8', '#3a2050'] });

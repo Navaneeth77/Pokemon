@@ -23,7 +23,8 @@ export const MOVE_ANIMS = {
   stoneEdgeAtk: { seq: { aim: 'target', end: 0.95, steps: [
     { at: 0, anim: 'Attack' },
     { at: 0.15, telegraph: { r: 26, color: '#c8b080', life: 0.5 } },
-    { at: 0.65, spikes: { n: 6, style: 'rock', spread: 24 }, shake: [8, 0.3], sound: 'quake' },
+    { at: 0.65, spikes: { n: 9, style: 'rock', spread: 30 }, fx: 'debris', n: 18, shake: [8, 0.3], sound: 'quake' },
+    { at: 0.68, fx: 'dust', n: 12 },
     { at: 0.65, hit: { r: 28, knockback: 230, stagger: 0.5 } },
   ] } },
   // Rock Slide: boulders tumble down onto the target's area.
@@ -46,7 +47,9 @@ export const MOVE_ANIMS = {
   earthPower: { seq: { aim: 'target', end: 0.9, steps: [
     { at: 0, anim: 'Charge' },
     { at: 0.1, telegraph: { r: 30, color: '#e8b060', life: 0.5 }, glow: { at: 'spot', rgb: [230, 160, 80], r: 30 } },
-    { at: 0.6, pillar: { rgb: [230, 160, 80], height: 160, life: 0.45 }, burst: { colors: ['#f0d8a0', '#c89850', '#6a4a20'], n: 22 }, mark: 'fracture', shake: [8, 0.3], sound: 'quake' },
+    { at: 0.6, pillar: { rgb: [230, 150, 70], height: 190, life: 0.5 }, burst: { colors: ['#f0d8a0', '#c89850', '#6a4a20'], n: 22 }, spikes: { n: 4, style: 'rock', spread: 18 }, mark: 'fracture', markSize: 30, shake: [8, 0.3], sound: 'quake' },
+    { at: 0.63, fx: 'debris', n: 14 },
+    { at: 0.66, fx: 'dust', n: 10 },
     { at: 0.6, hit: { r: 32, knockback: 220 } },
   ] } },
   // Hurricane: a cyclone forms on the target and tears upward.
@@ -78,8 +81,8 @@ export const MOVE_ANIMS = {
   ] } },
   // Focus Blast: a sphere of focused power is charged in the hands and hurled.
   focusBlast: { seq: { aim: 'target', end: 1, steps: [
-    { at: 0, anim: 'Charge', gather: { colors: [W, '#6aa8ff', '#2a5ad8'], until: 0.55, radius: 30 } },
-    { at: 0.55, anim: 'Shoot', missile: { style: 'orb', dur: 0.3, rgb: [90, 150, 255], scale: 1.8 } },
+    { at: 0, anim: 'Charge', gather: { colors: [W, '#6aa8ff', '#2a5ad8'], until: 0.55, radius: 30 }, orb: { style: 'aura', life: 0.55, scale: 1.7 } },
+    { at: 0.55, anim: 'Shoot', missile: { style: 'aura', dur: 0.3, rgb: [90, 150, 255], scale: 1.8 } },
     { at: 0.85, rings: { colors: [W, '#6aa8ff', '#2a5ad8'], r: 46 }, shake: [10, 0.35], flash: 0.05, mark: 'fracture', sound: 'explosion' },
     { at: 0.85, hit: { r: 30, knockback: 240, stagger: 0.5 } },
   ] } },
@@ -456,7 +459,7 @@ Object.assign(MOVE_ANIMS, {
     { at: 0.65, rings: { colors: ['#ffb070', '#9be6ff', '#fff27a'], r: 36 }, hit: { r: 26, knockback: 150 } },
   ] } },
   swift: volley('normal', 3, { style: 'orb', rgb: [255, 240, 140], gap: 0.06, dur: 0.24 }),
-  psyshock: volley('psychic', 2, { single: true, style: 'orb', rgb: [255, 130, 200], gap: 0.08, glow: true }),
+  psyshock: volley('psychic', 2, { single: true, style: 'crystal', rgb: [255, 140, 210], gap: 0.08, glow: true, scale: 1.4 }),
   psychoCut: volley('psychic', 1, { style: 'crystal', rgb: [255, 140, 210], scale: 1.8, charge: 0.1, dur: 0.18, sound: 'airSlash' }),
   extrasensory: volley('psychic', 1, { style: 'orb', rgb: [255, 120, 200], scale: 1.4, charge: 0.3, dome: 34 }),
   rockTomb: { seq: { aim: 'target', end: 0.9, steps: [
@@ -517,3 +520,23 @@ Object.assign(MOVE_ANIMS, {
   ironDefense: { fx: [{ at: 0.05, fx: 'metal' }, { at: 0.1, dome: { r: 30, rgb: [220, 230, 245], life: 0.5 } }] },
   agility: { fx: [{ at: 0.05, afterimage: { n: 4, color: '#ffd0f0' } }] },
 });
+
+// ── Refinements (visual only: same hit timing, no added pauses, flashes or shake) ──
+// Close Combat: a punch flares on each of its three hits, the last one blowing dust out.
+look('closeCombat', { impact: [
+  { at: 0, slash: { colors: ['#ffd0b0', W], n: 1, radius: 18 }, burst: { colors: [W, '#ffd0b0', '#e07040'], n: 8, up: 60 }, shake: [8, 0.3], punch: 0.06 },
+  { at: 0.1, slash: { colors: ['#ffb070', W], n: 2, radius: 20 }, burst: { colors: [W, '#ffd0b0'], n: 8, up: 70 } },
+  { at: 0.2, rings: { colors: [W, '#ffd0b0', '#c8402c'], r: 44 }, burst: { colors: [W, '#ffd0b0', '#e07040'], n: 16, up: 110 }, fx: 'dust', n: 10 },
+] });
+// Sucker Punch: a shadowy fist crescent and wisps of shadow.
+look('suckerPunch', { impact: [{ at: 0, slash: { colors: ['#c8a0ff', '#3a2050'], n: 2, radius: 20 }, burst: { colors: ['#c8a0ff', '#6a3a8a', '#1a0f24'], n: 10, up: 90 }, fx: 'wisps', n: 10 }] });
+// Body Press: the full weight lands — dust, flying grit, steel sparks and a cracked floor.
+look('bodyPress', { impact: [
+  { at: 0, fx: 'debris', n: 16, rings: { colors: [W, '#dfe7f2', '#8f9db2'], r: 46 }, mark: 'fracture', markSize: 24, shake: [8, 0.3], punch: 0.06 },
+  { at: 0.03, fx: 'metal' },
+  { at: 0.05, fx: 'dust', n: 12 },
+] });
+// Fire Blast: flames burst out along the five strokes of 大.
+look('fireBlast', { impact: [{ at: 0, fx: 'dai' }] });
+// Psyshock: the psychic shards shatter into pink fragments.
+look('psyshock', { impact: [{ at: 0, burst: { colors: [W, '#ffb0e0', '#c040a0'], n: 14, up: 80 }, rings: { colors: [W, '#ffb0e0'], r: 30 } }] });

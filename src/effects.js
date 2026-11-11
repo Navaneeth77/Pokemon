@@ -1106,6 +1106,23 @@ const MISSILE_SHAPES = {
     ctx.fillStyle = `rgb(${R},${G},${B})`;
     ctx.beginPath(); ctx.arc(-2, -2, 4, 0, Math.PI * 2); ctx.fill();
   },
+  // A sphere of focused chi: blue glow, swirling streaks, a white-hot core.
+  aura(ctx, R, G, B, t) {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 12);
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.45, 'rgba(140,190,255,0.85)');
+    g.addColorStop(1, 'rgba(60,110,230,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#dff0ff';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 3; i++) {
+      const a = t * 10 + (i / 3) * Math.PI * 2;
+      ctx.beginPath(); ctx.arc(0, 0, 8.5, a, a + 1.4); ctx.stroke();
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
+  },
   // A ball of shadow: a flickering, ragged violet aura around a dark core with a pale rim.
   shadow(ctx, R, G, B, t) {
     ctx.fillStyle = 'rgba(122,72,184,0.6)';
