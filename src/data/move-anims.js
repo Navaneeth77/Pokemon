@@ -568,3 +568,15 @@ addFx('wish', [{ at: 0, meteors: { n: 1, style: 'star', rgb: [255, 240, 150], sp
 addFx('calmMind', [{ at: 0.1, rings: { colors: [W, '#ffd0ec'], r: 40 }, where: 'user' }, { at: 0.28, rings: { colors: ['#ffd0ec'], r: 56 }, where: 'user' }, { at: 0.46, rings: { colors: ['#ffe8f4'], r: 70 }, where: 'user' }]);
 addFx('nastyPlot', [{ at: 0.05, fx: 'wisps', n: 12, burst: { colors: ['#c8a0ff', '#6a3a8a'], n: 10, up: 60 }, where: 'user' }]);
 addFx('toxic', [{ at: 0.3, fx: 'sludge', n: 10 }]);
+
+// Batch 4 refinements (added to the existing landing flourishes).
+addImpact('psychicNoise', [{ at: 0, rings: { colors: [W, '#ffb0e0', '#c040a0'], r: 36 } }, { at: 0.08, rings: { colors: ['#ffd0ec', '#e080c0'], r: 50 } }, { at: 0.16, rings: { colors: ['#ffe8f4'], r: 64 } }]);
+addImpact('hurricane', [{ at: 0, fx: 'wind', n: 24, colors: [W, '#e8f6ff', '#9fc8e8'] }, { at: 0.06, slash: { colors: ['#e8f6ff', W], n: 2, radius: 24 } }, { at: 0.14, slash: { colors: ['#cfeaff', W], n: 2, radius: 30 } }]);
+addImpact('hydroPumpAtk', [{ at: 0, fx: 'splash' }, { at: 0.05, rings: { colors: [W, '#86ccff', '#3a8ae8'], r: 40 } }]);
+addImpact('flamethrower', [{ at: 0, fx: 'flames', n: 16, mark: 'scorch', markSize: 18 }]);
+addImpact('darkPulse', [{ at: 0, rings: { colors: ['#c8a0ff', '#6a3a8a'], r: 36 } }, { at: 0.1, rings: { colors: ['#9a70c8', '#3a2050'], r: 52 } }]);
+addImpact('bodySlam', [{ at: 0, fx: 'dust', n: 12, rings: { colors: [W, '#f0f0d8'], r: 42 } }]);
+addImpact('sludgeWave', [{ at: 0, fx: 'sludge', n: 14 }]);
+addImpact('airSlash', [{ at: 0, slash: { colors: [W, '#cfeaff'], n: 2, radius: 22 } }]);
+addImpact('freezeDry', [{ at: 0, fx: 'ice', mark: 'frost', markSize: 20 }]);
+addImpact('shadowSneak', [{ at: 0, fx: 'wisps', n: 10 }]);
