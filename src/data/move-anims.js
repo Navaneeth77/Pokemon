@@ -592,3 +592,36 @@ addImpact('flashCannon', [{ at: 0, fx: 'metal', rings: { colors: [W, '#dfe7f2'],
 addImpact('hyperVoice', [{ at: 0.08, rings: { colors: [W, '#f0f0d8'], r: 54 } }, { at: 0.16, rings: { colors: ['#f0f0d8'], r: 70 } }]);
 addImpact('rockSlide', [{ at: 0, fx: 'debris', n: 14 }, { at: 0.04, fx: 'dust', n: 8 }]);
 addImpact('stompingTantrum', [{ at: 0, fx: 'debris', n: 12, mark: 'fracture', markSize: 22 }, { at: 0.04, fx: 'dust', n: 10 }]);
+
+// The long tail: every remaining attacking move gets a modest accent for its type, on top of its existing landing
+// flourish. Types whose impact was a generic dust puff get the element built for them in this rollout; types that
+// already had an element-true impact (fire, water, electric, grass, ice, ground, rock, steel, bug) are left as they are.
+const TYPE_ACCENT = {
+  poison: [{ at: 0, fx: 'sludge', n: 10 }],
+  ghost: [{ at: 0, fx: 'wisps', n: 10 }],
+  dark: [{ at: 0, fx: 'wisps', n: 8 }],
+  fairy: [{ at: 0, fx: 'glitter', n: 14 }],
+  psychic: [{ at: 0, rings: { colors: [W, '#ffb0e0'], r: 34 } }, { at: 0.08, rings: { colors: ['#ffd0ec'], r: 48 } }],
+  fighting: [{ at: 0, rings: { colors: [W, '#ffd0b0'], r: 34 } }],
+  flying: [{ at: 0, fx: 'feathers', n: 6 }],
+  dragon: [{ at: 0, rings: { colors: [W, '#b090ff', '#5a3ad8'], r: 38 } }],
+  normal: [{ at: 0, rings: { colors: [W, '#f0f0d8'], r: 32 } }],
+};
+export const TAIL_MOVES = ['highHorsepower', 'zenHeadbutt', 'woodHammer', 'powerGem', 'boomburst', 'firstImpression', 'icicleCrash', 'solarBeam', 'machPunch', 'iceShard', 'overheat', 'dragonPulse', 'scorchingSands', 'flameCharge', 'trailblaze', 'headSmash', 'acrobatics', 'iceSpinner', 'storedPower', 'scaleShot', 'mysticalFire', 'icicleSpear', 'psychoCut', 'thunderAtk', 'rockBlast', 'weatherBall', 'spiritBreak', 'hiddenPowerGround', 'bulletSeed', 'headlongRush', 'supercellSlam', 'highJumpKick', 'muddyWater', 'bulletPunch', 'shadowClaw', 'sacredSword', 'nightSlash', 'moonblastShot', 'rockTomb', 'psybeam', 'seedBomb', 'ancientPower', 'extrasensory', 'populationBomb', 'lunge', 'clearSmog', 'lavaPlume', 'firePunch', 'waterPulse', 'blizzardAtk', 'avalanche', 'fireLash', 'fieryDance', 'boltBeak', 'fishiousRend', 'temperFlare', 'meteorMashAtk', 'bugBite', 'triAttack', 'lugiaWaterPulse', 'waterSpout', 'sacredFireAtk', 'boltStrikeAtk', 'hiddenPowerElectric', 'blazeKick', 'drillPeck', 'swift', 'aquaTail', 'petalBlizzardAtk', 'brickBreak', 'powerTrip', 'airCutter', 'signalBeam', 'pinMissile', 'thief', 'crabhammer', 'hiddenPowerGrass', 'whirlpool', 'pounce', 'hiddenPowerRock', 'megaKick', 'chatter', 'mudShot', 'magmaStorm', 'hiddenPowerIce', 'tailSlap', 'gearGrind', 'dynamicPunchAtk', 'vacuumWave', 'bleakwindStorm', 'relicSong', 'crossChop', 'thousandArrows', 'spiritShackle', 'sparklingAria', 'iceHammer', 'revelationDance', 'accelerock', 'darkestLariat', 'multiAttack', 'anchorShot', 'clangingScales', 'smartStrike', 'photonGeyser', 'fleurCannon', 'doubleIronBash', 'grassyGlide', 'pyroBall', 'burningJealousy', 'pollenPuff', 'thunderFang', 'gravApple', 'appleAcid', 'overdrive', 'bugBuzzAtk', 'expandingForce', 'auraWheel', 'wickedBlow', 'stoneAxe', 'direClaw', 'flowerTrick', 'torchSong', 'aquaStep', 'lashOut', 'doubleShock', 'bite', 'saltCure', 'armorCannon', 'bitterBlade', 'gigatonHammer', 'jetPunch', 'ironTail', 'mortalSpin', 'aquaCutter', 'rageFist', 'kowtowCleave', 'thunderPunch', 'makeItRain', 'hydroSteam', 'psyblade', 'matchaGotcha', 'ivyCudgel', 'fickleBeam', 'teraStarstorm'];
+// Hand-picked touches for tail moves that read weakly whatever their type.
+export const TAIL_EXTRA = {
+  powerGem: [{ at: 0, fx: 'glitter', n: 14 }],
+  overheat: [{ at: 0, fx: 'flames', n: 20, mark: 'scorch', markSize: 20 }],
+  scorchingSands: [{ at: 0, fx: 'flames', n: 12 }, { at: 0.04, fx: 'dust', n: 8 }],
+  mysticalFire: [{ at: 0, fx: 'flames', n: 14 }, { at: 0.04, fx: 'glitter', n: 8 }],
+  rockBlast: [{ at: 0, fx: 'debris', n: 10 }],
+  makeItRain: [{ at: 0, fx: 'glitter', n: 18 }],
+  hydroSteam: [{ at: 0, fx: 'steam', n: 10 }],
+  saltCure: [{ at: 0, fx: 'glitter', n: 10 }],
+  matchaGotcha: [{ at: 0.02, siphon: { n: 12 } }],
+  bitterBlade: [{ at: 0.02, siphon: { n: 12, colors: [W, '#ffd0a0', '#ff7a2a'] } }],
+  lavaPlume: [{ at: 0, fx: 'flames', n: 16 }],
+  muddyWater: [{ at: 0, fx: 'splash' }, { at: 0.04, fx: 'dust', n: 8 }],
+};
+// Applied in moves.js, where each move's type is known.
+export const TAIL_TYPES = TYPE_ACCENT;

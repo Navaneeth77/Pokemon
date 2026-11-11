@@ -9,7 +9,7 @@ import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
 import { MOVEDEX } from './data/movedex.js';
 import { statusMove } from './effects-resolver.js';
-import { MOVE_ANIMS } from './data/move-anims.js';
+import { MOVE_ANIMS, TAIL_MOVES, TAIL_TYPES, TAIL_EXTRA } from './data/move-anims.js';
 import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
 import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
@@ -3050,6 +3050,15 @@ for (const [id, r] of Object.entries(MOVE_ANIMS)) {
   }
 }
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
+
+// The long tail of rarely used moves: a modest type accent (and a few hand-picked touches) added to each one's
+// landing flourish (data/move-anims.js). Visual only.
+for (const id of TAIL_MOVES) {
+  const m = MOVES[id];
+  if (!m || m.ultimate) continue;
+  const steps = [...(TAIL_TYPES[m.type] ?? []), ...(TAIL_EXTRA[id] ?? [])];
+  if (steps.length) m.impact = [...(m.impact ?? []), ...steps];
+}
 
 // Faster pace: every regular move recovers 30% sooner (ultimates charge a meter instead).
 for (const m of Object.values(MOVES)) if (!m.ultimate && m.cooldown) m.cooldown = Math.max(0.6, Math.round(m.cooldown * 7) / 10);
