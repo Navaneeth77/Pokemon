@@ -91,9 +91,9 @@ export const MOVE_ANIMS = {
   ] } },
   // Shadow Ball: a mass of shadow drifts in and implodes.
   shadowBall: { seq: { aim: 'target', end: 0.8, steps: [
-    { at: 0, anim: 'Charge', gather: { colors: ['#c8a0ff', '#7a48b8', '#2a1838'], until: 0.25 } },
-    { at: 0.25, anim: 'Shoot', missile: { style: 'orb', dur: 0.32, rgb: [110, 60, 170], scale: 1.4 } },
-    { at: 0.57, rings: { colors: ['#c8a0ff', '#7a48b8', '#2a1838'], r: 36 }, glow: { at: 'spot', rgb: [90, 40, 150], r: 34 } },
+    { at: 0, anim: 'Charge', gather: { colors: ['#c8a0ff', '#7a48b8', '#2a1838'], until: 0.25 }, orb: { style: 'shadow', life: 0.25, scale: 1.4 } },
+    { at: 0.25, anim: 'Shoot', missile: { style: 'shadow', dur: 0.32, rgb: [110, 60, 170], scale: 1.4 } },
+    { at: 0.57, rings: { colors: ['#c8a0ff', '#7a48b8', '#2a1838'], r: 36 }, glow: { at: 'spot', rgb: [90, 40, 150], r: 34 }, fx: 'wisps' },
     { at: 0.57, hit: { r: 28, knockback: 170 } },
   ] } },
   // Dazzling Gleam: a flash of prismatic light all around the user.
@@ -362,7 +362,7 @@ for (const [id, type, o, w] of [
   ['uTurn', 'bug', { slash: 2 }, { after: true }], ['bugBite', 'bug', { burst: 10 }], ['leechLife', 'bug', { tether: true, burst: 8 }], ['xScissor', 'bug', { slash: 2 }],
   ['megahorn', 'bug', { big: true, burst: 16 }, { until: 0.25 }], ['lunge', 'bug', { burst: 10 }], ['pounce', 'bug', { burst: 8 }], ['firstImpression', 'bug', { big: true, slash: 1 }, { after: true }],
   // Dark
-  ['knockOff', 'dark', { burst: 14, up: 160 }], ['crunch', 'dark', { slash: 2 }], ['suckerPunch', 'dark', { burst: 10 }, { after: true }], ['foulPlay', 'dark', { big: true, glow: true }],
+  ['knockOff', 'dark', { burst: 14, up: 160, slash: 2 }], ['crunch', 'dark', { slash: 2 }], ['suckerPunch', 'dark', { burst: 10 }, { after: true }], ['foulPlay', 'dark', { big: true, glow: true }],
   ['nightSlash', 'dark', { slash: 3 }], ['throatChop', 'dark', { slash: 1, burst: 10 }], ['powerTrip', 'dark', { glow: true, burst: 12 }], ['thief', 'dark', { burst: 12, up: 160 }],
   ['darkestLariat', 'dark', { slash: 2, big: true }], ['wickedBlow', 'dark', { big: true, glow: true }], ['lashOut', 'dark', { slash: 2 }], ['bite', 'dark', { burst: 8 }], ['kowtowCleave', 'dark', { slash: 3, big: true }],
   // Dragon

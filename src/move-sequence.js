@@ -12,6 +12,7 @@
 //   meteors   things falling onto the spot ({ n, style, spread })
 //   spikes    stone or ice spikes bursting out of the ground ({ n, style, spread })
 //   missile   a projectile flying from the user to the spot ({ style, dur, rgb, scale })
+//   orb       that projectile forming at the user's mouth before it is thrown ({ style, life, rgb, scale })
 //   wave      a wave sweeping through the spot ({ rgb, foam })
 //   rings     expanding rings at the spot ({ colors, r })
 //   burst     particles bursting from the spot ({ colors, n, up })
@@ -33,7 +34,7 @@
 // The move's mechanics (accuracy, secondary effects, stat changes…) all resolve inside `hit` (combat.js),
 // so what the player sees and what happens can never drift apart.
 import { applyHit } from './combat.js';
-import { rand, Glow, Ring, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage,
+import { rand, Glow, Ring, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb,
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
 import { sfx } from './audio.js';
 import { WEATHER_TINT } from './data/move-anims.js';
@@ -115,6 +116,10 @@ export function scheduleSteps(action, steps, spot) {
         const rgb = step.weatherTint ? WEATHER_TINT[g.weather] ?? ms.rgb : ms.rgb;
         g.spawn(new Missile(m.x, m.y, spot.x, spot.y, m.z, ms.dur ?? 0.35, ms.style ?? 'orb', () => {}, rgb ?? [255, 255, 255], ms.scale ?? 1));
       }
+      if (step.orb) {
+        const o = step.orb, m = action.mouth();
+        g.spawn(new ChargeOrb(m.x, m.y, m.z, o.life ?? 0.3, o.style ?? 'orb', o.rgb, o.scale ?? 1));
+      }
       if (step.wave) g.spawn(new TidalWave(spot.y + 70, spot.y - 70, step.wave.life ?? 0.6, step.wave.rgb, !!step.wave.foam));
       if (step.rings) step.rings.colors.forEach((c, i) => g.spawn(new Ring(p.x, p.y, { r0: 4, r1: (step.rings.r ?? 40) * (1 - i * 0.2), life: 0.3 + i * 0.08, color: c, width: 4 - i })));
       if (step.burst) {
@@ -153,6 +158,10 @@ const FX = {
   debris: (g, p, s) => debris(g, p.x, p.y, s.n ?? 16, 140),
   wind: (g, p, s) => windBurst(g, p.x, p.y, 10, s.n ?? 20, s.colors),
   dust: (g, p, s) => dustCloud(g, p.x, p.y, s.n ?? 10, 5),
+  // Wisps of shadow curling up and fading.
+  wisps: (g, p, s) => {
+    for (let i = 0; i < (s.n ?? 14); i++) g.particles.spawn({ x: p.x + rand(-12, 12), y: p.y + rand(-5, 5), z: rand(6, 24), vx: rand(-20, 20), vz: rand(30, 70), gz: -20, drag: 1, life: rand(0.5, 0.9), size: rand(2, 4), sizeEnd: 1, colors: ['#c8a0ff', '#7a48b8', '#3a2050'] });
+  },
   flames: (g, p, s) => {
     for (let i = 0; i < (s.n ?? 18); i++) g.particles.spawn({ x: p.x + rand(-10, 10), y: p.y + rand(-6, 6), z: rand(2, 10), vx: rand(-40, 40), vy: rand(-20, 20), vz: rand(60, 160), life: rand(0.4, 0.7), size: rand(3, 6), sizeEnd: 1, colors: FIRE });
   },

@@ -19,7 +19,7 @@ import { LEGEND_ULTS_4 } from './ult-legends4.js';
 import { FAV_ULTS } from './ult-favs.js';
 import { FAV_ULTS_2 } from './ult-favs2.js';
 import {
-  UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
+  ItemFly, UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
   debris, windBurst, metalSparks, Missile, TidalWave, Moon, Tether, FloatingRock, PsyDome,
 } from './effects.js';
@@ -445,6 +445,7 @@ class Dash extends MoveAction {
     this.anim('Attack', 2);
     sfx.dash();
     this.game.spawn(new BeamLine(this.from.x, this.from.y - u.bodyZ, this.to.x, this.to.y - u.bodyZ, 0.3, c.color, c.width ?? 3));
+    if (c.core) this.game.spawn(new BeamLine(this.from.x, this.from.y - u.bodyZ, this.to.x, this.to.y - u.bodyZ, 0.2, c.core, 1));
     if(skyLegend(u))this.game.spawn(new Slipstream(u,c.dur+.2,'#bcffe5',u.radius*1.6));
   }
 
@@ -459,6 +460,7 @@ class Dash extends MoveAction {
     if (this.ghostT <= 0) {
       this.ghostT = 0.025;
       if(!skyLegend(u))this.game.spawn(new Afterimage(u, 0.22, c.ghost));
+      if (c.specks) this.game.particles.spawn({ x: u.x + rand(-6, 6), y: u.y + rand(-3, 3), z: u.bodyZ + rand(-6, 6), vx: rand(-15, 15), vz: rand(5, 25), gz: 60, life: 0.4, size: rand(1.5, 2.5), colors: c.specks });
     }
     if (!this.struck && this.canReachAir() && (u.distTo(t) <= u.radius + t.radius + 8 || (this.sure && k >= 1))) {
       this.struck = true;
@@ -570,6 +572,8 @@ class BeamAttack extends MoveAction {
         if (this.hit({ dirX: Math.cos(this.aim), dirY: Math.sin(this.aim), knockback: c.knockback, stagger: c.stagger, hitstop: c.hitstop, freezeChance: c.freezeChance })) {
           this.game.spawn(new Glow(t.x, t.y, t.bodyZ, 34, c.flash, 0.3));
           if (c.mark === 'frost') iceShatter(this.game, t.x, t.y, t.bodyZ);
+          // A cluster of ice crystals around the foe's feet.
+          if (c.crystals) for (let k = 0; k < 5; k++) this.game.spawn(new Spike(t.x + rand(-14, 14), t.y + rand(-6, 6), 'ice', 0.7));
         }
       }
     }
@@ -603,6 +607,8 @@ class BeamAttack extends MoveAction {
       const p = this.front(d);
       if (p.x < BOUNDS.minX - 10 || p.x > BOUNDS.maxX + 10 || p.y < BOUNDS.minY - 20 || p.y > BOUNDS.maxY + 10) break;
       g.marks[c.mark](p.x + rand(-3, 3), p.y + rand(-3, 3), rand(c.markSize[0], c.markSize[1]));
+      // Ice crystals form along the beam's path just after it passes (visual only).
+      if (c.crystals && !g.headless && d % (c.markStep * 2) < c.markStep) g.later(d / 900, () => g.spawn(new Spike(p.x + rand(-5, 5), p.y + rand(-3, 3), 'ice', 0.55)));
     }
     this.at(this.t + c.duration, () => {
       u.sprite.pauseAt = null;
@@ -884,8 +890,19 @@ class Earthquake extends MoveAction {
   quake() {
     const u = this.user, g = this.game, R = this.move.radius;
     g.marks.fracture(u.x, u.y, R * 0.7, 6.5);
-    g.spawn(new Ring(u.x, u.y, { r0: 10, r1: R, life: 0.5, color: '#f4ead2', width: 5 }));
-    g.spawn(new Ring(u.x, u.y, { r0: 6, r1: R * 0.7, life: 0.35, color: '#ffffff', width: 3 }));
+    g.spawn(new Ring(u.x, u.y, { r0: 10, r1: R, life: 0.5, color: '#d8c098', width: 5 }));
+    g.spawn(new Ring(u.x, u.y, { r0: 6, r1: R * 0.7, life: 0.35, color: '#fff4dc', width: 3 }));
+    // The wave rolls outward: pebbles hop and dust puffs up along it (visual only).
+    for (let w = 1; w <= 3 && !g.headless; w++) {
+      g.later(w * 0.07, () => {
+        const r = (R * w) / 3, n = 6 + w * 3;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + w, x = u.x + Math.cos(a) * r, y = u.y + Math.sin(a) * r * 0.72;
+          g.particles.spawn({ x, y, z: 1, vx: Math.cos(a) * 20, vy: Math.sin(a) * 12, vz: rand(50, 100), gz: 380, life: rand(0.35, 0.55), size: rand(2, 3.5), colors: ['#c8b088', '#8a7050'] });
+          if (i % 2 === 0) dustCloud(g, x, y, 1, 4);
+        }
+      });
+    }
     debris(g, u.x, u.y, 28, 150);
     dustCloud(g, u.x, u.y, 18, 6);
     g.shake(9, 0.7);
@@ -2411,7 +2428,7 @@ const NEW_MOVES = {
   flameCharge: dash('Flame Charge', 'fire', 60, 1.6, 'Dash · raises speed', { dist: 150, color: '#ff9a50', ghost: '#ff7a2a', burst: 'fire', knockback: 150 }, { selfBuff: ['spd', 1.2, 3] }),
   aquaJet: dash('Aqua Jet', 'water', 55, 1.1, 'Water-propelled dash', { windup: 0.05, dist: 130, dur: 0.1, color: '#9fd8ff', ghost: '#5aa6f0', knockback: 140 }),
   suckerPunch: dash('Sucker Punch', 'dark', 75, 1.5, 'Shadowy ambush', { windup: 0.04, dist: 140, dur: 0.1, color: '#8a5aaa', ghost: '#3a2050', knockback: 150 }),
-  uTurn: dash('U-turn', 'bug', 70, 1.8, 'Hit and pass through', { windup: 0.08, dist: 160, through: true, color: '#a8d848', ghost: '#7aa830', knockback: 120 }),
+  uTurn: dash('U-turn', 'bug', 70, 1.8, 'Hit and pass through', { windup: 0.08, dist: 160, through: true, color: '#a8d848', ghost: '#7aa830', knockback: 120, core: '#f0ffc0', specks: ['#f0ffc0', '#a8d848', '#5a7a20'] }),
   shadowSneak: dash('Shadow Sneak', 'ghost', 55, 1.2, 'Shadow dash', { windup: 0.05, dist: 140, dur: 0.1, through: true, color: '#9a7ac8', ghost: '#45346a', knockback: 120 }),
   voltSwitch: dash('Volt Switch', 'electric', 70, 1.8, 'Electric pass-through', { windup: 0.08, dist: 160, through: true, color: '#fff27a', ghost: '#ffe066', burst: 'electric', knockback: 130 }),
   drillPeck: dash('Drill Peck', 'flying', 80, 1.8, 'Spinning dive', { windup: 0.12, dist: 170, dur: 0.14, color: '#e8f6ff', ghost: '#cfeaff', width: 4, knockback: 170 }),
@@ -2843,9 +2860,9 @@ export const MOVES = {
   iceBeam: {
     name: 'Ice Beam', type: 'ice', power: 120, cooldown: 4, range: 260, minRange: 50, ai: 'ranged', tag: 'Beam · frost trail, may freeze', Action: BeamAttack,
     beam: beam({
-      charge: 0.4, lock: 0.3, width: 9, visualWidth: 8, duration: 0.45, sound: 'ice', markStep: 16, markSize: [6, 9],
+      charge: 0.4, lock: 0.3, width: 9, visualWidth: 10, duration: 0.45, sound: 'ice', markStep: 16, markSize: [6, 9],
       colors: ['#5cc3e6', '#bdf3ff', '#ffffff'], chargeColors: ICE, teleColor: '120,220,255', flash: [170, 235, 255],
-      mark: 'frost', knockback: 80, freezeChance: 0.2,
+      mark: 'frost', knockback: 80, freezeChance: 0.2, crystals: true,
     }),
   },
   hyperBeam: {

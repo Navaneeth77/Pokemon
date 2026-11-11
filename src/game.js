@@ -26,6 +26,7 @@ import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import {
+  ItemFly,
   ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst, Telegraph, TidalWave, Lightning, leafBurst,
   ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble,
 } from './effects.js';
@@ -37,7 +38,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent','ChargeOrb','ItemFly']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 // Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
 const traps = (by, foe) => { const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
@@ -707,6 +708,7 @@ export class Game {
     const name = ITEMS[mon.item]?.name ?? 'item';
     if (steal && by && !by.item) by.item = mon.item;
     this.floatText(mon, steal ? `${name} STOLEN!` : `${name} KNOCKED OFF!`, '#ffd84a');
+    if (!steal) this.spawn(new ItemFly(mon.x, mon.y, mon.bodyZ, by && by.x > mon.x ? -1 : 1));
     this.ui.log(`${mon.species.name}'s ${name} was ${steal ? 'stolen' : 'knocked off'}!`, mon.side);
     this.useUpItem(mon);
     return true;

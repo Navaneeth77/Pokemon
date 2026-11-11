@@ -1026,13 +1026,26 @@ export class Missile extends Effect {
     const k = Math.min(1, this.age / this.life);
     const x = this.x0 + (this.x1 - this.x0) * k, y = this.y0 + (this.y1 - this.y0) * k - this.z;
     const [R, G, B] = this.rgb;
-    ctx.strokeStyle = `rgba(${R},${G},${B},0.45)`;
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x - (this.x1 - this.x0) * 0.12, y - (this.y1 - this.y0) * 0.12);
-    ctx.stroke();
+    if (this.style === 'shadow') {
+      // Wisps of shadow trailing behind, shrinking and fading.
+      for (let j = 4; j >= 1; j--) {
+        const kk = k - j * 0.07;
+        if (kk < 0) continue;
+        const wx = this.x0 + (this.x1 - this.x0) * kk + Math.sin(this.age * 20 + j) * 2, wy = this.y0 + (this.y1 - this.y0) * kk - this.z;
+        ctx.globalAlpha = 0.45 - j * 0.08;
+        ctx.fillStyle = j % 2 ? '#7a48b8' : '#3a2050';
+        ctx.beginPath(); ctx.arc(wx, wy, (7 - j) * this.scale * 0.8, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.strokeStyle = `rgba(${R},${G},${B},0.45)`;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - (this.x1 - this.x0) * 0.12, y - (this.y1 - this.y0) * 0.12);
+      ctx.stroke();
+    }
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(this.scale, this.scale);
@@ -1092,6 +1105,24 @@ const MISSILE_SHAPES = {
     ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = `rgb(${R},${G},${B})`;
     ctx.beginPath(); ctx.arc(-2, -2, 4, 0, Math.PI * 2); ctx.fill();
+  },
+  // A ball of shadow: a flickering, ragged violet aura around a dark core with a pale rim.
+  shadow(ctx, R, G, B, t) {
+    ctx.fillStyle = 'rgba(122,72,184,0.6)';
+    ctx.beginPath();
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + t * 5, r = 9 + Math.sin(t * 28 + i * 1.7) * 2.2;
+      if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#21122e';
+    ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#c8a0ff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#7a48b8';
+    ctx.beginPath(); ctx.arc(-2 + Math.sin(t * 9), -2, 2.4, 0, Math.PI * 2); ctx.fill();
   },
   flame(ctx, R, G, B, t) {
     const f = 1 + Math.sin(t * 40) * 0.15;
@@ -1483,6 +1514,58 @@ export class SpeechBubble extends Effect {
     ctx.lineTo(tr.x + 3, y + h);
     ctx.fill();
     outlinedText(ctx, this.text, x + w / 2, y + 10, { size: 8, color: '#1a1a2a', align: 'center', lw: 0 });
+    ctx.restore();
+  }
+}
+
+// A projectile forming before it is thrown: the same shape as the missile, growing from nothing at (x, y, z).
+export class ChargeOrb extends Effect {
+  constructor(x, y, z, life, style, rgb = [255, 255, 255], scale = 1) {
+    super('air', life);
+    Object.assign(this, { x, y, z, style, rgb, scale });
+  }
+
+  draw(ctx) {
+    const k = Math.min(1, this.age / this.life), s = this.scale * Math.sqrt(k), [R, G, B] = this.rgb;
+    if (s < 0.05) return;
+    ctx.save();
+    ctx.translate(this.x, this.y - this.z);
+    ctx.scale(s, s);
+    if (MISSILE_SHAPES[this.style]) MISSILE_SHAPES[this.style](ctx, R, G, B, this.age);
+    else {
+      ctx.fillStyle = `rgba(${R},${G},${B},0.9)`;
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// A held item knocked out of a Pokémon's grasp: it spins away in an arc, bounces once and fades.
+export class ItemFly extends Effect {
+  constructor(x, y, z, dir) {
+    super('air', 0.9);
+    Object.assign(this, { x0: x, y0: y, z0: z, dir });
+  }
+
+  draw(ctx) {
+    const t = this.age, k = t / this.life, dist = 70 * k;
+    // One big arc, then a small bounce.
+    const h = t < 0.55 ? this.z0 + 50 * Math.sin((t / 0.55) * Math.PI) - this.z0 * (t / 0.55) : 12 * Math.sin(((t - 0.55) / 0.35) * Math.PI);
+    const x = this.x0 + this.dir * dist, y = this.y0 + 6 * k, a = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
+    ctx.save();
+    ctx.globalAlpha = 0.3 * a;
+    ctx.fillStyle = '#1d2433';
+    ctx.beginPath(); ctx.ellipse(x, y, 4, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = a;
+    ctx.translate(x, y - Math.max(0, h));
+    ctx.rotate(t * 14 * this.dir);
+    ctx.fillStyle = '#ffd84a';
+    ctx.fillRect(-3, -3, 6, 6);
+    ctx.fillStyle = '#fff6c0';
+    ctx.fillRect(-2, -2, 2, 2);
+    ctx.strokeStyle = '#8a5a10';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-3, -3, 6, 6);
     ctx.restore();
   }
 }
