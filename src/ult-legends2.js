@@ -496,6 +496,9 @@ export const LEGEND_ULTS_2 = {
     // The void.
     a.later(0.35, () => {
       g.spawn(new Glow(t.x, t.y, t.bodyZ, 70, [20, 10, 30], 0.8, true));
+      // A dark-violet dome with a pale rim, so the void reads against the darkened arena.
+      g.spawn(new PsyDome(t.x, t.y, 64, 0.85, VOID));
+      g.spawn(new Ring(t.x, t.y, { r0: 64, r1: 60, life: 0.8, color: '#8a5ac0', width: 2, hold: true }));
       let left = 0.75;
       a.ticks.push(dt => {
         if ((left -= dt) <= 0) return;

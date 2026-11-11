@@ -58,8 +58,8 @@ export const FAV_ULTS = {
     a.ticks.push(dt => {
       if ((storm -= dt) <= 0) return;
       const k = 1 - Math.max(0, storm) / 1.4, cx = 180 + (t.x - 180) * k, cy = 350 + (t.y - 350) * k, R = 170 * (1 - k) + 40;
-      for (let i = 0; i < 6; i++) {
-        const ang = a.t * 5 + (i / 6) * Math.PI * 2 + rand(-0.2, 0.2);
+      for (let i = 0; i < 12; i++) {
+        const ang = a.t * 5 + (i / 12) * Math.PI * 2 + rand(-0.2, 0.2);
         g.particles.spawn({ x: cx + Math.cos(ang) * R, y: cy + Math.sin(ang) * R * 0.6, z: rand(10, 60), vx: -Math.sin(ang) * 160, vy: Math.cos(ang) * 90, life: 0.3, size: rand(2, 4), colors: [PETALS[i % 4]], fade: true });
       }
     });
