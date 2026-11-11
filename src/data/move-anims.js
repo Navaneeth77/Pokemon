@@ -629,3 +629,62 @@ export const TAIL_TYPES = TYPE_ACCENT;
 // No screen shake or camera push-in on Brave Bird and Spirit Break (the player found it jarring); the rest of their
 // landing flourish stays.
 for (const id of ['braveBird', 'spiritBreak']) look(id, { impact: (MOVE_ANIMS[id]?.impact ?? []).map(({ shake, punch, ...step }) => step) });
+
+// ── The competitive pools' moves (11 Nov 2026): a look for each new status move, in the refined style (no shake,
+// flash or pause; nothing over the Pokémon). Aimed moves (`aim` in moves.js) centre on the foe; `where: 'user'`
+// puts a step on the user.
+const ring2 = (c, r = 46) => ({ colors: ['#ffffff', c], r });
+const POOL_LOOKS = {
+  // Screens and field: rings of the screen's colour rise round the user; Trick Room's warp spreads wide.
+  reflect: [{ at: 0.05, glow: { rgb: [255, 180, 106], r: 28 } }, { at: 0.12, rings: ring2('#ffb46a'), where: 'user' }, { at: 0.26, rings: ring2('#ffd8a8', 60), where: 'user' }],
+  lightScreen: [{ at: 0.05, glow: { rgb: [255, 230, 128], r: 28 } }, { at: 0.12, rings: ring2('#ffe680'), where: 'user', fx: 'glitter' }, { at: 0.26, rings: ring2('#fff4c0', 60), where: 'user' }],
+  auroraVeil: [{ at: 0.05, glow: { rgb: [159, 240, 224], r: 30 } }, { at: 0.12, rings: ring2('#9ff0e0'), where: 'user', fx: 'ice' }, { at: 0.26, rings: ring2('#d8b0ff', 62), where: 'user' }],
+  tailwind: [{ at: 0.05, fx: 'wind', where: 'user' }, { at: 0.18, rings: ring2('#c8f4ff', 54), where: 'user' }, { at: 0.3, fx: 'wind', where: 'user' }],
+  trickRoom: [{ at: 0.05, glow: { rgb: [255, 138, 208], r: 34 } }, { at: 0.12, rings: { colors: ['#ffffff', '#ff8ad0', '#a060ff'], r: 90 }, where: 'user' }, { at: 0.3, rings: { colors: ['#ff8ad0'], r: 130 }, where: 'user' }],
+  chillyReception: [{ at: 0.1, fx: 'ice', where: 'user' }, { at: 0.2, rings: ring2('#bfe8ff', 70), where: 'user' }],
+  courtChange: [{ at: 0.08, rings: ring2('#ffd84a', 60), where: 'user' }, { at: 0.2, fx: 'wind', where: 'user' }, { at: 0.2, rings: ring2('#ffd84a', 40) }],
+  // Aimed at the foe.
+  roar: [{ at: 0.04, rings: ring2('#f0f0f0', 50), where: 'user', sound: 'roar' }, { at: 0.14, rings: ring2('#d8d8d8', 80), where: 'user' }, { at: 0.24, rings: ring2('#c0c0c0', 110), where: 'user' }],
+  whirlwind: [{ at: 0.05, fx: 'wind', where: 'user' }, { at: 0.2, fx: 'wind' }, { at: 0.24, rings: ring2('#e8f8ff', 44) }],
+  encore: [{ at: 0.1, fx: 'glitter' }, { at: 0.14, rings: ring2('#ffd84a', 34) }, { at: 0.3, burst: { colors: ['#ffffff', '#ffe680', '#ff9ad5'], n: 12, up: 110 } }],
+  trick: [{ at: 0.06, rings: ring2('#ff8ad0', 30), where: 'user' }, { at: 0.18, rings: ring2('#ff8ad0', 30) }],
+  switcheroo: [{ at: 0.06, rings: ring2('#a080c0', 30), where: 'user' }, { at: 0.18, rings: ring2('#a080c0', 30) }],
+  painSplit: [{ at: 0.05, tether: { rgb: [200, 176, 255], life: 0.45 } }, { at: 0.2, burst: { colors: ['#ffffff', '#c8b0ff'], n: 10, up: 70 } }, { at: 0.2, rings: ring2('#c8b0ff', 30), where: 'user' }],
+  yawn: [{ at: 0.12, burst: { colors: ['#ffffff', '#d8c8ff', '#a090e0'], n: 10, up: 60 } }, { at: 0.2, rings: ring2('#c8b0ff', 28) }],
+  partingShot: [{ at: 0.1, burst: { colors: ['#ffffff', '#6a5a7a', '#2a1f30'], n: 12, up: 80 } }, { at: 0.16, rings: ring2('#7a5a9a', 34) }],
+  soak: [{ at: 0.1, fx: 'splash' }, { at: 0.16, rings: ring2('#7ac8ff', 32) }],
+  block: [{ at: 0.1, rings: { colors: ['#ffffff', '#ffb070', '#c86a30'], r: 40 } }, { at: 0.22, fx: 'dust' }],
+  curse: [{ at: 0.08, fx: 'wisps', where: 'user' }, { at: 0.22, glow: { rgb: [138, 106, 184], r: 26 } }],
+  // On the user.
+  destinyBond: [{ at: 0.06, fx: 'wisps', where: 'user' }, { at: 0.2, rings: ring2('#b08aff', 40), where: 'user' }],
+  healingWish: [{ at: 0.06, fx: 'glitter', where: 'user' }, { at: 0.12, burst: { colors: ['#ffffff', '#ffd8f4', '#ffb0e0'], n: 16, up: 150 }, where: 'user' }],
+  teleport: [{ at: 0.05, afterimage: { n: 3, color: '#ff8ad0' } }, { at: 0.12, rings: ring2('#ff8ad0', 36), where: 'user' }],
+  shedTail: [{ at: 0.05, afterimage: { n: 2, color: '#c8f0a0' } }, { at: 0.14, burst: { colors: ['#ffffff', '#c8f0a0', '#6ac04a'], n: 12, up: 90 }, where: 'user' }],
+  counter: [{ at: 0.02, rings: ring2('#ff9a5a', 34), where: 'user' }],
+  mirrorCoat: [{ at: 0.02, rings: ring2('#ff8ad0', 34), where: 'user' }, { at: 0.06, fx: 'glitter', where: 'user' }],
+  metalBurst: [{ at: 0.02, rings: ring2('#dfe7f2', 34), where: 'user' }, { at: 0.06, fx: 'metal', where: 'user' }],
+  focusEnergy: [{ at: 0.05, burst: { colors: ['#ffffff', '#ffb070'], n: 10, up: 120 }, where: 'user' }, { at: 0.15, rings: ring2('#ffb070', 36), where: 'user' }],
+  conversion: [{ at: 0.06, rings: { colors: ['#ffffff', '#9fe8ff', '#ff8ad0'], r: 40 }, where: 'user' }],
+  clangorousSoul: [{ at: 0.05, rings: ring2('#c8a0ff', 50), where: 'user' }, { at: 0.15, fx: 'metal', where: 'user' }, { at: 0.28, rings: ring2('#ffd84a', 64), where: 'user' }],
+  filletAway: [{ at: 0.05, fx: 'splash', where: 'user' }, { at: 0.16, rings: ring2('#7ac8ff', 46), where: 'user' }],
+  revivalBlessing: [{ at: 0.05, glow: { rgb: [255, 240, 200], r: 34 } }, { at: 0.12, burst: { colors: ['#ffffff', '#fff0c0', '#ffd84a'], n: 16, up: 150 }, where: 'user' }],
+  recycle: [{ at: 0.06, rings: ring2('#9fe89f', 30), where: 'user' }, { at: 0.18, burst: { colors: ['#ffffff', '#9fe89f'], n: 8, up: 80 }, where: 'user' }],
+  magnetRise: [{ at: 0.05, fx: 'sparks', where: 'user' }, { at: 0.15, rings: ring2('#ffe066', 40), where: 'user' }],
+  splash: [{ at: 0.05, fx: 'splash', where: 'user' }],
+  celebrate: [{ at: 0.05, burst: { colors: ['#ff8ad0', '#ffd84a', '#7ac8ff', '#9fe89f'], n: 18, up: 160 }, where: 'user' }],
+  happyHour: [{ at: 0.05, burst: { colors: ['#ffd84a', '#fff0a0'], n: 14, up: 140 }, where: 'user', fx: 'glitter' }],
+  holdHands: [{ at: 0.05, burst: { colors: ['#ff8ad0', '#ffc0e0'], n: 10, up: 90 }, where: 'user' }],
+  futureSightAtk: [{ at: 0.05, glow: { rgb: [255, 120, 210], r: 30 } }, { at: 0.15, rings: ring2('#ff78d2', 40), where: 'user' }],
+  doomDesire: [{ at: 0.05, glow: { rgb: [200, 220, 255], r: 30 } }, { at: 0.15, rings: ring2('#c8dcff', 40), where: 'user', fx: 'metal' }],
+  sleepTalk: [{ at: 0.05, rings: ring2('#c8b0ff', 30), where: 'user' }],
+};
+for (const [id, fx] of Object.entries(POOL_LOOKS)) look(id, { fx });
+// The plain attacking moves the pools brought in take the type accent on landing, like the rest of the long tail.
+TAIL_MOVES.push('teraBlast', 'hiddenPowerFighting', 'circleThrow', 'jumpKick', 'hiddenPowerFire', 'meteorBeam', 'pursuit', 'ceaselessEdge', 'retaliate',
+  'vCreateAtk', 'brutalSwing', 'fireFang', 'glaciate', 'blueFlareAtk', 'pluck', 'petalDance', 'headbutt', 'hiddenPowerFlying', 'icyWind', 'zingZap',
+  'naturesMadness', 'spectralThief', 'payback', 'risingVoltage', 'glaiveRush', 'beatUp', 'dragonTail', 'aerialAce', 'poisonFang', 'iceFang', 'hex',
+  'dragonClaw', 'shadowPunch', 'dragonDarts', 'hammerArm', 'fly', 'bounce', 'dig', 'phantomForce', 'skyAttackAtk', 'focusPunch');
+look('lovelyKiss', { fx: [{ at: 0.25, burst: { colors: ['#ffffff', '#ff8ad0', '#ff5aa0'], n: 12, up: 90 } }] });
+look('acidArmor', { fx: [{ at: 0.05, fx: 'sludge', where: 'user' }, { at: 0.18, rings: { colors: ['#ffffff', '#c060d0'], r: 40 }, where: 'user' }] });
+look('spikyShield', { fx: [{ at: 0.02, fx: 'leaves', where: 'user' }] });
+look('banefulBunker', { fx: [{ at: 0.02, fx: 'sludge', where: 'user' }] });
