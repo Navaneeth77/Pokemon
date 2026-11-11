@@ -122,3 +122,17 @@ test('picked moves: the server keeps legal picks, strips illegal ones, tells bot
  try{await cs[0].wait('b',m=>m.e?.some(e=>e.t==='move'&&e.side===mine&&e.id==='fireBlast'));}finally{clearInterval(press);}
  }finally{cs.forEach(c=>c.ws.close());}
 });
+test('screens and Trick Room reach both players: the state update carries side conditions and the Trick Room timer',async()=>{
+ const cs=await pair('field');try{
+ cs[0].send({t:'queue',format:3,team:['meowstic','snorlax','lapras'],lead:0,mega:{},kit:{meowstic:{moves:['reflect','lightScreen','psychic','yawn']}}});
+ cs[1].send({t:'queue',format:3,team:['cofagrigus','raichu','lucario'],lead:0,mega:{},kit:{cofagrigus:{moves:['trickRoom','shadowBall','bodyPress','rest']}}});
+ const ms=await Promise.all(cs.map(c=>c.wait('matched')));
+ cs.forEach((c,i)=>c.send({t:'loaded',id:ms[i].id}));await Promise.all(cs.map(c=>c.wait('start')));
+ const a=ms[0].you;
+ const press=setInterval(()=>cs.forEach((c,i)=>c.send({t:'act',id:ms[i].id,k:'press',i:0})),250);
+ try{
+  const up=await cs[1].wait('b',m=>m.s?.[a]?.fs?.reflect>0);assert.ok(up.s[a].fs.reflect<=15,'Reflect lasts 15s');
+  const tr=await cs[0].wait('b',m=>m.s?.A?.rm>0);assert.equal(tr.s.A.rm,tr.s.B.rm,'Trick Room is one timer for the whole field');
+ }finally{clearInterval(press);}
+ }finally{cs.forEach(c=>c.ws.close());}
+});

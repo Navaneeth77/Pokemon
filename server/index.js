@@ -24,6 +24,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { loadSpriteSets } from './sprites.js';
 import { seedOf } from '../src/arena.js';
+import { sideSnap } from '../src/field.js';
 
 const { Game } = await import('../src/game.js');
 const { SPECIES, ROSTER } = await import('../src/data/species.js');
@@ -748,7 +749,8 @@ function pairTag(t) {
   createTagMatch(seats);
 }
 
-// `g` adds the field: hazards on this side, a timed weather and the terrain.
+// `g` adds the field: hazards and side conditions (screens, Tailwind) on this side, a timed weather, the terrain
+// and Trick Room.
 function snapshot(team, switchCD, ack, g = null) {
   const p = team.active, ab = {};
   for (const [k, v] of Object.entries(p.ab)) if (v == null || typeof v !== 'object') ab[k] = v;
@@ -761,6 +763,7 @@ function snapshot(team, switchCD, ack, g = null) {
     mu: team.megaUsed ? 1 : 0, sw: r1(switchCD ?? 0), cd: Object.fromEntries(Object.entries(p.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => [k, r1(v)])),
     q: ack || 0, ea: p.elementAura ?? null, te: p.tera ?? 0, it: p.item ?? 0, hz: g?.hazards?.[p.side] ?? 0,
     wx: g?.timedWeather ? [g.timedWeather.w, r1(g.timedWeather.t)] : 0, tr: g?.terrain ? [g.terrain.kind, r1(g.terrain.t)] : 0,
+    fs: sideSnap(g, p.side), rm: g?.trickRoom > 0 ? r1(g.trickRoom) : 0,
   };
 }
 

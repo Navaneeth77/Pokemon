@@ -432,25 +432,38 @@ export class UI {
     overlay.className = 'kit-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-label', `${s.name}'s kit`);
-    // Moves: tap a slot, then a move from the pool to put in it (tapping a move already picked swaps the two).
-    let slot = 0;
+    // Moves: your four sit pinned at the top, each with an ✕ to take it out; tap a move in the list to add it to the
+    // first empty slot (tap it again to take it out). Keys 1–4 follow the slots.
     const pool = movePool(s), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
     const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${m.power}`} · ${m.sure ? '—' : `${m.acc}%`}`;
-    const poolBtn = (mid, chosen) => {
-      const m = MOVES[mid], at = chosen.indexOf(mid);
-      return `<button data-mv="${mid}" class="${at >= 0 ? 'on' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
-        + `<b>${at >= 0 ? `<i>${at + 1}</i>` : ''}${m.name}</b><small>${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></button>`;
+    let draft = [...(this.kitOf(id).moves ?? s.moves)], msg = '';
+    const saveMoves = () => this.setKit(id, { moves: draft.filter(Boolean) });
+    const poolBtn = mid => {
+      const m = MOVES[mid], on = draft.includes(mid), full = draft.filter(Boolean).length >= 4;
+      return `<button data-mv="${mid}" class="${on ? 'on' : full ? 'full' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
+        + `<span class="kp-text"><b>${m.name}</b><small>${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></span>`
+        + `<em class="kp-act">${on ? '✓' : '+'}</em></button>`;
     };
+    const slotHtml = (mid, i) => mid
+      ? `<div class="km-slot" style="--tc:${TYPE_COLORS[MOVES[mid].type][0]}"><i>${i + 1}</i><span><b>${MOVES[mid].name}</b><small>${meta(MOVES[mid])}</small></span><button class="km-x" data-rm="${i}" aria-label="Remove ${esc(MOVES[mid].name)}">✕</button></div>`
+      : `<div class="km-slot empty"><i>${i + 1}</i><span><b>Empty</b><small>tap a move below to add it</small></span></div>`;
     const draw = () => {
-      const k = this.kitOf(id), owned = this.ownsShiny(id), price = itemById(`shiny-${id}`)?.price, chosen = k.moves ?? s.moves;
+      const panel = overlay.querySelector('.kit-panel'), scroll = panel?.scrollTop ?? 0;
+      const k = this.kitOf(id), owned = this.ownsShiny(id), price = itemById(`shiny-${id}`)?.price, n = draft.filter(Boolean).length;
       const attacks = pool.filter(m => MOVES[m].cat !== 'status'), status = pool.filter(m => MOVES[m].cat === 'status');
+      const changed = String(draft) !== String(s.moves);
       overlay.innerHTML = `<section class="kit-panel">
         <header><img src="${portrait(s)}" alt=""><div><h2>${s.name}</h2><p><b>${esc(ab?.name ?? '')}</b> · ${esc(ab?.desc ?? '')}</p></div><button class="kit-x" aria-label="Close">×</button></header>
-        <h3>MOVES <small>Pick 4 from its competitive pool (${pool.length} moves). Tap a slot, then a move to put there; keys 1–4 follow this order. Mega forms keep these moves, and its ultimate (${MOVES[s.ultimate]?.name ?? '—'}) stays.</small></h3>
-        <div class="kit-moves">${chosen.map((mid, i) => `<button data-slot="${i}" class="${i === slot ? 'on' : ''}" style="--tc:${TYPE_COLORS[MOVES[mid].type][0]}"><i>${i + 1}</i><b>${MOVES[mid].name}</b><small>${meta(MOVES[mid])}</small></button>`).join('')}</div>
-        ${k.moves ? '<button class="kit-reset" data-reset>Reset to its default moves</button>' : ''}
-        <div class="kit-pool">${attacks.map(m => poolBtn(m, chosen)).join('')}</div>
-        ${status.length ? `<h4 class="kit-sub">STATUS MOVES</h4><div class="kit-pool">${status.map(m => poolBtn(m, chosen)).join('')}</div>` : ''}
+        <div class="km-pin">
+          <h3>MOVES <b class="km-count${n < 4 ? ' short' : ''}">${n}/4</b><small>Tap ✕ to remove a move. Tap a move in the list to add it.</small></h3>
+          <div class="km-slots">${draft.map(slotHtml).join('')}</div>
+          ${msg ? `<p class="km-msg">${msg}</p>` : n < 4 ? '<p class="km-msg soft">Any slot left empty gets one of its default moves in battle.</p>' : ''}
+          ${changed ? '<button class="kit-reset" data-reset>↺ Back to its default moves</button>' : ''}
+        </div>
+        <h4 class="kit-sub">ATTACKS · ${pool.length} moves it can learn</h4>
+        <div class="kit-pool">${attacks.map(poolBtn).join('')}</div>
+        ${status.length ? `<h4 class="kit-sub">STATUS MOVES</h4><div class="kit-pool">${status.map(poolBtn).join('')}</div>` : ''}
+        <p class="kit-note">Mega forms keep these moves. Its ultimate (${MOVES[s.ultimate]?.name ?? '—'}) stays the same.</p>
         <h3>HELD ITEM <small>${k.item ? esc(ITEMS[k.item].desc) : 'Holds nothing.'}</small></h3>
         <div class="kit-items"><button data-item="" class="${k.item ? '' : 'on'}">None</button>${ITEM_LIST.map(i => `<button data-item="${i}" class="${k.item === i ? 'on' : ''}" title="${esc(ITEMS[i].desc)}">${ITEMS[i].name}</button>`).join('')}</div>
         <h3>TERA TYPE <small>Press M in battle to Terastallize (once per battle, instead of a Mega Evolution).</small></h3>
@@ -460,17 +473,19 @@ export class UI {
           : owned ? `<button class="kit-shiny ${k.shiny ? 'on' : ''}" data-shiny>✦ ${k.shiny ? 'SHINY ON' : 'SHINY OFF'}</button>`
           : `<p class="kit-note">Buy Shiny ${s.name} in the Trainer Guild shop (${price} Chaos Coins), then switch it on here.</p>`}
       </section>`;
+      overlay.querySelector('.kit-panel').scrollTop = scroll;
       overlay.querySelector('.kit-x').onclick = () => overlay.remove();
-      overlay.querySelectorAll('[data-slot]').forEach(b => (b.onclick = () => { slot = +b.dataset.slot; draw(); }));
+      overlay.querySelectorAll('[data-rm]').forEach(b => (b.onclick = () => { draft[+b.dataset.rm] = null; msg = ''; saveMoves(); draw(); }));
       overlay.querySelectorAll('[data-mv]').forEach(b => (b.onclick = () => {
-        const next = [...chosen], mid = b.dataset.mv, at = next.indexOf(mid);
-        if (at >= 0) [next[at], next[slot]] = [next[slot], next[at]];
-        else next[slot] = mid;
-        slot = at >= 0 ? slot : (slot + 1) % 4;
-        this.setKit(id, { moves: next });
+        const mid = b.dataset.mv, at = draft.indexOf(mid), free = draft.indexOf(null);
+        msg = '';
+        if (at >= 0) draft[at] = null;
+        else if (free >= 0) draft[free] = mid;
+        else msg = `Already 4 moves. Tap ✕ on one to make room for ${MOVES[mid].name}.`;
+        if (!msg) saveMoves();
         draw();
       }));
-      overlay.querySelector('[data-reset]')?.addEventListener('click', () => { slot = 0; this.setKit(id, { moves: null }); draw(); });
+      overlay.querySelector('[data-reset]')?.addEventListener('click', () => { draft = [...s.moves]; msg = ''; this.setKit(id, { moves: null }); draw(); });
       overlay.querySelectorAll('[data-item]').forEach(b => (b.onclick = () => { this.setKit(id, { item: b.dataset.item || null }); draw(); }));
       overlay.querySelectorAll('[data-tera]').forEach(b => (b.onclick = () => { this.setKit(id, { tera: b.dataset.tera }); draw(); }));
       overlay.querySelector('[data-shiny]')?.addEventListener('click', () => { this.setKit(id, { shiny: !k.shiny }); draw(); });

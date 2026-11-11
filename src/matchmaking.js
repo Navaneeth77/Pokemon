@@ -15,6 +15,7 @@ import { sfx } from './audio.js';
 import { preloadRaidArt } from './raid-art.js';
 import { matchServerUrl, warmServer, serverIsWarm, rememberReady } from './server-connection.js';
 import { seedOf } from './arena.js';
+import { SIDE_LOOK } from './field.js';
 export { matchServerUrl } from './server-connection.js';
 
 // Online matchmaking against random players, through the match server (server/index.js).
@@ -902,8 +903,18 @@ export class Matchmaker {
     }
     if (mon && s.te && !mon.tera && !g.terastallize(mon, true)) mon.tera = s.te;
     if (mon && 'it' in s) mon.item = s.it || null;
-    // The field as the server sees it: this side's hazards, a timed weather, the terrain.
+    // The field as the server sees it: this side's hazards and side conditions, a timed weather, the terrain and
+    // Trick Room (Tailwind and Trick Room change speed, so the local prediction needs them too).
     if (s.hz !== undefined && g.hazards) g.hazards[team.side] = s.hz || {};
+    if (s.fs !== undefined && g.sides) {
+      const was = g.sides[team.side] ?? {}, now = s.fs || {};
+      for (const k of Object.keys(now)) if (!(was[k] > 0) && SIDE_LOOK[k]) g.hud.showBanner(SIDE_LOOK[k].name.toUpperCase(), { color: SIDE_LOOK[k].color, y: team.side === 'player' ? 470 : 250, life: 1, size: 12 });
+      g.sides[team.side] = { ...now };
+    }
+    if (s.rm !== undefined) {
+      if (s.rm && !(g.trickRoom > 0)) g.hud.showBanner('TRICK ROOM', { color: '#ff8ad0', y: 300, life: 1.2, size: 15 });
+      g.trickRoom = s.rm || 0;
+    }
     if (s.wx !== undefined) g.timedWeather = s.wx ? { w: s.wx[0], t: s.wx[1], at: g.timedWeather?.w === s.wx[0] ? g.timedWeather.at : g.time } : null;
     if (s.tr !== undefined && (s.tr ? g.terrain?.kind !== s.tr[0] : g.terrain)) s.tr ? g.setTerrain(s.tr[0], s.tr[1]) : (g.terrain = null);
     if (mon !== team.active || mon.hidden || mon.fainted) return;
