@@ -3135,7 +3135,7 @@ function mechanicsOf(d) {
 function fromDex(id, d) {
   const [c1, c2] = TYPE_COLORS[d.type], colors = ['#ffffff', c1, c2], rgb = hex(c1), power = d.power || 0;
   const hits = Array.isArray(d.multihit) ? d.multihit[1] : d.multihit ?? 1, per = Math.round(power * (hits > 1 ? 1 : 1));
-  const cooldown = Math.max(1, Math.min(3.4, 0.6 + power / 55)), tag = d.cat === 'status' ? 'Status move' : `${d.cat === 'physical' ? 'Physical' : 'Special'} · ${power} power`;
+  const cooldown = Math.max(1, Math.min(3.4, 0.6 + power / 55)) + ((d.flags ?? []).includes('recharge') ? 1.2 : 0), tag = d.cat === 'status' ? 'Status move' : `${d.cat === 'physical' ? 'Physical' : 'Special'} · ${power} power`;
   if (d.cat === 'status') {
     const boosts = d.boosts && (d.target === 'self' || d.target === 'adjacentAllyOrSelf' || d.target === 'allies');
     const u = boosts ? { kind: 'stages', self: d.boosts, look: d.type }

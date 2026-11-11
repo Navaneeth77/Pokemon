@@ -1,10 +1,25 @@
-// Which moves a Pokémon may bring into battle: its default four plus everything in its Smogon competitive pool
-// (data/smogon.js). The player picks four of them in the kit editor; the choice travels in the kit, so the
-// match server checks it with the same function.
+// Which moves a Pokémon may bring into battle: its default four, its Smogon competitive pool (data/smogon.js) and
+// every move it learns in its most recent games that this game can play (data/learnsets.js). The player picks four
+// of them in the kit editor; the choice travels in the kit, so the match server checks it with the same function.
 import { SMOGON_POOLS } from './smogon.js';
+import { LEARN_IDS, LEARNSETS, LEARN_GEN } from './learnsets.js';
 
+const decoded = new Map();
+// Its learnset, decoded once (base-36 indexes into LEARN_IDS).
+export function learnset(id) {
+  if (!decoded.has(id)) decoded.set(id, (LEARNSETS[id] ?? '').split(',').filter(Boolean).map(s => LEARN_IDS[parseInt(s, 36)]));
+  return decoded.get(id);
+}
+// The generation its learnset comes from (9 = Scarlet/Violet; older for Pokémon not in those games).
+export const learnGen = id => LEARN_GEN[id] ?? 9;
+// Moves Smogon's sets actually run on it: the picker marks them.
+export const isCompetitive = (species, move) => !!SMOGON_POOLS[species?.id]?.includes(move);
+
+const pools = new Map();
 export function movePool(species) {
-  return [...new Set([...(species?.moves ?? []), ...(SMOGON_POOLS[species?.id] ?? [])])];
+  if (!species?.id) return [...(species?.moves ?? [])];
+  if (!pools.has(species.id)) pools.set(species.id, [...new Set([...(species.moves ?? []), ...(SMOGON_POOLS[species.id] ?? []), ...learnset(species.id)])]);
+  return pools.get(species.id);
 }
 
 // A chosen set of four, cleaned: anything unknown, repeated or outside the pool is dropped and the gaps are

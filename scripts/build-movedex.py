@@ -246,8 +246,95 @@ for sid in dex:
         used.setdefault(mid, effects(m))
     pools[sid] = ids
 
+
+# ── Full learnsets: every move each Pokémon learns in its most recent games, for the move picker ──
+# Needs <cache>/learnsets.json (Pokémon Showdown's learnsets, as JSON), <cache>/pokemon_species.csv (for the moves a
+# Pokémon learns as an earlier evolution) and <cache>/playable.json (node scripts/export-playable.mjs <cache>: the moves
+# this game already plays). A move is kept when the game already has it, or when it can be built from the official data
+# alone: an attack with a fixed power, or a status move that only changes stats, inflicts a status or heals. Moves that
+# need rules of their own (Attract, Baton Pass, Perish Song, OHKO moves, two-turn moves…) wait for those rules.
+LEARN, PLAY, SPEC = (os.path.join(CACHE, f) for f in ('learnsets.json', 'playable.json', 'pokemon_species.csv'))
+learnsets, learn_gen = {}, {}
+if all(os.path.exists(f) for f in (LEARN, PLAY, SPEC)):
+    import csv
+    LS = json.load(open(LEARN))
+    P = json.load(open(PLAY))
+    playable, handled = set(P['playable']), {key(h) for h in P['handled']} | POOL_OK
+    ident, prevo = {}, {}
+    rows = list(csv.DictReader(open(SPEC)))
+    for r in rows:
+        ident[r['id']] = key(r['identifier'])
+    for r in rows:
+        if r['evolves_from_species_id']:
+            prevo[key(r['identifier'])] = ident[r['evolves_from_species_id']]
+    REGION = ('alola', 'galar', 'hisui', 'paldea')
+
+    def chain(k):
+        out, base, suf = [k], k, ''
+        for r in REGION:
+            if k.endswith(r) and k != r:
+                base, suf = k[:-len(r)], r
+        while base in prevo:
+            base = prevo[base]
+            out.append(base + suf if base + suf in LS else base)
+        return [c for c in out if 'learnset' in LS.get(c, {})]
+
+    gen_of = lambda code: int(code[0]) if code[:1].isdigit() else 0
+    regular = lambda code: len(code) > 1 and code[1] not in 'SV'  # not events or Virtual Console transfers
+    NOMINAL = {'reversal': 100, 'flail': 100, 'wringout': 120, 'crushgrip': 120, 'hardpress': 100, 'frustration': 102, 'ruination': 100}
+    SELFISH = ('self', 'adjacentAllyOrSelf', 'allies')
+
+    def learn_ok(k, m):
+        if m.get('isZ') or m.get('isMax') or m.get('isNonstandard') in ('CAP', 'LGPE', 'Custom', 'Future', 'Unobtainable'):
+            return False
+        if k in UNSUPPORTED and k not in POOL_OK:
+            return False
+        if k in handled:
+            return True
+        if any(m.get(f) for f in ('callsMove', 'selfdestruct', 'pseudoWeather', 'slotCondition', 'stallingMove', 'ohko', 'damage')):
+            return False
+        if m.get('flags', {}).get('charge'):
+            return False  # two-turn moves need their own action
+        if m['category'] != 'Status':
+            return bool(m.get('basePower')) and not m.get('basePowerCallback')
+        if any(m.get(f) for f in ('volatileStatus', 'sideCondition', 'weather', 'terrain', 'condition', 'selfSwitch', 'forceSwitch')):
+            return False
+        b = m.get('boosts')
+        if b and m.get('target') not in SELFISH and any(v > 0 for v in b.values()):
+            return False  # it would raise the foe's stats in a one-on-one battle
+        if m.get('target') in ('adjacentAlly', 'allySide', 'allyTeam'):
+            return False
+        return bool(b or m.get('status') or m.get('heal'))
+
+    for sid in dex:
+        ks = chain(key(sid))
+        if not ks:
+            continue
+        top = max((gen_of(c) for codes in LS[ks[0]]['learnset'].values() for c in codes if regular(c)), default=0)
+        names = sorted({mk for c in ks for mk, codes in LS[c]['learnset'].items() if any(gen_of(x) == top and regular(x) for x in codes)})
+        ult, ids = species_ult.get(sid), []
+        for mk in names:
+            m = MOVES.get(mk)
+            if not m or camel(m['name']) == ult:
+                continue
+            mid = camel(m['name'])
+            if mid in ultimates:
+                mid += 'Atk'
+            if not (mid in playable or mid in used or learn_ok(mk, m)):
+                continue
+            # Every move it can learn takes the official data (accuracy, priority, flags, effects), hand-made or not.
+            e = effects(m)
+            if mid not in playable and mk in NOMINAL and not e['power']:
+                e['power'] = NOMINAL[mk]
+            used.setdefault(mid, e)
+            ids.append(mid)
+        learnsets[sid] = ids
+        if top != 9:
+            learn_gen[sid] = top
+
 smogon_path = os.path.join(ROOT, 'src/data/smogon.js')
 head = open(smogon_path, encoding='utf-8').read().split('\nexport const SMOGON_MOVES')[0].rstrip('\n')
+head = re.sub(r'(\n+// Four moves per Pokémon[^\n]*)+$', '', head)  # written again below
 with open(smogon_path, 'w', encoding='utf-8') as f:
     f.write(head + '\n\n// Four moves per Pokémon from its main Smogon role (see scripts/build-movedex.py).\n')
     f.write('export const SMOGON_MOVES = ' + json.dumps(movesets, separators=(',', ':')) + ';\n')
@@ -266,4 +353,20 @@ export const MOVEDEX = {
     for mid in sorted(used):
         f.write(f'  {mid}: {json.dumps(used[mid], separators=(",", ":"))},\n')
     f.write('};\n')
+if learnsets:
+    ids = sorted({m for v in learnsets.values() for m in v})
+    index = {m: i for i, m in enumerate(ids)}
+    b36 = lambda n: '0123456789abcdefghijklmnopqrstuvwxyz'[n // 36] + '0123456789abcdefghijklmnopqrstuvwxyz'[n % 36] if n >= 36 else '0123456789abcdefghijklmnopqrstuvwxyz'[n]
+    assert len(ids) < 36 * 36
+    with open(os.path.join(ROOT, 'src/data/learnsets.js'), 'w', encoding='utf-8') as f:
+        f.write("""// Generated by scripts/build-movedex.py from Pokémon Showdown's learnsets. Do not edit by hand.
+// Every move each Pokémon learns in its most recent games (level-up, TM, egg and tutor moves, and moves it learns as an
+// earlier evolution; not event moves) that this game can play. LEARN_IDS lists the moves; LEARNSETS gives each
+// Pokémon's as base-36 indexes into it, joined by commas. LEARN_GEN names the generation used when it isn't 9.
+""")
+        f.write('export const LEARN_IDS = ' + json.dumps(ids, separators=(',', ':')) + ';\n')
+        f.write('export const LEARNSETS = ' + json.dumps({k: ','.join(b36(index[m]) for m in v) for k, v in learnsets.items()}, separators=(',', ':')) + ';\n')
+        f.write('export const LEARN_GEN = ' + json.dumps(learn_gen, separators=(',', ':')) + ';\n')
+    sizes = sorted(len(v) for v in learnsets.values())
+    print(f'learnsets: {len(learnsets)} Pokémon, {len(ids)} moves, {sizes[len(sizes) // 2]} per Pokémon (median), {sizes[-1]} at most')
 print(f'{len(movesets)} movesets, {len(pools)} pools, {len(used)} moves')

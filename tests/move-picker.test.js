@@ -71,3 +71,13 @@ test('without a pick, a Mega form still uses its own moves', () => {
   p.megaEvolve(SPECIES.charizardMegaX, sprites[SPECIES.charizardMegaX.sprite]);
   assert.deepEqual(p.moves, SPECIES.charizardMegaX.moves);
 });
+
+test('the picker offers every move it learns in its latest games that the game can play', () => {
+  const pool = movePool(SPECIES.charizard);
+  for (const m of ['ember', 'heatWave', 'fireFang', 'dragonClaw', 'airSlash', 'thunderPunch', 'shadowClaw']) assert.ok(pool.includes(m), `Charizard learns ${m}`);
+  assert.ok(pool.length > 50, `a full learnset, not just the competitive pool (${pool.length})`);
+  assert.ok(!pool.includes('attract'), 'moves whose rules the game lacks are left out');
+  assert.ok(!pool.includes('blastBurn') && !pool.includes('blastBurnAtk'), 'its own ultimate is not a regular move');
+  assert.deepEqual(cleanMoves(SPECIES.charizard, ['ember', 'heatWave', 'thunderPunch', 'roost']), ['ember', 'heatWave', 'thunderPunch', 'roost']);
+  assert.ok(MOVES.reversal.power > 0 && MOVES.eruption, 'the variable-power moves it brings in are playable');
+});

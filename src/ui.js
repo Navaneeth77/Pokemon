@@ -9,7 +9,7 @@ import { ABILITIES } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
-import { movePool } from './data/movepool.js';
+import { movePool, isCompetitive, learnGen } from './data/movepool.js';
 import { ownsShiny, itemById } from './economy.js';
 import { SHINY } from './data/national-dims.js';
 
@@ -434,21 +434,23 @@ export class UI {
     overlay.setAttribute('aria-label', `${s.name}'s kit`);
     // Moves: your four sit pinned at the top, each with an ✕ to take it out; tap a move in the list to add it to the
     // first empty slot (tap it again to take it out). Keys 1–4 follow the slots.
-    const pool = movePool(s), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
-    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${m.power}`} · ${m.sure ? '—' : `${m.acc}%`}`;
+    const byName = (a, b) => MOVES[a].name.localeCompare(MOVES[b].name), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
+    const pool = [...movePool(s)].sort(byName), gen = learnGen(id);
+    let query = '';
+    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${m.power}`} · ${m.sure || m.acc == null ? '—' : `${m.acc}%`}`;
     let draft = [...(this.kitOf(id).moves ?? s.moves)], msg = '';
     const saveMoves = () => this.setKit(id, { moves: draft.filter(Boolean) });
     const poolBtn = mid => {
       const m = MOVES[mid], on = draft.includes(mid), full = draft.filter(Boolean).length >= 4;
-      return `<button data-mv="${mid}" class="${on ? 'on' : full ? 'full' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
-        + `<span class="kp-text"><b>${m.name}</b><small>${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></span>`
+      return `<button data-mv="${mid}" data-q="${esc(`${m.name} ${m.type} ${m.cat}`.toLowerCase())}" class="${on ? 'on' : full ? 'full' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
+        + `<span class="kp-text"><b>${m.name}${isCompetitive(s, mid) ? '<i class="kp-star" title="Used in competitive sets">★</i>' : ''}</b><small>${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></span>`
         + `<em class="kp-act">${on ? '✓' : '+'}</em></button>`;
     };
     const slotHtml = (mid, i) => mid
       ? `<div class="km-slot" style="--tc:${TYPE_COLORS[MOVES[mid].type][0]}"><i>${i + 1}</i><span><b>${MOVES[mid].name}</b><small>${meta(MOVES[mid])}</small></span><button class="km-x" data-rm="${i}" aria-label="Remove ${esc(MOVES[mid].name)}">✕</button></div>`
       : `<div class="km-slot empty"><i>${i + 1}</i><span><b>Empty</b><small>tap a move below to add it</small></span></div>`;
     const draw = () => {
-      const panel = overlay.querySelector('.kit-panel'), scroll = panel?.scrollTop ?? 0;
+      const panel = overlay.querySelector('.kit-panel'), scroll = panel?.scrollTop ?? 0, focusSearch = document.activeElement?.classList.contains('kp-search');
       const k = this.kitOf(id), owned = this.ownsShiny(id), price = itemById(`shiny-${id}`)?.price, n = draft.filter(Boolean).length;
       const attacks = pool.filter(m => MOVES[m].cat !== 'status'), status = pool.filter(m => MOVES[m].cat === 'status');
       const changed = String(draft) !== String(s.moves);
@@ -460,9 +462,12 @@ export class UI {
           ${msg ? `<p class="km-msg">${msg}</p>` : n < 4 ? '<p class="km-msg soft">Any slot left empty gets one of its default moves in battle.</p>' : ''}
           ${changed ? '<button class="kit-reset" data-reset>↺ Back to its default moves</button>' : ''}
         </div>
-        <h4 class="kit-sub">ATTACKS · ${pool.length} moves it can learn</h4>
-        <div class="kit-pool">${attacks.map(poolBtn).join('')}</div>
-        ${status.length ? `<h4 class="kit-sub">STATUS MOVES</h4><div class="kit-pool">${status.map(poolBtn).join('')}</div>` : ''}
+        <h4 class="kit-sub">ALL ${pool.length} MOVES IT CAN LEARN <small>${gen === 9 ? 'Scarlet/Violet' : `Gen ${gen} games`} · ★ = used in competitive sets</small></h4>
+        <input class="kp-search" type="search" placeholder="Search moves: name, type or physical/special/status" value="${esc(query)}" aria-label="Search moves">
+        <h4 class="kit-sub" data-group-head="atk">ATTACKS · <span>${attacks.length}</span></h4>
+        <div class="kit-pool" data-group="atk">${attacks.map(poolBtn).join('')}</div>
+        ${status.length ? `<h4 class="kit-sub" data-group-head="st">STATUS MOVES · <span>${status.length}</span></h4><div class="kit-pool" data-group="st">${status.map(poolBtn).join('')}</div>` : ''}
+        <p class="kit-note kp-none" hidden>No move matches that.</p>
         <p class="kit-note">Mega forms keep these moves. Its ultimate (${MOVES[s.ultimate]?.name ?? '—'}) stays the same.</p>
         <h3>HELD ITEM <small>${k.item ? esc(ITEMS[k.item].desc) : 'Holds nothing.'}</small></h3>
         <div class="kit-items"><button data-item="" class="${k.item ? '' : 'on'}">None</button>${ITEM_LIST.map(i => `<button data-item="${i}" class="${k.item === i ? 'on' : ''}" title="${esc(ITEMS[i].desc)}">${ITEMS[i].name}</button>`).join('')}</div>
@@ -474,6 +479,24 @@ export class UI {
           : `<p class="kit-note">Buy Shiny ${s.name} in the Trainer Guild shop (${price} Chaos Coins), then switch it on here.</p>`}
       </section>`;
       overlay.querySelector('.kit-panel').scrollTop = scroll;
+      // Search filters the list in place (no redraw, so typing keeps going).
+      const search = overlay.querySelector('.kp-search'), filter = () => {
+        const q = query.trim().toLowerCase();
+        let shown = 0;
+        for (const g of overlay.querySelectorAll('[data-group]')) {
+          let n = 0;
+          for (const b of g.querySelectorAll('[data-mv]')) { const ok = !q || b.dataset.q.includes(q); b.hidden = !ok; n += ok; }
+          const head = overlay.querySelector(`[data-group-head="${g.dataset.group}"]`);
+          head.hidden = g.hidden = !n;
+          head.querySelector('span').textContent = n;
+          shown += n;
+        }
+        overlay.querySelector('.kp-none').hidden = !!shown;
+      };
+      search.addEventListener('input', () => { query = search.value; filter(); });
+      search.addEventListener('keydown', e => e.key === 'Escape' && query && (e.stopPropagation(), (search.value = query = ''), filter()));
+      filter();
+      if (focusSearch) { search.focus(); search.setSelectionRange(query.length, query.length); }
       overlay.querySelector('.kit-x').onclick = () => overlay.remove();
       overlay.querySelectorAll('[data-rm]').forEach(b => (b.onclick = () => { draft[+b.dataset.rm] = null; msg = ''; saveMoves(); draw(); }));
       overlay.querySelectorAll('[data-mv]').forEach(b => (b.onclick = () => {

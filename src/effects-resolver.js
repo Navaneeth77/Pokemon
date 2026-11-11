@@ -37,7 +37,20 @@ export function movePower(game, user, target, move) {
     case 'lowKick': case 'grassKnot': return [20, 40, 60, 80, 100, 120][Math.min(5, Math.floor(weightOf(target) * 2.2))];
     case 'heavySlam': case 'heatCrash': return [40, 60, 80, 100, 120][Math.min(4, Math.floor(2 * weightOf(user) / weightOf(target)))];
     case 'storedPower': case 'powerTrip': return 20 + 20 * Object.values(user.stages ?? {}).reduce((s, n) => s + Math.max(0, n), 0);
-    case 'waterSpout': return Math.max(1, Math.round(150 * user.hp / user.maxHp));
+    case 'waterSpout': case 'eruption': case 'dragonEnergy': return Math.max(1, Math.round(150 * user.hp / user.maxHp));
+    // Reversal / Flail: the less HP it has left, the harder it hits (the games' six steps).
+    case 'reversal': case 'flail': { const r = user.hp / user.maxHp; return r < 0.042 ? 200 : r < 0.104 ? 150 : r < 0.208 ? 100 : r < 0.354 ? 80 : r < 0.688 ? 40 : 20; }
+    // Wring Out / Crush Grip / Hard Press: the more HP the foe has left, the harder.
+    case 'wringOut': case 'crushGrip': return Math.max(1, Math.round(120 * target.hp / target.maxHp));
+    case 'hardPress': return Math.max(1, Math.round(100 * target.hp / target.maxHp));
+    // Revenge: double if it was just hit; Assurance: double if the foe was just hurt.
+    case 'revenge': return game.time - (user.hurtAt ?? -9) < 1.5 ? p * 2 : p;
+    case 'assurance': return game.time - (target.hurtAt ?? -9) < 1.5 ? p * 2 : p;
+    case 'smellingSalts': return target.status?.para > 0 ? p * 2 : p;
+    case 'wakeUpSlap': return target.status?.sleep > 0 ? p * 2 : p;
+    // Last Respects: 50 more for every teammate that has fainted.
+    case 'lastRespects': return Math.min(300, 50 + 50 * game.teamOf(user).members.filter(m => !m.alive || m.fainted).length);
+    case 'frustration': return 102;
     case 'hydroSteam': return game.weather === 'sun' ? Math.round(p * 3) : p; // boosted (not weakened) by the sun
     case 'expandingForce': case 'psyblade': return game.terrain ? Math.round(p * 1.5) : p;
     case 'lashOut': return Object.values(user.stages ?? {}).some(n => n < 0) ? p * 2 : p;
@@ -60,7 +73,7 @@ export function fixedDamage(game, user, target, move) {
     case 'seismicToss': case 'nightShade': return FIXED;
     case 'superFang': return Math.max(1, Math.floor(target.hp / 2));
     case 'endeavor': return Math.max(0, target.hp - user.hp);
-    case 'naturesMadness': return Math.max(1, Math.floor(target.hp / 2));
+    case 'naturesMadness': case 'ruination': return Math.max(1, Math.floor(target.hp / 2));
     default: return move.fixedDmg ?? null; // a Counter / Mirror Coat / Metal Burst blow
   }
 }

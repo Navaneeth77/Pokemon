@@ -1645,6 +1645,11 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 .kit-pool button.full{opacity:.6;}
 .kit-pool button.full .kp-act{background:#56607a;color:#dfe6f4;}
 .kit-sub{margin:14px 0 0;font-size:12px;letter-spacing:1px;color:#ffe9a8;}
+.kit-sub small{display:block;margin-top:2px;font-size:10px;letter-spacing:0;color:#a6aec3;}
+.kp-search{display:block;width:100%;box-sizing:border-box;margin-top:8px;min-height:38px;padding:7px 10px;font:600 14px 'Pixelify Sans',monospace;color:#1a1f2e;background:#f4f6fb;border:2px solid #6b7799;border-radius:6px;outline:none;user-select:text;-webkit-user-select:text;}
+.kp-search:focus{border-color:#ffd84a;}
+.kit-pool .kp-star{margin-left:4px;font-style:normal;font-size:11px;color:#ffd84a;}
+.kit-pool button[hidden],.kit-sub[hidden],.kit-pool[hidden]{display:none;}
 @media (max-width:420px){.kit-pool{grid-template-columns:minmax(0,1fr);}}
 /* The M button as Terastallize: a crystal-blue prism instead of the Mega rainbow */
 .mega-btn.tera {
