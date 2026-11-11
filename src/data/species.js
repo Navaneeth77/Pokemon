@@ -8,6 +8,7 @@
 import { KANTO_NEW, KANTO_EXISTING, KANTO_MEGAS, TYPE_ULT } from './kanto.js';
 import { isFinalSpecies, finalDescendants } from './roster-rules.js';
 import { DIMS } from './dims.js';
+import { MORE_MEGAS, MORE_MEGA_STATS } from './more-megas.js';
 
 import { MEGA_STATS } from './mega-stats.js';
 import { NATIONAL, OFFICIAL_ABILITIES, DEX } from './national.js';
@@ -238,6 +239,7 @@ const MEGAS = [
   ['darkrai', 'darkraiMega', 'Mega Darkrai', { sprite: 'darkrai-mega', atk: 1.32, def: 1.02, ability: 'badDreams', aura: ['#d8c8ff', '#6a3a8a', '#1a0f24'] }],
   ['zeraora', 'zeraoraMega', 'Mega Zeraora', { sprite: 'zeraora-mega', speed: 128, atk: 1.3, ability: 'voltAbsorb', aura: ['#fff8c0', '#ffe066', '#3a8ae8'] }],
   ...KANTO_MEGAS,
+  ...MORE_MEGAS, // data/more-megas.js: Slowbro to Tatsugiri, from complete SpriteCollab sheets
 ];
 
 export const SPECIES = {};
@@ -248,7 +250,7 @@ for (const [baseId, id, name, o] of MEGAS) {
   const own = o.sprite && o.sprite !== base.sprite;
   const dims = own ? { radius: undefined, shadow: undefined, mouth: undefined, bodyZ: undefined, headZ: undefined } : {};
   SPECIES[id] = { ...base, ...dims, id, name, megaOf: baseId, mega: null, faintAnim: own ? null : base.faintAnim, ...o, sprite: o.sprite ?? base.sprite };
-  const verified = MEGA_STATS[id];
+  const verified = MEGA_STATS[id] ?? MORE_MEGA_STATS[id];
   if (verified) {
     const { base: b, form: f } = verified;
     base.baseStats = b;
