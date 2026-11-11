@@ -580,3 +580,15 @@ addImpact('sludgeWave', [{ at: 0, fx: 'sludge', n: 14 }]);
 addImpact('airSlash', [{ at: 0, slash: { colors: [W, '#cfeaff'], n: 2, radius: 22 } }]);
 addImpact('freezeDry', [{ at: 0, fx: 'ice', mark: 'frost', markSize: 20 }]);
 addImpact('shadowSneak', [{ at: 0, fx: 'wisps', n: 10 }]);
+
+// Batch 5 refinements (added to the existing landing flourishes).
+addImpact('dazzlingGleam', [{ at: 0, fx: 'glitter', n: 20, rings: { colors: [W, '#ffe0f0', '#f080b0'], r: 40 } }]);
+addImpact('alluringVoice', [{ at: 0, fx: 'glitter', n: 14, rings: { colors: [W, '#ffd0ec'], r: 34 } }, { at: 0.1, rings: { colors: ['#ffe0f0'], r: 50 } }]);
+addImpact('drainingKiss', [{ at: 0.02, siphon: { n: 14, colors: [W, '#ffd0ec', '#f080b0'] } }, { at: 0.12, siphon: { n: 10, colors: [W, '#ffd0ec', '#f080b0'] } }]);
+addImpact('leechLife', [{ at: 0.02, siphon: { n: 14, colors: [W, '#f0ffc0', '#a8d040'] } }, { at: 0.12, siphon: { n: 8, colors: [W, '#f0ffc0', '#a8d040'] } }]);
+addImpact('hornLeech', [{ at: 0.02, siphon: { n: 14 } }]);
+addImpact('leafStorm', [{ at: 0, fx: 'leaves', n: 18 }]);
+addImpact('flashCannon', [{ at: 0, fx: 'metal', rings: { colors: [W, '#dfe7f2'], r: 36 } }]);
+addImpact('hyperVoice', [{ at: 0.08, rings: { colors: [W, '#f0f0d8'], r: 54 } }, { at: 0.16, rings: { colors: ['#f0f0d8'], r: 70 } }]);
+addImpact('rockSlide', [{ at: 0, fx: 'debris', n: 14 }, { at: 0.04, fx: 'dust', n: 8 }]);
+addImpact('stompingTantrum', [{ at: 0, fx: 'debris', n: 12, mark: 'fracture', markSize: 22 }, { at: 0.04, fx: 'dust', n: 10 }]);

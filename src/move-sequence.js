@@ -204,6 +204,13 @@ const FX = {
     for (let i = 0; i < 10; i++) g.particles.spawn({ x: p.x + rand(-14, 14), y: p.y + rand(-6, 6), z: rand(6, 26), vx: rand(-25, 25), vz: rand(-5, 15), drag: 2, life: rand(0.45, 0.7), size: rand(6, 9), sizeEnd: rand(10, 13), colors: ['#fff0f8', '#ffd0e8', '#f0b0d0'], alpha: 0.85, round: true });
     for (let i = 0; i < 6; i++) g.particles.spawn({ x: p.x, y: p.y, z: 18, vx: rand(-80, 80), vy: rand(-40, 40), vz: rand(40, 100), gz: 200, life: rand(0.4, 0.6), size: 2.5, colors: ['#fff6a0', '#ffffff'] });
   },
+  // Fairy glitter: little sparkles that hang in the air and twinkle out.
+  glitter: (g, p, s) => {
+    for (let i = 0; i < (s.n ?? 16); i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(30, 90);
+      g.particles.spawn({ x: p.x, y: p.y, z: rand(10, 26), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: rand(10, 50), drag: 2.5, life: rand(0.5, 0.9), size: rand(1.5, 3), colors: ['#ffffff', '#ffe0f0', '#fff6a0', '#ffb0d8'] });
+    }
+  },
   // Feathers flung out, fluttering down.
   feathers: (g, p, s) => {
     for (let i = 0; i < (s.n ?? 10); i++) g.particles.spawn({ x: p.x, y: p.y, z: 14, vx: rand(-90, 90), vy: rand(-40, 40), vz: rand(30, 90), gz: 70, drag: 2.5, life: rand(0.7, 1.1), size: rand(2, 3), colors: ['#ffffff', '#f0f0f0', '#d8d8d8'] });
