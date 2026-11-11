@@ -37,19 +37,161 @@
 // The move's mechanics (accuracy, secondary effects, stat changes…) all resolve inside `hit` (combat.js),
 // so what the player sees and what happens can never drift apart.
 import { applyHit } from './combat.js';
-import { rand, Glow, Ring, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
+import { rand, Glow, Ring, FloatText, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
 import { sfx } from './audio.js';
 import { WEATHER_TINT } from './data/move-anims.js';
 
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
+// How a recipe reaches the foe (targeting.js): thrown projectiles, a strike on a spot, or an area round the user.
+export function recipeKind(seq) {
+  if (seq.aim === 'self') return 'self';
+  if (seq.aim === 'front') return 'front';
+  const hits = seq.steps.filter(s => s.hit);
+  if (!hits.length) return 'strike';
+  const last = Math.max(...hits.map(s => s.at ?? 0)), missiles = seq.steps.filter(s => s.missile && (s.at ?? 0) <= last);
+  return missiles.length >= hits.length ? 'missile' : 'strike';
+}
+
+// How far a move reaches right now (a charged move reaches 15% further per level).
+export const reachOf = move => (move.targeting?.range ?? move.range ?? 300) * (1 + 0.15 * (move.chargeLevel ?? 0));
+const byAt = (a, b) => (a.at ?? 0) - (b.at ?? 0);
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+
 export function runSequence(action) {
-  const { move, user } = action, seq = move.seq, t = action.target;
-  const spot = seq.aim === 'self' ? { x: user.x, y: user.y } : seq.aim === 'front' ? action.front(seq.dist ?? 90) : { x: t.x, y: t.y };
+  const { move, user } = action, seq = move.seq, t = action.target, P = move.targeting;
+  let spot;
+  if (seq.aim === 'self') spot = { x: user.x, y: user.y };
+  else if (seq.aim === 'front') spot = action.front(seq.dist ?? 90);
+  else {
+    // The foe's position, but never beyond the move's reach: out of range it lands short, in plain sight.
+    const d = user.distTo(t) || 1, reach = reachOf(move);
+    spot = d <= reach ? { x: t.x, y: t.y } : { x: user.x + ((t.x - user.x) / d) * reach, y: user.y + ((t.y - user.y) / d) * reach };
+  }
   action.spot = spot;
+  if (P && (P.kind === 'homing' || P.kind === 'straight')) return throwSequence(action, spot);
+  // A strike drifts after the foe for a while (tracking strength in px/s), never past the move's reach.
+  if (P?.kind === 'strike' && P.track > 0) action.track = { until: P.trackTime, speed: P.track, reach: reachOf(move) };
   scheduleSteps(action, seq.steps, spot);
   action.at(seq.end ?? 1, () => action.finish(seq.recover ?? 0.1));
+}
+
+// A strike's aim point follows the foe at its tracking speed until it locks; the warning marks move with it.
+export function tickSpot(action, dt) {
+  const tr = action.track, s = action.spot, t = action.target, u = action.user;
+  if (!tr || action.t > tr.until || !t.alive || t.hidden) return;
+  const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy), step = Math.min(d, tr.speed * dt);
+  if (d > 0) {
+    s.x += (dx / d) * step;
+    s.y += (dy / d) * step;
+  }
+  const du = Math.hypot(s.x - u.x, s.y - u.y);
+  if (du > tr.reach) {
+    s.x = u.x + ((s.x - u.x) / du) * tr.reach;
+    s.y = u.y + ((s.y - u.y) / du) * tr.reach;
+  }
+  for (const m of action.marks ?? []) if (!m.dead) Object.assign(m, { x: s.x, y: s.y });
+}
+
+// Projectile recipes: everything before the throw plays as designed; each thrown missile is a real projectile
+// (targeting.js: speed, tracking, hitbox, reach). Its impact steps play where it actually lands, and only a
+// projectile that touches the foe deals the hit.
+function throwSequence(action, spot) {
+  const seq = action.move.seq, steps = seq.steps;
+  const hits = steps.filter(s => s.hit).sort(byAt), last = hits[hits.length - 1].at ?? 0;
+  const missiles = steps.filter(s => s.missile && (s.at ?? 0) <= last).sort(byAt);
+  const groups = hits.map((h, k) => {
+    const from = h.at ?? 0, to = k + 1 < hits.length ? hits[k + 1].at ?? 0 : Infinity;
+    return { missile: missiles[k], hitAt: from, steps: steps.filter(s => (s.at ?? 0) >= from && (s.at ?? 0) < to && !missiles.includes(s)) };
+  });
+  const later = new Set(groups.flatMap(gp => gp.steps));
+  scheduleSteps(action, steps.filter(s => !later.has(s) && !missiles.includes(s)), spot);
+  for (const gp of groups) action.at(gp.missile.at ?? 0, () => action.game.spawn(new SeqShot(action, gp)));
+  action.at(seq.end ?? 1, () => action.finish(seq.recover ?? 0.1));
+}
+
+class SeqShot {
+  constructor(action, gp) {
+    const P = action.move.targeting, t = action.target, m = action.mouth(), ms = gp.missile.missile;
+    Object.assign(this, { action, gp, P, x: m.x, y: m.y, z0: m.z, layer: 'air', isProjectile: true, dead: false, age: 0, traveled: 0, turned: 0 });
+    // A projectile like any other (game.js clashes): its own move, owner and target (Rapid Spin can bat it back).
+    Object.assign(this, { move: action.move, user: action.user, target: t, elem: action.move.type, radius: P.hitbox, reacted: new Set() });
+    // Thrown at where the foe is now.
+    this.angle = Math.atan2(t.y - m.y, t.x - m.x);
+    this.span = Math.max(30, Math.hypot(t.x - m.x, t.y - m.y));
+    this.reach = reachOf(action.move);
+    this.visual = action.game.spawn(new Missile(m.x, m.y, m.x, m.y, m.z, 99, ms.style ?? 'orb', () => {}, ms.rgb ?? [255, 255, 255], ms.scale ?? 1));
+    this.visual.live = this;
+  }
+
+  get z() {
+    return this.z0 + (this.target.bodyZ - this.z0) * Math.min(1, this.traveled / this.span);
+  }
+
+  update(dt) {
+    if (this.dead) return false;
+    const P = this.P, t = this.target;
+    this.age += dt;
+    // Homing: turns toward the foe at its tracking rate, for its tracking time, by no more than its turn limit.
+    if (P.track > 0 && this.age <= P.trackTime && this.turned < P.maxTurn && t.alive && !t.hidden) {
+      const want = wrap(Math.atan2(t.y - this.y, t.x - this.x) - this.angle), left = P.maxTurn - this.turned;
+      const turn = Math.max(-P.track * dt, Math.min(P.track * dt, want)), k = Math.max(-left, Math.min(left, turn));
+      this.angle += k;
+      this.turned += Math.abs(k);
+    }
+    const step = P.speed * dt;
+    this.x += Math.cos(this.angle) * step;
+    this.y += Math.sin(this.angle) * step;
+    this.traveled += step;
+    // It hits what it touches: the foe's body inside the projectile's hitbox. A dodge's i-frames let it through.
+    if (t.alive && !t.hidden && !t.untouchable && !t.invuln && Math.hypot(t.x - this.x, t.y - this.y) <= P.hitbox + t.radius) return this.impact(true);
+    if (this.traveled >= this.reach) return this.impact(false);
+    return true;
+  }
+
+  impact(hit) {
+    this.dead = true;
+    this.visual.dead = true;
+    const a = this.action, g = a.game, t = this.target, spot = { x: this.x, y: this.y };
+    // A physical miss is not an accuracy miss: say so when it flew past close by.
+    if (!hit && t.alive && !t.hidden && Math.hypot(t.x - this.x, t.y - this.y) < 3 * (this.P.hitbox + t.radius) && !a.stack.dodgeShown) {
+      a.stack.dodgeShown = true;
+      g.spawn(new FloatText(t.x, t.y - t.headZ - 10, 'DODGED!', '#bff3ff'));
+    }
+    const steps = this.gp.steps.map(s => {
+      const out = { ...s, at: (s.at ?? 0) - this.gp.hitAt };
+      if (!hit) delete out.hit;
+      return out;
+    });
+    g.spawn(new ImpactRunner(a, steps, spot, this));
+    return false;
+  }
+
+  draw() {}
+}
+
+// Plays a projectile's impact steps after the move itself may have finished (the user is free to act again).
+class ImpactRunner {
+  constructor(a, steps, spot, shot) {
+    Object.assign(this, { src: a, move: shot.move, user: shot.user, game: a.game, target: shot.target, aim: a.aim, stack: a.stack, t: 0, events: [], layer: 'air', holdInCutscene: true });
+    scheduleSteps(this, steps, spot);
+  }
+  get impactShown() { return this.src.impactShown; }
+  set impactShown(v) { this.src.impactShown = v; }
+  at(time, fn) {
+    this.events.push({ time, fn });
+    this.events.sort((p, q) => p.time - q.time);
+  }
+  anim() {}
+  mouth() { return { x: this.user.x, y: this.user.y, z: this.user.bodyZ }; }
+  front(d) { return { x: this.user.x + Math.cos(this.aim) * d, y: this.user.y + Math.sin(this.aim) * d }; }
+  update(dt) {
+    this.t += dt;
+    while (this.events.length && this.events[0].time <= this.t) this.events.shift().fn();
+    return this.events.length > 0;
+  }
+  draw() {}
 }
 
 // Runs steps around `spot` (status moves use this for their look, with no hit step).
@@ -90,6 +232,7 @@ export function scheduleSteps(action, steps, spot) {
       if (step.telegraph) {
         const tg = step.telegraph;
         marks.push(g.spawn(new Ring(spot.x, spot.y, { r0: tg.r, r1: tg.r, life: tg.life ?? 1, color: tg.color ?? '#ffffff', width: 2, hold: true })));
+        (action.marks ??= []).push(marks[marks.length - 1]);
       }
       if (step.lightning) {
         for (let i = 0; i < (step.lightning.n ?? 1); i++) {

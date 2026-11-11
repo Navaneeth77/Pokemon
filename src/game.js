@@ -1318,7 +1318,7 @@ export class Game {
     const list = this.effects;
     this.effects = [];
     for (const e of list) {
-      if (cosmeticOnly && e.isProjectile) this.effects.push(e);
+      if (cosmeticOnly && (e.isProjectile || e.holdInCutscene)) this.effects.push(e);
       else if (e.update(dt) !== false) this.effects.push(e);
     }
   }

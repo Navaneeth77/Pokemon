@@ -34,6 +34,18 @@ for (const id of ROSTER) {
   }
 }
 const fromDex = [...used].filter(m => MOVES[m].dex).length, recipes = [...used].filter(m => MOVE_ANIMS[m]).length;
+// The competitive pools (move picker): every move a player can choose must exist and be playable, and every
+// attacking move needs its targeting profile (range, hitbox, tracking: targeting.js).
+const { SMOGON_POOLS } = await import('../src/data/smogon.js');
+const pooled = new Set(Object.values(SMOGON_POOLS).flat());
+for (const m of pooled) {
+  const mv = MOVES[m];
+  if (!mv) { problems.push(`pool move ${m} does not exist`); continue; }
+  if (!mv.Action && !mv.copy) problems.push(`pool move ${m}: no action`);
+  if (mv.cat !== 'status' && !mv.ultimate && !mv.util && !mv.targeting) problems.push(`pool move ${m}: no targeting profile`);
+}
+for (const [id, mv] of Object.entries(MOVES)) if (!mv.ultimate && mv.cat !== 'status' && !mv.util && !mv.copy && !(mv.targeting?.range > 0)) problems.push(`${id}: attacking move without a range`);
+console.log(`${pooled.size} moves across the competitive pools`);
 console.log(`${ROSTER.length} Pokémon · ${used.size} moves in use (${fromDex} with official data, ${recipes} with a recipe, the rest hand-made) · ${usedUlts.size} ultimates (${[...usedUlts].filter(u => hasChoreography(u) || HAND_MADE_ULTS.has(u) || MOVES[u].Action?.name !== 'Ultimate').length} choreographed) · ${problems.length} problems`);
 for (const p of problems.slice(0, 40)) console.log(' ', p);
 process.exit(problems.length ? 1 : 0);

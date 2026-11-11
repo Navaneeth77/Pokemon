@@ -109,6 +109,8 @@ def effects(m):
         out['recoil'] = m['recoil'][0] / m['recoil'][1]
     if m.get('ohko'):
         out['ohko'] = True
+    if m.get('accuracy') is True:
+        out['sure'] = True  # never misses: ignores accuracy and evasion (Swift, Aura Sphere…)
     return out
 
 

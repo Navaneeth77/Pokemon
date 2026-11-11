@@ -64,7 +64,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
   }
 
   // Accuracy (moves below 100): rolled once per move use. No Guard always hits; Compound Eyes +30%.
-  if (move.acc != null && move.acc < 100 && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
+  // Accuracy and evasion stages count against every move, even 100% ones; sure-hit moves (Swift, Thunder in
+  // rain…) skip the roll. A physical miss (the projectile was dodged, the foe was out of reach) never gets here.
+  if (move.acc != null && !move.sure && (move.acc < 100 || accuracyMult(attacker, target) !== 1) && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
     stack.accRolled = true;
     stack.missed = Math.random() * 100 >= move.acc * (A.compoundEyes ? 1.3 : 1) * (A.keenEye ? Math.max(1, accuracyMult(attacker, target)) : accuracyMult(attacker, target));
   }

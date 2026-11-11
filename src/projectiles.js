@@ -104,7 +104,7 @@ export class AirBlade extends Projectile {
 }
 
 // Energy projectiles that differ by style: look, speed, trail, impact and the ground mark left behind.
-const ORBS = {
+export const ORBS = {
   grass: {
     speed: 210, radius: 10, glow: [130, 235, 90], core: '#f6ffe6', knockback: 120, leaves: true,
     trail: ['#e0ffc0', '#8ad84f', '#3f8f2c'],
@@ -199,9 +199,13 @@ export class Orb extends Projectile {
   update(dt) {
     // Homing projectiles (Swift) curve toward the target.
     const t = this.target;
-    if (this.s.homing && t.alive && !t.hidden) {
-      const want = Math.atan2(t.y - this.y, t.x - this.x);
-      this.angle += Math.max(-this.s.homing * dt, Math.min(this.s.homing * dt, Math.atan2(Math.sin(want - this.angle), Math.cos(want - this.angle))));
+    // Within the move's tracking limits (targeting.js): turn rate, tracking time and total turn.
+    const P = this.move.targeting, rate = P?.track ?? this.s.homing ?? 0;
+    if (rate && t.alive && !t.hidden && this.age <= (P?.trackTime ?? Infinity) && (this.turned ?? 0) < (P?.maxTurn ?? Infinity)) {
+      const want = Math.atan2(t.y - this.y, t.x - this.x), left = (P?.maxTurn ?? Infinity) - (this.turned ?? 0);
+      const k = Math.max(-left, Math.min(left, Math.max(-rate * dt, Math.min(rate * dt, Math.atan2(Math.sin(want - this.angle), Math.cos(want - this.angle))))));
+      this.angle += k;
+      this.turned = (this.turned ?? 0) + Math.abs(k);
     }
     return super.update(dt);
   }

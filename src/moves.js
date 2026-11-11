@@ -10,7 +10,9 @@ import { TYPE_COLORS } from './data/types.js';
 import { MOVEDEX } from './data/movedex.js';
 import { statusMove, setMoveTable } from './effects-resolver.js';
 import { MOVE_ANIMS, TAIL_MOVES, TAIL_TYPES, TAIL_EXTRA } from './data/move-anims.js';
-import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
+import { runSequence, tickGather, tickSpot, scheduleSteps, recipeKind } from './move-sequence.js';
+import { profileOf } from './targeting.js';
+import { ORBS } from './projectiles.js';
 import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
 import { LEGEND_ULTS_2 } from './ult-legends2.js';
@@ -222,7 +224,7 @@ class Stream extends MoveAction {
       return;
     }
     if (!this.firing) return;
-    this.retarget(c.track * dt);
+    this.retarget((this.move.targeting?.track ?? c.track) * dt);
     const g = this.game, m = this.mouth();
     this.emit = (this.emit ?? 0) + dt * c.rate;
     for (; this.emit >= 1; this.emit--) {
@@ -562,7 +564,7 @@ class BeamAttack extends MoveAction {
   tick(dt) {
     const c = this.move.beam;
     if (this.charging) {
-      if (this.t < c.lock) this.retarget(2.2 * dt);
+      if (this.t < (this.move.targeting?.trackTime ?? c.lock)) this.retarget((this.move.targeting?.track ?? 2.2) * dt);
       this.tele.set(this.user.x, this.user.y, this.aim);
       this.converge(80, dt, c.chargeColors, 28);
     } else if (this.firing && !this.hitDone && this.t - this.fireT < 0.2) {
@@ -844,8 +846,9 @@ class Thunderbolt extends MoveAction {
   }
 
   tick(dt) {
+    // The aim swings after the foe at the bolt's tracking rate (targeting.js) until it fires.
+    if (!this.struck) this.retarget((this.move.targeting?.track ?? 4) * dt);
     if (!this.charging) return;
-    this.retarget(4 * dt);
     const u = this.user, g = this.game;
     if (Math.random() < 0.7) {
       g.particles.spawn({
@@ -859,12 +862,13 @@ class Thunderbolt extends MoveAction {
     }
   }
 
-  // The bolt jumps straight to the target if it is in range and roughly ahead; otherwise it fizzles out.
+  // The bolt flies along the user's aim: it lands if the foe's body is in that line and within range; a foe
+  // that has moved out of the line (or dodges through it) is missed and the bolt crackles out at full length.
   strike() {
-    this.retarget();
-    const u = this.user, t = this.target, g = this.game, m = this.mouth();
-    const off = Math.abs(Math.atan2(Math.sin(u.aimAt(t) - this.aim), Math.cos(u.aimAt(t) - this.aim)));
-    const reach = t.alive && !t.hidden && u.distTo(t) <= this.move.range && off < 0.5;
+    this.struck = true;
+    const u = this.user, t = this.target, g = this.game, m = this.mouth(), P = this.move.targeting ?? { range: this.move.range, hitbox: 16 };
+    const off = Math.abs(Math.atan2(Math.sin(u.aimAt(t) - this.aim), Math.cos(u.aimAt(t) - this.aim))), d = u.distTo(t);
+    const reach = t.alive && !t.hidden && !t.untouchable && d <= P.range + t.radius && off <= Math.atan2(P.hitbox + t.radius, Math.max(1, d));
     const p = reach ? t : this.front(this.move.range);
     const z = reach ? t.bodyZ : 6;
     g.spawn(new Lightning(m.x, m.y - m.z, p.x, p.y - z, 0.3, { width: 2.5, branches: 4 }));
@@ -1319,6 +1323,7 @@ class TwoTurn extends MoveAction {
   start() {
     const c = this.move.twoTurn, u = this.user, g = this.game;
     this.mode = c.mode;
+    this.origin = { x: u.x, y: u.y };
     if (this.mode === 'fly') {
       this.anim('Hop', 1);
       u.invuln = true;
@@ -1399,10 +1404,17 @@ class TwoTurn extends MoveAction {
     }
     const pad = u.radius + t.radius + 2, d = u.distTo(t);
     if (this.mode === 'dig' || this.mode === 'phantom') {
-      // Bursts out beside the foe (Phantom Force: from behind it).
-      const back = this.mode === 'phantom' ? 1 : -1;
-      u.x = clampX(t.x + Math.cos(this.aim) * pad * back);
-      u.y = clampY(t.y + Math.sin(this.aim) * pad * back);
+      // Bursts out beside the foe (Phantom Force: from behind it), but no further from where it vanished than
+      // the move reaches: a foe beyond that is out of range and the user surfaces short of it.
+      const back = this.mode === 'phantom' ? 1 : -1, reach = this.move.targeting?.range ?? this.move.range;
+      const ox = this.origin.x, oy = this.origin.y, od = Math.hypot(t.x - ox, t.y - oy) || 1;
+      if (od > reach) {
+        u.x = clampX(ox + ((t.x - ox) / od) * reach);
+        u.y = clampY(oy + ((t.y - oy) / od) * reach);
+      } else {
+        u.x = clampX(t.x + Math.cos(this.aim) * pad * back);
+        u.y = clampY(t.y + Math.sin(this.aim) * pad * back);
+      }
       u.face(t.x, t.y);
       this.aim = u.aimAt(t);
       u.vanished = false;
@@ -3114,7 +3126,7 @@ function mechanicsOf(d) {
   const flags = Object.fromEntries((d.flags ?? []).map(f => [f, true]));
   return {
     officialCat: d.cat, acc: d.acc, pri: d.pri, dex: d, multihit: d.multihit, critRatio: d.critRatio,
-    drain: d.drain, recoil: d.recoil, selfSwitch: d.selfSwitch, contact: !!flags.contact,
+    drain: d.drain, recoil: d.recoil, selfSwitch: d.selfSwitch, contact: !!flags.contact, sure: !!d.sure,
     ...(flags.punch && { punch: true }), ...(flags.bite && { bite: true }), ...(flags.sound && { sound: true }), ...(flags.bullet && { bullet: true }),
     ...(flags.pulse && { pulse: true }), ...(flags.slicing && { slice: true }), ...(flags.wind && { wind: true }), ...(flags.powder && { powder: true }),
   };
@@ -3224,7 +3236,10 @@ for (const [id, d] of Object.entries(MOVEDEX)) {
 // Moves with their own staged animation (data/move-anims.js, move-sequence.js).
 class Sequence extends MoveAction {
   start() { runSequence(this); }
-  tick(dt) { tickGather(this, dt); }
+  tick(dt) {
+    tickGather(this, dt);
+    tickSpot(this, dt);
+  }
 }
 for (const [id, r] of Object.entries(MOVE_ANIMS)) {
   const m = MOVES[id];
@@ -3309,7 +3324,8 @@ const FAMILY = {
 for (const [tag, ids] of Object.entries(FAMILY)) for (const id of ids) if (MOVES[id]) MOVES[id][tag] = true;
 // Weather rules (adaptMove): Solar Beam's charge; Hurricane's accuracy in rain and sun.
 MOVES.solarBeam.solar = true;
-Object.assign(MOVES.hurricane, { acc: 70, weatherAcc: { rain: 100, sun: 50 } });
+for (const id of ['hurricane', 'hurricaneAtk', 'thunderAtk']) if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], { acc: 70, weatherAcc: { rain: 'sure', sun: 50 } });
+for (const id of ['blizzardAtk']) if (MOVES[id]) Object.assign(MOVES[id], { acc: 70, weatherAcc: { snow: 'sure' } });
 // Slicing moves (Gallade's Sharpness).
 for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw', 'crossPoison', 'slash', 'smartStrike', 'wingAttack']) MOVES[id].slice = true;
 // Moves that drag the foe toward the user instead of pushing it away.
@@ -3320,6 +3336,19 @@ const CHARGEABLE = ['hyperBeam', 'solarBeam', 'dragonPulse', 'lugiaWaterPulse', 
   'energyBall', 'sludgeBomb', 'moonblastShot', 'waterPulse', 'fireBlast', 'extrasensory', 'psyshock', 'powerGem', 'hex', 'discharge', 'hyperVoice',
   'dazzlingGleam', 'nightDaze', 'heatWave', 'searingShot'];
 for (const id of CHARGEABLE) MOVES[id].chargeable = true;
+
+// Every regular attacking move's targeting profile (targeting.js): range, hitbox, speed, tracking. Projectile
+// shots take their numbers from their orb; staged moves use the profile's range for the AI as well.
+for (const [id, m] of Object.entries(MOVES)) {
+  const p = profileOf(id, m, m.seq ? recipeKind(m.seq) : null);
+  if (!p) continue;
+  if (m.shot) {
+    const o = ORBS[m.shot.style] ?? {};
+    Object.assign(p, { hitbox: o.radius ?? p.hitbox, speed: o.speed ?? p.speed, ...(o.homing && { kind: 'homing', track: o.homing, trackTime: 1.2, maxTurn: 1.6 }) });
+  }
+  m.targeting = p;
+  if (m.seq && p.kind !== 'area') m.range = p.range;
+}
 
 // Moves that change with the battle state, as in the games: Solar Beam fires at once in harsh sunlight and
 // at half power in other weather; Thunder and Hurricane never miss in rain and are inaccurate in sun;
@@ -3333,7 +3362,8 @@ export function adaptMove(game, user, m) {
     if (w === 'sun') set({ sunCharged: true, beam: m.beam && { ...m.beam, charge: 0.06 } });
     else if (w) set({ power: Math.round(m.power / 2) });
   }
-  if (m.weatherAcc?.[w] != null) set({ acc: m.weatherAcc[w] });
+  // Weather accuracy: Thunder and Hurricane can't miss in rain and drop to 50% in sun; Blizzard can't miss in snow.
+  if (m.weatherAcc?.[w] != null) set(m.weatherAcc[w] === 'sure' ? { acc: 100, sure: true } : { acc: m.weatherAcc[w] });
   if (m.weatherBall && w) set({ type: { sun: 'fire', rain: 'water', sand: 'rock', snow: 'ice' }[w], power: m.power * 2 });
   if (m.facade && Object.values(user.status).some(v => v > 0)) set({ power: m.power * 2 });
   if (m.acrobatics && !user.item) set({ power: m.power * 2 });

@@ -1017,21 +1017,25 @@ export class Missile extends Effect {
 
   update(dt) {
     this.age += dt;
+    // A live missile is flown by a real projectile (move-sequence.js), which ends it on impact.
+    if (this.live) return !this.dead;
     if (this.age < this.life) return true;
     this.onArrive();
     return false;
   }
 
   draw(ctx) {
-    const k = Math.min(1, this.age / this.life);
-    const x = this.x0 + (this.x1 - this.x0) * k, y = this.y0 + (this.y1 - this.y0) * k - this.z;
+    const L = this.live, k = L ? 1 : Math.min(1, this.age / this.life);
+    // Where it is and which way it flies (a live missile: its projectile's position and heading).
+    const fx = L ? Math.cos(L.angle) * 200 : this.x1 - this.x0, fy = L ? Math.sin(L.angle) * 200 : this.y1 - this.y0;
+    const x = L ? L.x : this.x0 + (this.x1 - this.x0) * k, y = L ? L.y - L.z : this.y0 + (this.y1 - this.y0) * k - this.z;
     const [R, G, B] = this.rgb;
     if (this.style === 'shadow') {
       // Wisps of shadow trailing behind, shrinking and fading.
       for (let j = 4; j >= 1; j--) {
         const kk = k - j * 0.07;
-        if (kk < 0) continue;
-        const wx = this.x0 + (this.x1 - this.x0) * kk + Math.sin(this.age * 20 + j) * 2, wy = this.y0 + (this.y1 - this.y0) * kk - this.z;
+        if (kk < 0 && !L) continue;
+        const wx = x - fx * j * 0.07 + Math.sin(this.age * 20 + j) * 2, wy = y - fy * j * 0.07;
         ctx.globalAlpha = 0.45 - j * 0.08;
         ctx.fillStyle = j % 2 ? '#7a48b8' : '#3a2050';
         ctx.beginPath(); ctx.arc(wx, wy, (7 - j) * this.scale * 0.8, 0, Math.PI * 2); ctx.fill();
@@ -1043,7 +1047,7 @@ export class Missile extends Effect {
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x - (this.x1 - this.x0) * 0.12, y - (this.y1 - this.y0) * 0.12);
+      ctx.lineTo(x - fx * 0.12, y - fy * 0.12);
       ctx.stroke();
     }
     ctx.save();
@@ -1065,7 +1069,7 @@ export class Missile extends Effect {
       ctx.stroke();
     } else if (MISSILE_SHAPES[this.style]) {
       // Shaped projectiles point along their flight.
-      ctx.rotate(Math.atan2(this.y1 - this.y0, this.x1 - this.x0));
+      ctx.rotate(Math.atan2(fy, fx));
       MISSILE_SHAPES[this.style](ctx, R, G, B, this.age);
     } else {
       const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 13);
