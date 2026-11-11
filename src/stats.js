@@ -26,11 +26,16 @@ export function effectiveSpeed(mon, game) {
   s *= ab.speedMult?.(mon, game) ?? 1;
   s *= item?.speedMult?.() ?? 1;
   if (mon.status?.para > 0 && !ab.quickFeet) s *= 0.5;
+  if (game?.sides?.[mon.side]?.tailwind > 0) s *= 2; // Tailwind
   return s;
 }
 
 // How much faster (or slower) than its own base Speed it is right now: 2 when its Speed is doubled.
-export const speedRatio = (mon, game) => effectiveSpeed(mon, game) / mon.species.speed;
+// Under Trick Room the slow get quick and the quick get slow: a Speed of about 85 is the pivot.
+export const speedRatio = (mon, game) => {
+  const s = effectiveSpeed(mon, game);
+  return game?.trickRoom > 0 ? Math.max(0.5, Math.min(2.4, 85 / Math.max(10, s))) : s / mon.species.speed;
+};
 const log2 = Math.log2;
 export const moveFactor = r => Math.max(0.55, Math.min(1.7, 1 + 0.5 * log2(r)));
 export const rechargeFactor = r => Math.max(0.6, Math.min(1.6, 1 + 0.35 * log2(r)));

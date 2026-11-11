@@ -69,6 +69,9 @@ export class Pokemon {
       flash: 0, flashColor: '#fff', appear: 0, recallT: 0, landT: 0, zOverride: null, invuln: false, phasing: false, held: false,
       fainted: !this.alive, faintT: 0, moving: false, windT: 0, flyT: 0, auraT: 0, hidden: true,
       dodgeT: 0, dodgeInv: 0, dodgeCD: 0, dodgeDir: { x: 0, y: 1 }, ghostT: 0, buffT: 0,
+      // Volatile effects from the competitive move pools (effects-resolver.js): they end when it leaves the field.
+      encore: null, yawn: 0, cursed: null, destinyBond: 0, blocked: 0, magnetRise: 0, glaiveT: 0, counter: null, focusEnergy: false,
+      hurtAt: -9, focusing: false, lostFocus: false, vanished: false,
     });
     this.input.x = this.input.y = 0;
     this.sprite.play(this.idleAnim(), { force: true });

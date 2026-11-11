@@ -22,6 +22,7 @@ import { addFlapAnim } from './flap.js';
 import { TYPE_COLORS } from './data/types.js';
 import { MOVES, chargedMove, adaptMove } from './moves.js';
 import { tickVolatiles, fakeOutFails } from './effects-resolver.js';
+import { freshField, tickField, drawField, onEntry, dragOut } from './field.js';
 import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
@@ -41,7 +42,8 @@ const ease = t => 1 - (1 - t) * (1 - t);
 const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent','ChargeOrb','ItemFly']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 // Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
-const traps = (by, foe) => { const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
+// Shadow Tag-style abilities, and Block (the foe can't switch out while it lasts).
+const traps = (by, foe) => { if (foe.blocked > 0) return true; const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
 const ARENA_EVENTS = {
   mtSilver: { name: 'AVALANCHE!', hit: 'AVALANCHE!', n: 3, r: 30, color: '#e8f4ff', status: 'slow',
     fx: (g, z) => { iceShatter(g, z.x, z.y, 10); dustCloud(g, z.x, z.y, 12, 5); g.spawn(new Pillar(z.x, z.y, 0.5, [230, 244, 255], 140)); sfx.quake(); } },
@@ -63,7 +65,7 @@ const TERRAIN_COLOR = { electric: '#ffd84a', grassy: '#5fd04a', psychic: '#ff6ad
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Moves Copy can't take: ultimates are excluded separately; these depend on the user's own form.
-const NOT_COPYABLE = new Set(['copy', 'kingsShield']);
+const NOT_COPYABLE = new Set(['copy', 'copycat', 'kingsShield', 'sleepTalk']);
 
 // Perpendicular distance from (px, py) to a ray; Infinity when outside it.
 function rayDist(px, py, x0, y0, ang, len) {
@@ -170,7 +172,7 @@ export class Game {
       winner: null, buffered: null, megaQueued: 0, cinematic: null, switchCD: 0, foeSwitchCD: 0, switching: false,
       switchMenu: false, windsOn: false, winds: null, punchT: 0, punchDur: 1, punchAmt: 0, punchAt: null,
       weather: null, weatherT: 0, timedWeather: null, terrain: null, finale: null, showcase: null, popT: new Map(), lastUsed: { player: null, opponent: null },
-      musicT: 0, legendT: 0,
+      musicT: 0, legendT: 0, ...freshField(),
     });
     this.ui.showSwitchMenu(false);
   }
@@ -355,6 +357,7 @@ export class Game {
       if (!mon.hidden && mon.alive) abilityOf(mon).onEnter?.(this, mon);
       if (!mon.hidden && mon.alive) itemOf(mon)?.onEnter?.(this, mon);
       if (!mon.hidden && mon.alive) this.applyHazards(mon);
+      if (!mon.hidden && mon.alive) onEntry(this, mon);
     });
     const player = mon.side === 'player';
     this.spawn(new FloatText(mon.x, mon.y + (player ? 26 : 18), `Go, ${mon.species.name}!`, player ? '#ff8a3d' : '#f5c542', 8, 1.5));
@@ -486,6 +489,11 @@ export class Game {
     sfx.denied();
   }
 
+  // Roar, Whirlwind, Dragon Tail, Circle Throw (field.js).
+  dragOut(mon, by) {
+    return dragOut(this, mon, by);
+  }
+
   // A landed hit opens a short chain window: a higher combo role (opener → launcher → finisher) can
   // cancel the remaining recovery. Ultimates need a full meter instead of a cooldown.
   canChain(user, move) {
@@ -504,6 +512,13 @@ export class Game {
       this.floatText(user, 'TAUNTED!', '#ff7a5a');
       return false;
     }
+    // Encore: locked into the move it used last for a few seconds (its ultimate stays free).
+    if (!force && user.encore?.t > 0 && id !== user.encore.id && !base.ultimate) {
+      this.floatText(user, 'ENCORE!', '#ffd84a');
+      return false;
+    }
+    // Sleep Talk works only while asleep: it uses one of the user's other moves at random.
+    if (id === 'sleepTalk') return this.sleepTalk(user, force, copied);
     if (!force && fakeOutFails(this, user, base)) {
       this.floatText(user, 'IT FAILED!', '#c9d2de');
       this.startCooldown(user, id, base.cooldown);
@@ -527,7 +542,7 @@ export class Game {
       this.netSend(user, { t: 'move', id });
       return true;
     }
-    if (base.copy) return this.useCopy(user, copied);
+    if (base.copy) return this.useCopy(user, copied, id);
     if (chain) {
       user.cancelAction();
       user.busy = 0;
@@ -543,6 +558,7 @@ export class Game {
     this.startCooldown(user, id, base.cooldown);
     this.muteShake = !move.ultimate;
     try { user.action = new move.Action(move, user, this); } finally { this.muteShake = false; }
+    if (base.chargeBoost) this.stage(user, base.chargeBoost); // Meteor Beam
     this.hud.callout(user.side, chargeLevel >= 1 ? `${base.name}! MAX` : `${base.name}!`);
     this.ui.log(`${user.species.name} used ${base.name}!`, user.side);
     if (base.selfBuff && !base.dex) this.buff(user, ...base.selfBuff);
@@ -567,14 +583,14 @@ export class Game {
     return this.cinematic?.kind === 'ult' || [this.player, this.opponent].some(m => m.action?.move.ultimate && !m.action.done);
   }
 
-  useCopy(user, forced = null) {
+  useCopy(user, forced = null, key = 'copy') {
     const id = forced ?? this.lastUsed[user.foe?.side], src = MOVES[id];
-    if (!src) {
-      user.cooldowns.copy = 1;
+    if (!src || src.copy || id === 'sleepTalk') {
+      user.cooldowns[key] = 1;
       this.spawn(new FloatText(user.x, user.y - user.headZ - 14, 'NOTHING TO COPY YET', '#c9d2de', 7));
       return false;
     }
-    this.startCooldown(user, 'copy', Math.max(3, src.cooldown * 1.25));
+    this.startCooldown(user, key, Math.max(3, src.cooldown * 1.25));
     user.copied = id;
     user.action = new src.Action(src, user, this);
     this.spawn(new FloatText(user.x, user.y - user.headZ - 18, `COPIED ${src.name.toUpperCase()}!`, '#ff9fd0', 8));
@@ -583,7 +599,38 @@ export class Game {
     abilityOf(user).onUse?.(this, user, src);
     this.lastUsed[user.side] = id;
     if (user === this.player) this.ai.onThreat();
-    this.netSend(user, { t: 'move', id: 'copy', cp: id });
+    this.netSend(user, { t: 'move', id: key, cp: id });
+    return true;
+  }
+
+  sleepTalk(user, force, pick) {
+    if (force) {
+      user.charging = null;
+      user.cancelAction();
+      user.busy = 0;
+    } else {
+      if (this.moveCD(user, 'sleepTalk') > 0 || !user.alive || user.hidden || user.action || user.recallT > 0 || user.held) return false;
+      if (!(user.status.sleep > 0)) {
+        this.floatText(user, 'IT FAILED!', '#c9d2de');
+        this.startCooldown(user, 'sleepTalk', 1);
+        return false;
+      }
+      const options = user.species.moves.filter(m => m !== 'sleepTalk' && MOVES[m] && !MOVES[m].ultimate && !MOVES[m].copy && !MOVES[m].twoTurn);
+      if (!options.length) return false;
+      pick = options[Math.floor(Math.random() * options.length)];
+    }
+    const src = MOVES[pick];
+    if (!src) return false;
+    this.startCooldown(user, 'sleepTalk', MOVES.sleepTalk.cooldown);
+    const move = adaptMove(this, user, src);
+    this.muteShake = true;
+    try { user.action = new move.Action(move, user, this); } finally { this.muteShake = false; }
+    this.spawn(new FloatText(user.x, user.y - user.headZ - 18, `SLEEP TALK → ${src.name.toUpperCase()}!`, '#c8b0ff', 7));
+    this.hud.callout(user.side, `Sleep Talk → ${src.name}!`);
+    this.ui.log(`${user.species.name} used Sleep Talk! It used ${src.name} in its sleep!`, user.side);
+    abilityOf(user).onUse?.(this, user, src);
+    if (user === this.player) this.ai.onThreat();
+    this.netSend(user, { t: 'move', id: 'sleepTalk', cp: pick });
     return true;
   }
 
@@ -1201,11 +1248,22 @@ export class Game {
       return;
     }
     const team = this.teamOf(mon), next = net ? (net.last ? -1 : 0) : team.nextAlive();
+    team.faintAt = this.time; // Retaliate
     this.netSend(mon, { t: 'faint', i: team.members.indexOf(mon), mv: move?.id, last: next < 0 });
     this.recordCombat('faint', mon, by);
     abilityOf(mon).onFaint?.(this, mon, by, move);
     if (!this.headless) playCry(mon.baseSpecies.dex, { rate: 0.8, gain: 0.45 });
     if (by && by !== mon && by.alive && !by.hidden) abilityOf(by).onKO?.(this, by, mon);
+    // Destiny Bond: whatever knocks it out goes down with it.
+    if (mon.destinyBond > 0 && move && by && by !== mon && by.alive && !by.hidden && !by.remote && !by.boss) {
+      this.ui.log(`${mon.species.name} took its attacker down with it!`, mon.side);
+      this.later(0.35, () => {
+        if (!by.alive || by.hidden || this.state !== 'fighting') return;
+        this.spawn(new FloatText(by.x, by.y - by.headZ - 18, 'DESTINY BOND!', '#b08aff', 8));
+        by.hp = 0;
+        this.onFaint(by, mon);
+      });
+    }
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
@@ -1347,6 +1405,7 @@ export class Game {
       this.switchCD = Math.max(0, this.switchCD - dt);
       this.foeSwitchCD = Math.max(0, (this.foeSwitchCD ?? 0) - dt);
       this.updateWeather(dt);
+      tickField(this, dt);
       this.updateArenaEvents();
       this.tickSeeds(dt);
       for (const m of [this.player, this.opponent]) if (m?.alive && !m.hidden) tickVolatiles(this, m, dt);
@@ -1904,6 +1963,7 @@ export class Game {
     this.arena.drawBackdrop(ctx);
     this.arena.drawGround(ctx);
     this.drawTerrain(ctx);
+    drawField(this, ctx);
     this.drawHazards(ctx);
     if (cam.dim > 0) {
       ctx.fillStyle = `rgba(14,10,30,${cam.dim})`;

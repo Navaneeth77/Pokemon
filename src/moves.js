@@ -8,7 +8,7 @@ import { itemOf, ITEMS } from './data/items.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
 import { MOVEDEX } from './data/movedex.js';
-import { statusMove } from './effects-resolver.js';
+import { statusMove, setMoveTable } from './effects-resolver.js';
 import { MOVE_ANIMS, TAIL_MOVES, TAIL_TYPES, TAIL_EXTRA } from './data/move-anims.js';
 import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
 import { TYPE_ULTS } from './ult-choreo.js';
@@ -666,7 +666,7 @@ class Utility extends MoveAction {
   start() {
     const c = this.move.util;
     // A status move's own look (data/move-anims.js `fx`), around the user (or the foe for aimed moves).
-    if (this.move.fx) scheduleSteps(this, this.move.fx, c.kind === 'ray' ? { x: this.target.x, y: this.target.y } : { x: this.user.x, y: this.user.y });
+    if (this.move.fx) scheduleSteps(this, this.move.fx, c.kind === 'ray' || c.aim ? { x: this.target.x, y: this.target.y } : { x: this.user.x, y: this.user.y });
     this.anim(c.anim ?? 'Charge', 1);
     this.at(c.at ?? 0.22, () => UTIL_FX[c.kind](this, this.game, this.user, c));
     this.at(c.end ?? 0.5, () => this.finish(0.08));
@@ -746,7 +746,7 @@ const UTIL_FX = {
   },
   guard(a, g, u, c) {
     if (c.shieldForm && u.ab.blade) g.toggleForm(u, false);
-    u.guard = { t: c.dur, mult: c.mult, punish: !!c.punish, color: c.color, label: c.label };
+    u.guard = { t: c.dur, mult: c.mult, punish: !!c.punish, spiky: !!c.spiky, baneful: !!c.baneful, color: c.color, label: c.label };
     g.spawn(new Ring(u.x, u.y, { z: u.bodyZ, r0: 4, r1: u.radius + 16, life: 0.3, color: c.color, width: 3, layer: 'air' }));
     sfx.clang();
   },
@@ -1309,6 +1309,145 @@ class Slam extends MoveAction {
   cleanup() {
     this.user.zOverride = null;
     this.user.phasing = false;
+  }
+}
+
+// Two-turn moves in real time. Fly and Bounce soar out of reach, Dig burrows underground and Phantom Force
+// fades from sight: each is untouchable for a moment, then strikes the foe where it stands. Sky Attack glows
+// as it gathers power; Focus Punch tightens its focus and fails if it is hit before it lets go.
+class TwoTurn extends MoveAction {
+  start() {
+    const c = this.move.twoTurn, u = this.user, g = this.game;
+    this.mode = c.mode;
+    if (this.mode === 'fly') {
+      this.anim('Hop', 1);
+      u.invuln = true;
+      u.zOverride = u.z;
+      windBurst(g, u.x, u.y, 4, 10, ['#ffffff', '#c8f4ff']);
+      sfx.whoosh();
+    } else if (this.mode === 'dig') {
+      this.anim('Hop', 1.2);
+      this.at(0.12, () => {
+        u.invuln = true;
+        u.vanished = true;
+        dustCloud(g, u.x, u.y, 12, 5);
+        debris(g, u.x, u.y, 10, 90);
+        g.marks.fracture(u.x, u.y, 14, 5);
+        sfx.quake();
+      });
+    } else if (this.mode === 'phantom') {
+      this.anim('Charge', 1);
+      this.at(0.1, () => {
+        u.invuln = true;
+        u.vanished = true;
+        for (let i = 0; i < 12; i++) g.particles.spawn({ x: u.x + rand(-12, 12), y: u.y + rand(-4, 4), z: rand(6, u.headZ), vx: rand(-20, 20), vz: rand(20, 50), life: 0.6, size: rand(2.5, 4), sizeEnd: 1, colors: ['#e0d0ff', '#7a5ab8', '#2a1a40'] });
+      });
+    } else {
+      u.sprite.play('Charge', { loop: true, force: true });
+      if (this.mode === 'focus') {
+        u.focusing = true;
+        u.lostFocus = false;
+      }
+      sfx.zap(0.3);
+    }
+    this.at(c.hold, () => this.strike());
+  }
+
+  tick(dt) {
+    const c = this.move.twoTurn, u = this.user, t = this.target, g = this.game;
+    if (this.mode === 'fly' && !this.approach) u.zOverride = Math.min(c.height ?? 200, u.zOverride + dt * 650);
+    // Underground, a trail of churned earth heads for the foe.
+    if (this.mode === 'dig' && u.vanished && !this.approach) {
+      const d = u.distTo(t), step = Math.min(Math.max(0, d - u.radius - t.radius), dt * 240);
+      this.retarget();
+      u.x = clampX(u.x + Math.cos(this.aim) * step);
+      u.y = clampY(u.y + Math.sin(this.aim) * step);
+      if (Math.random() < 0.7) g.particles.spawn({ x: u.x + rand(-6, 6), y: u.y + rand(-3, 3), z: 1, vx: rand(-20, 20), vz: rand(30, 70), gz: 300, life: 0.4, size: rand(2, 3.5), colors: ['#c8a878', '#8a6a48'] });
+    }
+    if (this.mode === 'charge' || this.mode === 'focus') {
+      this.retarget(3 * dt);
+      this.converge(this.mode === 'focus' ? 26 : 34, dt, c.colors ?? ['#ffffff', TYPE_COLORS[this.move.type][0]], 26);
+    }
+    const a = this.approach;
+    if (!a) return;
+    a.t += dt;
+    const k = Math.min(1, a.t / a.dur);
+    u.x = a.from.x + (a.to.x - a.from.x) * k;
+    u.y = a.from.y + (a.to.y - a.from.y) * k;
+    if (a.z0 != null) u.zOverride = a.z0 * (1 - k * k);
+    this.ghostT = (this.ghostT ?? 0) - dt;
+    if (this.ghostT <= 0) {
+      this.ghostT = 0.03;
+      g.spawn(new Afterimage(u, 0.2, c.ghost ?? TYPE_COLORS[this.move.type][1]));
+    }
+    if (k >= 1) {
+      this.approach = null;
+      this.land();
+    }
+  }
+
+  strike() {
+    const c = this.move.twoTurn, u = this.user, t = this.target, g = this.game;
+    this.retarget();
+    if (this.mode === 'focus') {
+      u.focusing = false;
+      if (u.lostFocus) {
+        g.floatText(u, 'LOST ITS FOCUS!', '#c9d2de');
+        g.ui.log(`${u.species.name} lost its focus and couldn't move!`, u.side);
+        return this.finish(0.3);
+      }
+    }
+    const pad = u.radius + t.radius + 2, d = u.distTo(t);
+    if (this.mode === 'dig' || this.mode === 'phantom') {
+      // Bursts out beside the foe (Phantom Force: from behind it).
+      const back = this.mode === 'phantom' ? 1 : -1;
+      u.x = clampX(t.x + Math.cos(this.aim) * pad * back);
+      u.y = clampY(t.y + Math.sin(this.aim) * pad * back);
+      u.face(t.x, t.y);
+      this.aim = u.aimAt(t);
+      u.vanished = false;
+      u.invuln = false;
+      if (this.mode === 'dig') {
+        dustCloud(g, u.x, u.y, 14, 6);
+        debris(g, u.x, u.y, 16, 120);
+        g.marks.fracture(u.x, u.y, 18, 5);
+        sfx.quake();
+      } else {
+        for (let i = 0; i < 10; i++) g.particles.spawn({ x: u.x + rand(-10, 10), y: u.y + rand(-4, 4), z: rand(6, u.headZ), vx: rand(-30, 30), vz: rand(10, 40), life: 0.5, size: rand(2.5, 4), sizeEnd: 1, colors: ['#e0d0ff', '#7a5ab8'] });
+      }
+      this.anim('Attack', 1.4);
+      return this.land();
+    }
+    // Fly, Bounce, Sky Attack, Focus Punch: a fast approach onto the foe.
+    const len = Math.max(0, Math.min(c.reach ?? 320, d - pad));
+    this.approach = {
+      from: { x: u.x, y: u.y }, to: { x: clampX(u.x + Math.cos(this.aim) * len), y: clampY(u.y + Math.sin(this.aim) * len) },
+      t: 0, dur: this.mode === 'fly' ? 0.2 : 0.14, z0: this.mode === 'fly' ? u.zOverride : null,
+    };
+    u.phasing = true;
+    this.anim('Attack', 1.6);
+    sfx.dash();
+  }
+
+  land() {
+    const c = this.move.twoTurn, u = this.user, t = this.target, g = this.game;
+    u.zOverride = null;
+    u.invuln = false;
+    u.phasing = false;
+    if (this.mode === 'fly') {
+      g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 40, life: 0.35, color: '#e0f4ff', width: 3 }));
+      dustCloud(g, u.x, u.y, 8, 4);
+    }
+    if (this.inReach(30)) {
+      windBurst(g, t.x, t.y, t.bodyZ, 12, [TYPE_COLORS[this.move.type][0], '#ffffff']);
+      typeBurst(g, t, this.move.type);
+      this.hit({ knockback: c.knockback ?? 220, stagger: 0.4, unblockable: this.mode === 'phantom' });
+    }
+    this.at(this.t + 0.12, () => this.finish(c.recovery ?? 0.25));
+  }
+
+  cleanup() {
+    Object.assign(this.user, { zOverride: null, invuln: false, phasing: false, vanished: false, focusing: false });
   }
 }
 
@@ -3018,6 +3157,66 @@ function fromDex(id, d) {
   return shot(d.name, d.type, per, cooldown, tag, { style, ...(spread && { spread, stagger: 0.06 }), sound: d.type === 'electric' ? 'zap' : 'pulse' });
 }
 
+// ── Moves from the competitive pools with rules of their own (effects-resolver.js statusMove, field.js) ──
+// `aim` centres a status move's look on the foe. Cooldowns here are before the 30% faster pace below.
+const sp = (name, type, cooldown, tag, more = {}) => util(name, type, cooldown, tag, { kind: 'special', ...more });
+const twoTurn = (name, type, power, cooldown, tag, c) => ({ name, type, power, cooldown, range: 320, minRange: 0, ai: 'dash', tag, Action: TwoTurn, twoTurn: c });
+const POOL_MOVES = {
+  encore: sp('Encore', 'normal', 9, 'Locks the foe into the move it used last for 5s', { aim: true }),
+  trick: sp('Trick', 'psychic', 10, 'Swaps held items with the foe', { aim: true }),
+  switcheroo: sp('Switcheroo', 'dark', 10, 'Swaps held items with the foe', { aim: true }),
+  roar: sp('Roar', 'normal', 9, 'Drags the foe out · a random teammate comes in', { aim: true, anim: 'Roar' }),
+  whirlwind: sp('Whirlwind', 'normal', 9, 'Blows the foe away · a random teammate comes in', { aim: true }),
+  sleepTalk: sp('Sleep Talk', 'normal', 2, 'Only while asleep: uses one of its other moves at random'),
+  curse: sp('Curse', 'ghost', 7, 'Attack, Defense +1, Speed −1 · Ghost types: halves own HP to curse the foe'),
+  painSplit: sp('Pain Split', 'normal', 10, "Averages its HP with the foe's", { aim: true }),
+  yawn: sp('Yawn', 'normal', 9, 'The foe falls asleep 2.5s later', { aim: true }),
+  teleport: sp('Teleport', 'psychic', 6, 'Switch ready at once'),
+  healingWish: sp('Healing Wish', 'psychic', 10, 'Faints · the next teammate in is fully restored'),
+  destinyBond: sp('Destiny Bond', 'ghost', 9, 'For 2.5s: whatever knocks it out goes down too'),
+  partingShot: sp('Parting Shot', 'dark', 8, "Lowers the foe's Attack and Sp. Atk · switch ready", { aim: true }),
+  reflect: sp('Reflect', 'psychic', 16, 'Halves physical damage to your side for 15s'),
+  lightScreen: sp('Light Screen', 'psychic', 16, 'Halves special damage to your side for 15s'),
+  auroraVeil: sp('Aurora Veil', 'ice', 16, 'In snow: halves all damage to your side for 15s'),
+  tailwind: sp('Tailwind', 'flying', 16, "Doubles your side's Speed for 12s"),
+  trickRoom: sp('Trick Room', 'psychic', 18, 'For 15s slower Pokémon move and recharge faster'),
+  counter: sp('Counter', 'fighting', 6, 'For 1.2s: returns a physical hit at double damage', { at: 0.02, end: 0.25 }),
+  mirrorCoat: sp('Mirror Coat', 'psychic', 6, 'For 1.2s: returns a special hit at double damage', { at: 0.02, end: 0.25 }),
+  metalBurst: sp('Metal Burst', 'steel', 6, 'For 1.2s: returns any hit at 1.5× damage', { at: 0.02, end: 0.25 }),
+  shedTail: sp('Shed Tail', 'normal', 12, 'Halves own HP · the next teammate in gets a substitute'),
+  chillyReception: sp('Chilly Reception', 'ice', 14, 'Snow for 25s · switch ready'),
+  focusEnergy: sp('Focus Energy', 'normal', 8, 'Critical hits far more likely'),
+  conversion: sp('Conversion', 'normal', 8, 'Becomes the type of its first move'),
+  soak: sp('Soak', 'water', 10, 'The foe becomes pure Water type', { aim: true }),
+  block: sp('Block', 'normal', 10, "The foe can't switch out for 8s", { aim: true }),
+  clangorousSoul: sp('Clangorous Soul', 'dragon', 12, 'Loses ⅓ HP · every stat +1', { anim: 'Pose' }),
+  filletAway: sp('Fillet Away', 'normal', 12, 'Loses ½ HP · Attack, Sp. Atk, Speed +2'),
+  courtChange: sp('Court Change', 'normal', 12, 'Swaps hazards and side effects between the sides'),
+  revivalBlessing: sp('Revival Blessing', 'normal', 30, 'Revives a fainted teammate at half HP'),
+  recycle: sp('Recycle', 'normal', 10, 'Gets back the item it used up'),
+  magnetRise: sp('Magnet Rise', 'electric', 14, 'Levitates for 15s · immune to Ground moves'),
+  splash: sp('Splash', 'normal', 3, 'It splashes about. Nothing happens', { anim: 'Hop' }),
+  celebrate: sp('Celebrate', 'normal', 3, 'Congratulations!', { anim: 'Pose' }),
+  happyHour: sp('Happy Hour', 'normal', 3, 'Everyone is caught up in the happy atmosphere', { anim: 'Pose' }),
+  holdHands: sp('Hold Hands', 'normal', 3, 'It holds hands with its trainer. They are happy', { anim: 'Pose' }),
+  futureSightAtk: sp('Future Sight', 'psychic', 7, 'Special · 120 power · lands on the foe 2.5s later'),
+  doomDesire: sp('Doom Desire', 'steel', 8, 'Special · 140 power · lands on the foe 2.5s later'),
+  copycat: { ...NEW_MOVES.copy, name: 'Copycat', tag: "Uses the foe's last move" },
+  geomancyAtk: util('Geomancy', 'fairy', 14, 'Gathers power, then Sp. Atk, Sp. Def, Speed +2', { kind: 'stages', self: { spa: 2, spd: 2, spe: 2 }, anim: 'Charge', at: 0.85, end: 1.1 }),
+  spikyShield: util('Spiky Shield', 'grass', 6, 'Blocks every attack for 0.9s · hurts attackers that touch it', { kind: 'guard', dur: 0.9, mult: 0, spiky: true, color: '#7ac850', label: 'SPIKY SHIELD', at: 0.02, end: 0.25 }),
+  banefulBunker: util('Baneful Bunker', 'poison', 6, 'Blocks every attack for 0.9s · poisons attackers that touch it', { kind: 'guard', dur: 0.9, mult: 0, baneful: true, color: '#b060d0', label: 'BANEFUL BUNKER', at: 0.02, end: 0.25 }),
+  fly: twoTurn('Fly', 'flying', 90, 2.6, 'Soars out of reach, then dives onto the foe', { mode: 'fly', hold: 0.55, height: 220, ghost: '#e0f4ff' }),
+  bounce: twoTurn('Bounce', 'flying', 85, 2.6, 'Springs out of reach, then lands on the foe · may paralyse', { mode: 'fly', hold: 0.5, height: 170, ghost: '#d8ecff' }),
+  dig: twoTurn('Dig', 'ground', 80, 2.4, 'Burrows out of reach, then bursts up under the foe', { mode: 'dig', hold: 0.55 }),
+  phantomForce: twoTurn('Phantom Force', 'ghost', 90, 2.6, 'Vanishes, then strikes from behind · goes through Protect', { mode: 'phantom', hold: 0.5, knockback: 200 }),
+  skyAttackAtk: twoTurn('Sky Attack', 'flying', 140, 3.6, 'Glows with power, then rams the foe · high critical-hit ratio', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#fff2b0', '#ffb84a'], knockback: 280 }),
+  focusPunch: twoTurn('Focus Punch', 'fighting', 150, 3.4, 'Focuses, then a huge punch · fails if it is hit first', { mode: 'focus', hold: 0.8, colors: ['#ffffff', '#ffd0a0', '#e86a3a'], knockback: 300, reach: 120 }),
+};
+for (const [id, m] of Object.entries(POOL_MOVES)) if (!MOVES[id]) MOVES[id] = m;
+// The delayed attacks keep their power for the hit that lands later.
+Object.assign(POOL_MOVES.futureSightAtk, { power: 120 });
+Object.assign(POOL_MOVES.doomDesire, { power: 140 });
+
 for (const [id, d] of Object.entries(MOVEDEX)) {
   if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], mechanicsOf(d));
   else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d), generated: true };
@@ -3050,6 +3249,9 @@ for (const [id, r] of Object.entries(MOVE_ANIMS)) {
   }
 }
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
+setMoveTable(MOVES);
+// Meteor Beam gathers space power first (Sp. Atk +1 as it charges); Petal Dance's three hits share its power.
+if (MOVES.meteorBeam?.beam) Object.assign(MOVES.meteorBeam, { chargeBoost: { spa: 1 } }, { beam: { ...MOVES.meteorBeam.beam, charge: 0.9 } });
 
 // The long tail of rarely used moves: a modest type accent (and a few hand-picked touches) added to each one's
 // landing flourish (data/move-anims.js). Visual only.

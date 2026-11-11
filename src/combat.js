@@ -2,7 +2,8 @@ import { typeMultiplier } from './data/types.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
 import { stageOf, stageMult, accuracyMult } from './stats.js';
-import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse } from './effects-resolver.js';
+import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse, beforeHit, moveCategory, counterHit, crashOnMiss } from './effects-resolver.js';
+import { screenMult } from './field.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { prepareReaction, resolveReaction } from './elemental.js';
@@ -32,7 +33,7 @@ export function weatherMult(game, type) {
 }
 
 // Pokémon touching the ground (not flying, not levitating) are the ones a terrain affects.
-export const grounded = mon => !mon.species.fly && !mon.airborne && !abilityOf(mon).levitating && !itemOf(mon)?.levitating;
+export const grounded = mon => !mon.species.fly && !mon.airborne && !(mon.magnetRise > 0) && !abilityOf(mon).levitating && !itemOf(mon)?.levitating;
 
 // Terrains: the matching type hits 30% harder from a grounded attacker; Misty Terrain halves Dragon moves
 // against grounded targets and Grassy Terrain softens earthquakes.
@@ -73,6 +74,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
       game.spawn(new FloatText(target.x, head - 10, 'MISSED!', '#c9d2de'));
       game.ui.log(`${attacker.species.name}'s attack missed!`, attacker.side);
       game.emit?.('miss', { attacker, target, move });
+      crashOnMiss(game, attacker, move);
     }
     return false;
   }
@@ -82,6 +84,11 @@ export function applyHit(game, attacker, target, move, o = {}) {
   if (guard && guard.mult === 0) {
     if (!stack.blocked) {
       stack.blocked = true;
+      // Spiky Shield hurts and Baneful Bunker poisons whatever touches it.
+      if (isContact(move) && attacker.alive && attacker !== target) {
+        if (guard.spiky) game.dotDamage(attacker, 1 / 8, '#7ac850');
+        if (guard.baneful) applyStatus(game, attacker, 'poison', { source: target });
+      }
       game.spawn(new FloatText(target.x, head - 10, 'BLOCKED!', guard.color));
       game.spawn(new Ring(target.x, target.y, { z: target.bodyZ, r0: 6, r1: target.radius + 18, life: 0.25, color: guard.color, width: 3, layer: 'air' }));
       sfx.clang();
@@ -89,7 +96,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
     return false;
   }
 
-  const [type, convertMult] = moveType(attacker, move, A);
+  beforeHit(game, attacker, target, move, stack);
+  // Tera Blast takes the user's Tera type once it has Terastallized.
+  const [type, convertMult] = move.id === 'teraBlast' && attacker.tera ? [attacker.tera, 1] : moveType(attacker, move, A);
   const defTypes = typesOf(target);
   const winds = game.deltaStream && defTypes.includes('flying');
   // Scrappy: Normal and Fighting moves hit Ghost types normally.
@@ -97,6 +106,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const raw = typeMultiplier(type, hitTypes, winds);
   const calmed = winds && raw < typeMultiplier(type, defTypes);
   let eff = typeTweak(move, hitTypes, soften(raw));
+  if (type === 'ground' && target.magnetRise > 0 && move.id !== 'thousandArrows') eff = 0; // Magnet Rise
   if (A.pierce === type && eff < 1 && eff > 0) eff = 1;
   if (A.tinted && eff < 1 && eff > 0) eff *= 2;
   // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped at 2×.
@@ -108,6 +118,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
       game.spawn(new FloatText(target.x, head - 10, 'NO EFFECT', '#c9d2de'));
       game.ui.log(`It doesn't affect ${target.species.name}…`);
       game.emit?.('immune', { attacker, target, move });
+      crashOnMiss(game, attacker, move);
     }
     return false;
   }
@@ -118,7 +129,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // matches an original type stacks a further 25%.
   const own = attacker.species.types.includes(type);
   const stab = typesOf(attacker).includes(type) || (attacker.tera && own) ? (A.stab ?? 1.2) * (attacker.tera === type && own ? 1.25 : 1) : 1;
-  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0);
+  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0) + (attacker.focusEnergy ? 0.24 : 0);
   // Sheer Force: moves with an added effect hit harder and lose the effect.
   const sheer = !!(A.sheerForce && (move.status || move.debuff || move.statusPool || move.selfBuff || o.burnChance || o.freezeChance || o.flinchChance));
   const power = o.power ?? movePower(game, attacker, target, move);
@@ -127,7 +138,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Unaware ignores the other side's stat changes.
   // Stat stages (stats.js): Attack/Sp. Atk against Defense/Sp. Def by category. Unaware ignores the other
   // side's stages; a critical hit ignores the attacker's drops and the defender's boosts.
-  const special = move.cat === 'special', aStat = special ? 'spa' : 'atk', dStat = special ? 'spd' : 'def';
+  const cat = moveCategory(move, attacker), special = cat === 'special', aStat = special ? 'spa' : 'atk', dStat = special ? 'spd' : 'def';
   let aStage = D.unaware ? 0 : stageOf(atkSrc, aStat), dStage = A.unaware ? 0 : stageOf(target, dStat);
   if (crit) { aStage = Math.max(0, aStage); dStage = Math.min(0, dStage); }
   const stats = ((attackStatOf(move, atkSrc) ?? (special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1))) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * stageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
@@ -170,8 +181,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const sv = game.survival;
   if (sv) dmg *= attacker.side === 'opponent' ? sv.foePower * (sv.def ?? 1) : (sv.atk ?? 1) * sv.foeGuard;
   // Snow toughens Ice types against physical hits; a sandstorm toughens Rock types against special ones.
-  if (game.weather === 'snow' && defTypes.includes('ice') && move.cat === 'physical') dmg *= 2 / 3;
-  if (game.weather === 'sand' && defTypes.includes('rock') && move.cat === 'special') dmg *= 2 / 3;
+  if (game.weather === 'snow' && defTypes.includes('ice') && cat === 'physical') dmg *= 2 / 3;
+  if (game.weather === 'sand' && defTypes.includes('rock') && cat === 'special') dmg *= 2 / 3;
   // Abilities that change the damage show it the moment they do (at most every few seconds).
   const dealt = A.dealMult?.(game, attacker, target, move, info) ?? 1;
   dmg *= dealt;
@@ -207,6 +218,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
   dmg *= shielded;
   if (shielded < 0.999) game.itemTouch?.(target, 'Damage reduced!');
   if (guard) dmg *= guard.mult;
+  // Reflect, Light Screen and Aurora Veil on the target's side (field.js); Glaive Rush leaves its user open.
+  dmg *= screenMult(game, attacker, target, cat, crit);
+  if (target.glaiveT > 0) dmg *= 2;
   // Fixed-damage moves (Seismic Toss, Super Fang, Endeavor) ignore the formula.
   const fixed = fixedDamage(game, attacker, target, move);
   if (fixed != null) dmg = fixed;
@@ -255,6 +269,11 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const interrupt = !guard && !move.ultimate && (power >= 100 || move.launch) && target.action && !target.action.move.ultimate;
 
   const actualDamage = Math.min(target.hp, dmg);
+  if (dmg > 0) {
+    target.hurtAt = game.time; // Payback
+    if (target.focusing) target.lostFocus = true; // Focus Punch
+    counterHit(game, attacker, target, move, cat, dmg);
+  }
   if (dmg > 0) target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
 
   // Launchers start an aerial combo; up to three hits keep a juggled foe up, then it drops.

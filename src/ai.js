@@ -11,6 +11,51 @@ const LEVELS = {
 };
 
 // Drives whichever opponent Pokémon is currently active.
+// When the competitive pools' status moves are worth using (see effects-resolver.js statusMove).
+const statused = m => Object.values(m.status ?? {}).some(v => v > 0) || m.frozen > 0;
+const boosted = m => Object.values(m.stages ?? {}).reduce((n, v) => n + Math.max(0, v), 0);
+const benchOk = (game, m) => game.teamOf(m).nextAlive() >= 0;
+const sideUp = (game, m, k) => game.sides?.[m.side]?.[k] > 0;
+const screen = k => (me, foe, dist, game) => (!sideUp(game, me, k) && dist > 90 ? 1.6 : 0);
+const pivot = (me, foe, dist, game) => (benchOk(game, me) && me.hp < me.maxHp * 0.5 ? 1.2 : 0);
+const POOL_AI = {
+  encore: (me, foe, dist, game) => (game.lastUsed[foe.side] && MOVES[game.lastUsed[foe.side]]?.cat === 'status' && !foe.encore ? 2.2 : 0),
+  trick: (me, foe) => (me.item && ['choiceScarf', 'choiceSpecs', 'choiceBand', 'flameOrb', 'toxicOrb', 'laggingTail', 'ironBall'].includes(me.item) && foe.item !== me.item ? 1.6 : 0),
+  roar: (me, foe, dist, game) => (boosted(foe) >= 2 && benchOk(game, foe) ? 2.5 : 0),
+  sleepTalk: me => (me.status.sleep > 0 ? 5 : 0),
+  curse: (me, foe) => ((me.stages.atk ?? 0) < 2 && dist(me, foe) > 100 ? 1.3 : 0),
+  painSplit: (me, foe) => (me.hp < foe.hp * 0.7 ? 2 : 0),
+  yawn: (me, foe) => (!statused(foe) && !(foe.yawn > 0) ? 1.4 : 0),
+  teleport: pivot,
+  partingShot: (me, foe, d, game) => (benchOk(game, me) ? 1.3 : 0),
+  shedTail: (me, foe, d, game) => (benchOk(game, me) && me.hp > me.maxHp * 0.6 ? 1.3 : 0),
+  chillyReception: (me, foe, d, game) => (game.weather !== 'snow' ? 1.2 : 0),
+  healingWish: (me, foe, d, game) => (me.hp < me.maxHp * 0.25 && game.teamOf(me).members.some(m => m !== me && m.alive && m.hp < m.maxHp * 0.6) ? 2.5 : 0),
+  destinyBond: (me, foe, d) => (me.hp < me.maxHp * 0.25 && foe.action && d < 200 ? 3 : 0),
+  reflect: screen('reflect'), lightScreen: screen('lightScreen'), tailwind: screen('tailwind'),
+  auroraVeil: (me, foe, d, game) => ((game.weather === 'snow' || game.weather === 'hail') && !sideUp(game, me, 'auroraVeil') ? 2 : 0),
+  trickRoom: (me, foe, d, game) => (!(game.trickRoom > 0) && me.species.speed < foe.species.speed ? 1.8 : 0),
+  counter: (me, foe, d) => (foe.action && foe.action.move.cat === 'physical' && d < 180 && Math.random() < 0.5 ? 3 : 0),
+  mirrorCoat: (me, foe, d) => (foe.action && foe.action.move.cat === 'special' && Math.random() < 0.5 ? 3 : 0),
+  metalBurst: (me, foe, d) => (foe.action && d < 220 && Math.random() < 0.4 ? 2.5 : 0),
+  focusEnergy: me => (!me.focusEnergy ? 1 : 0),
+  conversion: () => 0.3,
+  soak: (me, foe) => (!(foe.typeOverride?.[0] === 'water') ? 0.9 : 0),
+  block: (me, foe, d, game) => (!(foe.blocked > 0) && benchOk(game, foe) ? 0.8 : 0),
+  clangorousSoul: (me, foe, d) => (me.hp > me.maxHp * 0.6 && d > 110 && boosted(me) < 3 ? 1.6 : 0),
+  filletAway: (me, foe, d) => (me.hp > me.maxHp * 0.7 && d > 110 && boosted(me) < 3 ? 1.6 : 0),
+  courtChange: (me, foe, d, game) => (Object.values(game.hazards?.[me.side] ?? {}).some(Boolean) ? 1.8 : 0),
+  revivalBlessing: (me, foe, d, game) => (game.teamOf(me).members.some(m => m !== me && (m.fainted || !m.alive)) ? 3 : 0),
+  recycle: me => (!me.item && me.usedItem ? 1.2 : 0),
+  magnetRise: (me, foe) => (!(me.magnetRise > 0) && foe.species.types.includes('ground') ? 1.6 : 0),
+  futureSightAtk: (me, foe, d, game) => (!game.pending?.[foe.side]?.future ? 1.5 : 0),
+  doomDesire: (me, foe, d, game) => (!game.pending?.[foe.side]?.future ? 1.5 : 0),
+  splash: () => 0.05, celebrate: () => 0.05, happyHour: () => 0.05, holdHands: () => 0.05,
+};
+POOL_AI.switcheroo = POOL_AI.trick;
+POOL_AI.whirlwind = POOL_AI.roar;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
 export class OpponentAI {
   constructor() {
     this.reset();
@@ -154,7 +199,7 @@ export class OpponentAI {
     if (u.kind === 'guard') return foe.action && dist < 160 && Math.random() < (this.cfg?.guard ?? 0.6) ? 4 : 0;
     // Setup while at a safe distance and not already boosted; status moves on a foe that has none.
     if (u.kind === 'stages') return dist > 100 && Object.keys(u.self).some(k => u.self[k] > 0 && (me.stages[k] ?? 0) < 2) ? 1.5 : 0;
-    if (u.kind === 'special') return dist > 100 && Math.random() < 0.5 ? 1.1 : 0;
+    if (u.kind === 'special') return (POOL_AI[mv.id] ?? (() => (dist > 100 && Math.random() < 0.5 ? 1.1 : 0)))(me, foe, dist, game);
     if (u.kind === 'ray') return dist < 280 && (u.seed ? !foe.seeded : !Object.values(foe.status).some(v => v > 0)) ? 1.6 : 0;
     // Field moves: set weather or terrain when it isn't already up; lay hazards while the foe has others to send in.
     if (u.kind === 'weather') return game.weather !== u.weather && dist > 90 ? 1.4 : 0;
@@ -169,6 +214,8 @@ export class OpponentAI {
     for (const id of me.species.moves) {
       const mv = MOVES[id];
       if (me.cooldown(id) > 0) continue;
+      if (me.encore?.t > 0 && id !== me.encore.id) continue;
+      if (me.taunted > 0 && mv.cat === 'status') continue;
       let w = 0;
       if (mv.ai === 'self') {
         w = this.selfWeight(me, foe, mv, dist, game);

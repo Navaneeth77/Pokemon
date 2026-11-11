@@ -12,6 +12,7 @@ const STATUSES = ['burn', 'poison', 'para', 'slow', 'stun', 'sleep'];
 function berry(name, desc, effect) {
   return {
     name, desc, berry: true, color: '#e05a8a',
+    eat: effect, // Pluck and Bug Bite: the attacker eats it at once
     tick(g, me) {
       const at = abilityOf(me).id === 'gluttony' ? 0.5 : name === 'Sitrus Berry' ? 0.5 : 0.25;
       if (me.hp > me.maxHp * at || !me.alive) return;
@@ -160,6 +161,7 @@ export const ITEMS = {
   sitrusBerry: berry('Sitrus Berry', 'Restores 25% of max HP when it falls below half.', (g, me, k) => g.heal(me, me.maxHp * 0.25 * k)),
   lumBerry: {
     name: 'Lum Berry', desc: 'Cures its first status condition. One use.', berry: true, color: '#5ad86a',
+    eat(g, me) { me.status = {}; me.frozen = 0; },
     onStatus(g, me) { g.eatBerry(me, () => { me.status = {}; me.frozen = 0; }); },
   },
   liechiBerry: berry('Liechi Berry', 'Raises attack 30% when it falls to a quarter HP.', (g, me, k) => g.buff(me, 'atk', 1 + 0.3 * k, 10)),

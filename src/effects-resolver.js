@@ -9,8 +9,21 @@
 //
 // Combat (combat.js) and the Utility action (moves.js) call these, so every effect lands at the moment the
 // move connects, together with its animation and the log line.
-import { abilityOf } from './data/abilities.js';
+import { abilityOf, typesOf, isContact } from './data/abilities.js';
+import { ITEMS } from './data/items.js';
 import { STAT_NAME } from './stats.js';
+import { applyHit } from './combat.js';
+import { setSide, toggleTrickRoom, breakScreens, swapCourts } from './field.js';
+import { Ring, Glow, Pillar, FloatText, BeamLine, ItemFly, rand } from './effects.js';
+import { sfx } from './audio.js';
+
+// The game's move table, set by moves.js once it is built (this module can't import it: moves.js imports this one).
+let MOVE_TABLE = {};
+export const setMoveTable = t => (MOVE_TABLE = t);
+const hasStatus = mon => Object.values(mon.status ?? {}).some(v => v > 0) || mon.frozen > 0;
+const onField = mon => mon?.alive && !mon.hidden;
+// A foe running away from the attacker (Pursuit): moving, and the move takes it further off.
+const fleeing = (user, t) => t.moving && (t.lastMove.x * (t.x - user.x) + t.lastMove.y * (t.y - user.y)) > 0;
 
 const STATUS_OF = { par: 'para', slp: 'sleep', brn: 'burn', psn: 'poison', tox: 'poison', frz: 'freeze' };
 const weightOf = mon => mon.species.weight ?? 1;
@@ -30,6 +43,13 @@ export function movePower(game, user, target, move) {
     case 'lashOut': return Object.values(user.stages ?? {}).some(n => n < 0) ? p * 2 : p;
     case 'fishiousRend': case 'boltBeak': return target.action ? p : p * 2; // hits harder when the foe hasn't acted yet
     case 'rageFist': return Math.min(350, 50 + 50 * (user.ab?.hitsTaken ?? 0));
+    // Payback: double if it was hit in the last moment; Retaliate: double right after a teammate fainted.
+    case 'payback': return game.time - (user.hurtAt ?? -9) < 1.5 ? p * 2 : p;
+    case 'retaliate': return game.time - (game.teamOf(user).faintAt ?? -99) < 9 ? p * 2 : p;
+    case 'risingVoltage': return game.terrain?.kind === 'electric' && !target.species.fly && !(target.magnetRise > 0) && !abilityOf(target).levitating ? p * 2 : p;
+    case 'pursuit': return fleeing(user, target) ? p * 2 : p;
+    // Beat Up: every healthy teammate without a status joins in.
+    case 'beatUp': return 12 * Math.max(1, game.teamOf(user).members.filter(m => m.alive && !m.fainted && !hasStatus(m)).length);
     default: return p;
   }
 }
@@ -40,7 +60,8 @@ export function fixedDamage(game, user, target, move) {
     case 'seismicToss': case 'nightShade': return FIXED;
     case 'superFang': return Math.max(1, Math.floor(target.hp / 2));
     case 'endeavor': return Math.max(0, target.hp - user.hp);
-    default: return null;
+    case 'naturesMadness': return Math.max(1, Math.floor(target.hp / 2));
+    default: return move.fixedDmg ?? null; // a Counter / Mirror Coat / Metal Burst blow
   }
 }
 
@@ -63,6 +84,17 @@ export function onHit(game, attacker, target, move, dmg, stack) {
   stack.secondaryDone = true;
   const A = abilityOf(attacker), serene = A.serene ? 2 : 1;
   if (move.id === 'fakeOut' && target.alive) game.applyStatus(target, 'stun', { source: attacker, dur: 0.6 });
+  // Dragon Tail and Circle Throw drag the foe out for a random teammate (not a substitute).
+  if ((move.id === 'dragonTail' || move.id === 'circleThrow') && target.alive && !target.substitute) game.later(0.3, () => onField(target) && game.dragOut(target, attacker));
+  // Ceaseless Edge scatters spikes around the foe's side.
+  if (move.id === 'ceaselessEdge') game.setHazard(target.side, 'spikes', attacker);
+  // Pluck and Bug Bite eat the foe's Berry.
+  if ((move.id === 'pluck' || move.id === 'bugBite') && ITEMS[target.item]?.berry && attacker.alive && !target.remote) {
+    const it = ITEMS[target.item];
+    game.itemPop(attacker, `It ate the foe's ${it.name}!`);
+    it.eat?.(game, attacker, 1);
+    game.useUpItem(target);
+  }
   if (A.sheerForce || abilityOf(target).shieldDust || target.item === 'covertCloak') return;
   for (const s of d.secondary ?? []) {
     if (Math.random() * 100 >= s.chance * serene) continue;
@@ -96,6 +128,59 @@ export function afterUse(game, user, move, stack = {}) {
     user.seeded = null;
   }
   if (move.id === 'explosion' || move.id === 'selfDestruct') game.dotDamage(user, 1, '#ff9a5a');
+  if (move.id === 'glaiveRush' && user.alive) user.glaiveT = 3; // open to double damage for a moment
+}
+
+// The user may switch out right away (U-turn's rule, for Parting Shot, Teleport, Shed Tail, Chilly Reception).
+function pivotReady(game, user, move) {
+  if (!user.alive || game.teamOf(user).nextAlive() < 0) return false;
+  if (user.side === 'player') game.switchCD = 0;
+  else game.foeSwitchCD = 0;
+  game.floatText(user, 'SWITCH READY!', '#9fe8ff');
+  game.emit('pivot', { mon: user, move });
+  return true;
+}
+
+// Before a hit's damage: Brick Break and Psychic Fangs shatter screens; Spectral Thief steals the foe's boosts.
+export function beforeHit(game, attacker, target, move, stack) {
+  if (stack.beforeDone) return;
+  stack.beforeDone = true;
+  if (['brickBreak', 'psychicFangs', 'ragingBull'].includes(move.id)) breakScreens(game, target.side, attacker);
+  if (move.id === 'spectralThief' && !target.remote) {
+    const up = Object.fromEntries(Object.entries(target.stages ?? {}).filter(([, n]) => n > 0));
+    if (Object.keys(up).length) {
+      for (const k of Object.keys(up)) target.stages[k] = 0;
+      game.stage(attacker, up);
+      game.spawn(new FloatText(attacker.x, attacker.y - attacker.headZ - 20, 'BOOSTS STOLEN!', '#b08aff', 7));
+      game.ui.log(`${attacker.species.name} stole the target's boosted stats!`, attacker.side);
+    }
+  }
+}
+
+// Tera Blast hits with the user's higher attacking stat once it has Terastallized.
+export const moveCategory = (move, user) => (move.id === 'teraBlast' && user.tera && (user.species.atk ?? 0) > (user.species.spa ?? 0) ? 'physical' : move.cat);
+
+// Counter, Mirror Coat, Metal Burst: a hit of the matching kind during the window comes straight back,
+// multiplied, as a hit of the counter move's own type.
+export function counterHit(game, attacker, target, move, cat, dmg) {
+  const c = target.counter;
+  if (!c || attacker === target || move.ultimate || move.counterBlow || (c.cat && c.cat !== cat) || !attacker.alive) return;
+  target.counter = null;
+  const blow = { ...c.move, fixedDmg: Math.max(1, Math.round(dmg * c.mult)), counterBlow: true, acc: 100 };
+  game.later(0.12, () => {
+    if (!onField(target) || !onField(attacker) || game.state !== 'fighting') return;
+    game.spawn(new BeamLine(target.x, target.y - target.bodyZ, attacker.x, attacker.y - attacker.bodyZ, 0.25, c.color, 4));
+    game.spawn(new Ring(attacker.x, attacker.y, { z: attacker.bodyZ, r0: 4, r1: attacker.radius + 16, life: 0.3, color: c.color, width: 3, layer: 'air' }));
+    const d = Math.hypot(attacker.x - target.x, attacker.y - target.y) || 1;
+    applyHit(game, target, attacker, blow, { dirX: (attacker.x - target.x) / d, dirY: (attacker.y - target.y) / d, knockback: 200, stagger: 0.35, unblockable: true });
+  });
+}
+
+// Jump Kick / High Jump Kick: missing (or hitting nothing) sends the user crashing down.
+export function crashOnMiss(game, attacker, move) {
+  if (move.id !== 'jumpKick' && move.id !== 'highJumpKick') return;
+  game.ui.log(`${attacker.species.name} kept going and crashed!`, attacker.side);
+  game.dotDamage(attacker, 1 / 2, '#ff9a5a');
 }
 
 // Status moves with their own rules. `c` is the move's util config.
@@ -153,14 +238,222 @@ export function statusMove(game, user, move) {
       user.status = {};
       game.stage(user, { spa: 1, spd: 1 });
       return;
+    // ── The competitive pools' status moves (field.js has the side conditions) ──
+    case 'encore': {
+      const id = game.lastUsed[foe?.side];
+      if (!onField(foe) || !id || id === 'encore' || foe.encore || !foe.species.moves.includes(id)) return fail(game, user);
+      foe.encore = { id, t: 5 };
+      game.floatText(foe, 'ENCORE!', '#ffd84a');
+      return say(`${foe.species.name} received an encore! It must keep using ${MOVE_TABLE[id]?.name ?? 'that move'}.`);
+    }
+    case 'trick':
+    case 'switcheroo': {
+      if (!onField(foe) || (!user.item && !foe.item) || foe.remote || (foe.item && abilityOf(foe).stickyHold)) return fail(game, user);
+      [user.item, foe.item] = [foe.item, user.item];
+      game.spawn(new ItemFly(user.x, user.y, user.bodyZ, foe.x > user.x ? 1 : -1));
+      game.spawn(new ItemFly(foe.x, foe.y, foe.bodyZ, user.x > foe.x ? 1 : -1));
+      game.floatText(user, 'ITEMS SWAPPED!', '#ffd84a');
+      if (!user.item) abilityOf(user).onItemLost?.(game, user);
+      if (!foe.item) abilityOf(foe).onItemLost?.(game, foe);
+      say(`${user.species.name} switched items with ${foe.species.name}!`);
+      if (user.item) say(`${user.species.name} obtained ${ITEMS[user.item]?.name ?? 'an item'}.`);
+      return;
+    }
+    case 'roar':
+    case 'whirlwind':
+      if (!foe || !game.dragOut(foe, user)) return fail(game, user);
+      return;
+    case 'curse':
+      // Ghost types cut their own HP to curse the foe (¼ of its HP every 3s until it leaves); others power up.
+      if (typesOf(user).includes('ghost')) {
+        if (!onField(foe) || foe.cursed) return fail(game, user);
+        user.hp = Math.max(0, user.hp - Math.floor(user.maxHp / 2));
+        foe.cursed = { t: 0 };
+        game.floatText(foe, 'CURSED!', '#b08aff');
+        say(`${user.species.name} cut its own HP and laid a curse on ${foe.species.name}!`);
+        if (!user.alive) game.onFaint(user, foe);
+        return;
+      }
+      return game.stage(user, { atk: 1, def: 1, spe: -1 });
+    case 'painSplit': {
+      if (!onField(foe) || (foe.substitute && foe.shield > 0)) return fail(game, user);
+      const avg = Math.floor((user.hp + foe.hp) / 2);
+      for (const m of [user, foe]) {
+        m.hp = Math.min(m.maxHp, avg);
+        m.trailDelay = 0.45;
+      }
+      game.spawn(new BeamLine(user.x, user.y - user.bodyZ, foe.x, foe.y - foe.bodyZ, 0.35, '#c8b0ff', 3));
+      return say('The battlers shared their pain!');
+    }
+    case 'yawn':
+      if (!onField(foe) || foe.yawn > 0 || hasStatus(foe) || (foe.substitute && foe.shield > 0)) return fail(game, user);
+      foe.yawn = 2.5;
+      game.floatText(foe, 'DROWSY…', '#c8b0ff');
+      return say(`${user.species.name} made ${foe.species.name} drowsy!`);
+    case 'teleport':
+      if (!pivotReady(game, user, move)) return fail(game, user);
+      return;
+    case 'healingWish':
+      // The user faints; the next Pokémon to come in on its side is restored in full (field.js).
+      if (game.teamOf(user).nextAlive() < 0 || user.remote) return fail(game, user);
+      game.pending[user.side].healingWish = true;
+      say(`${user.species.name} made a healing wish!`);
+      user.hp = 0;
+      return game.onFaint(user, null);
+    case 'destinyBond':
+      user.destinyBond = 2.5;
+      game.floatText(user, 'DESTINY BOND!', '#b08aff');
+      return say(`${user.species.name} is hoping to take its attacker down with it!`);
+    case 'partingShot':
+      if (onField(foe) && !(foe.substitute && foe.shield > 0)) game.stage(foe, { atk: -1, spa: -1 }, user);
+      pivotReady(game, user, move);
+      return;
+    case 'reflect':
+    case 'lightScreen':
+    case 'tailwind':
+      if (!setSide(game, user.side, move.id, user)) return fail(game, user);
+      return;
+    case 'auroraVeil':
+      if ((game.weather !== 'snow' && game.weather !== 'hail') || !setSide(game, user.side, 'auroraVeil', user)) return fail(game, user);
+      return;
+    case 'trickRoom':
+      return toggleTrickRoom(game, user);
+    case 'counter':
+    case 'mirrorCoat':
+    case 'metalBurst': {
+      const look = { counter: ['physical', 2, '#ff9a5a'], mirrorCoat: ['special', 2, '#ff8ad0'], metalBurst: [null, 1.5, '#dfe7f2'] }[move.id];
+      user.counter = { t: 1.2, cat: look[0], mult: look[1], color: look[2], move };
+      return game.floatText(user, 'READY TO COUNTER!', look[2]);
+    }
+    case 'shedTail':
+      if (user.hp <= user.maxHp / 2 || game.teamOf(user).nextAlive() < 0 || user.remote) return fail(game, user);
+      user.hp -= Math.ceil(user.maxHp / 2);
+      game.pending[user.side].shedTail = Math.floor(user.maxHp / 4);
+      say(`${user.species.name} shed its tail to create a decoy!`);
+      pivotReady(game, user, move);
+      return;
+    case 'chillyReception':
+      say(`${user.species.name} is preparing to tell a chillingly bad joke!`);
+      game.setWeather('snow', ITEMS[user.item]?.rock === 'snow' ? 40 : 25);
+      pivotReady(game, user, move);
+      return;
+    case 'focusEnergy':
+      if (user.focusEnergy) return fail(game, user);
+      user.focusEnergy = true;
+      game.floatText(user, 'GETTING PUMPED!', '#ffb070');
+      return say(`${user.species.name} is getting pumped!`);
+    case 'conversion': {
+      const t = MOVE_TABLE[user.species.moves[0]]?.type;
+      if (!t || (typesOf(user).length === 1 && typesOf(user)[0] === t)) return fail(game, user);
+      user.typeOverride = [t];
+      game.floatText(user, `${t.toUpperCase()} TYPE!`, '#9fe8ff');
+      return say(`${user.species.name} transformed into the ${t[0].toUpperCase()}${t.slice(1)} type!`);
+    }
+    case 'soak':
+      if (!onField(foe) || (typesOf(foe).length === 1 && typesOf(foe)[0] === 'water') || foe.tera) return fail(game, user);
+      foe.typeOverride = ['water'];
+      game.floatText(foe, 'SOAKED!', '#7ac8ff');
+      return say(`${foe.species.name} transformed into the Water type!`);
+    case 'block':
+      if (!onField(foe) || foe.blocked > 0) return fail(game, user);
+      foe.blocked = 8;
+      game.floatText(foe, "CAN'T ESCAPE!", '#ffb070');
+      return say(`${foe.species.name} can no longer escape!`);
+    case 'clangorousSoul':
+      if (user.hp <= user.maxHp / 3) return fail(game, user);
+      user.hp -= Math.floor(user.maxHp / 3);
+      return game.stage(user, { atk: 1, def: 1, spa: 1, spd: 1, spe: 1 });
+    case 'filletAway':
+      if (user.hp <= user.maxHp / 2) return fail(game, user);
+      user.hp -= Math.floor(user.maxHp / 2);
+      return game.stage(user, { atk: 2, spa: 2, spe: 2 });
+    case 'courtChange':
+      swapCourts(game);
+      return say(`${user.species.name} swapped the battle effects affecting each side of the field!`);
+    case 'revivalBlessing': {
+      const team = game.teamOf(user), i = team.members.findIndex(m => m !== user && (m.fainted || !m.alive));
+      if (i < 0 || user.remote) return fail(game, user);
+      const m = team.members[i];
+      Object.assign(m, { fainted: false, hp: Math.floor(m.maxHp / 2), status: {} });
+      game.netSend(user, { t: 'revive', i });
+      game.ui.refreshTeam?.(game);
+      return say(`${m.species.name} was revived and is ready to fight again!`);
+    }
+    case 'recycle':
+      if (user.item || !user.usedItem) return fail(game, user);
+      user.item = user.usedItem;
+      user.usedItem = null;
+      return game.itemPop(user, `It found its ${ITEMS[user.item]?.name ?? 'item'}!`);
+    case 'magnetRise':
+      if (user.magnetRise > 0) return fail(game, user);
+      user.magnetRise = 15;
+      game.floatText(user, 'MAGNET RISE!', '#ffe066');
+      return say(`${user.species.name} levitated with electromagnetism!`);
+    case 'splash':
+      game.floatText(user, 'BUT NOTHING HAPPENED!', '#c9d2de');
+      return say('But nothing happened!');
+    case 'celebrate':
+      game.floatText(user, 'CONGRATULATIONS!', '#ffd84a');
+      return say(`Congratulations, ${user.trainer?.name ?? 'Trainer'}!`);
+    case 'happyHour':
+      game.floatText(user, 'HAPPY HOUR!', '#ffd84a');
+      return say('Everyone is caught up in the happy atmosphere!');
+    case 'holdHands':
+      game.floatText(user, '♥', '#ff8ad0');
+      return say(`${user.species.name} and its trainer held hands. They're happy!`);
+    // Future Sight / Doom Desire: the attack lands on whichever foe is out 2.5s later.
+    case 'futureSightAtk':
+    case 'doomDesire': {
+      const side = foe?.side, p = game.pending[side];
+      if (!side || p.future) return fail(game, user);
+      p.future = true;
+      say(move.id === 'futureSightAtk' ? `${user.species.name} foresaw an attack!` : `${user.species.name} chose Doom Desire as its destiny!`);
+      const rgb = move.id === 'futureSightAtk' ? [255, 120, 210] : [200, 220, 255], color = `rgb(${rgb.join(',')})`;
+      game.spawn(new Pillar(user.x, user.y, 0.5, rgb, 160));
+      game.later(2.5, () => {
+        p.future = false;
+        const t = side === 'player' ? game.player : game.opponent;
+        if (!onField(t) || game.state !== 'fighting') return;
+        game.spawn(new Pillar(t.x, t.y, 0.45, rgb, 240));
+        game.spawn(new Ring(t.x, t.y, { r0: 6, r1: 56, life: 0.4, color, width: 4 }));
+        game.spawn(new Glow(t.x, t.y, t.bodyZ, 34, rgb, 0.4));
+        sfx.pulse?.();
+        game.ui.log(`${t.species.name} took the ${move.name} attack!`, t.side);
+        applyHit(game, user, t, move, { knockback: 140, stagger: 0.35, dirX: 0, dirY: side === 'player' ? 1 : -1 });
+      });
+      return;
+    }
     default:
       return game.floatText(user, `${move.name.toUpperCase()}!`, '#ffffff');
   }
 }
 
+const fail = (game, user) => {
+  game.floatText(user, 'IT FAILED!', '#c9d2de');
+  game.ui.log('But it failed!', user.side);
+};
+
 // Ongoing effects ticked by the game: Wish landing, Salt Cure, binding moves, Taunt wearing off.
 export function tickVolatiles(game, mon, dt) {
   if (mon.taunted > 0) mon.taunted = Math.max(0, mon.taunted - dt);
+  for (const k of ['destinyBond', 'blocked', 'magnetRise', 'glaiveT']) if (mon[k] > 0) mon[k] = Math.max(0, mon[k] - dt);
+  if (mon.counter && (mon.counter.t -= dt) <= 0) mon.counter = null;
+  if (mon.encore && (mon.encore.t -= dt) <= 0) {
+    mon.encore = null;
+    game.ui.log(`${mon.species.name}'s encore ended!`, mon.side);
+  }
+  // Yawn: it falls asleep a moment later unless it already has a status.
+  if (mon.yawn > 0 && (mon.yawn -= dt) <= 0) {
+    mon.yawn = 0;
+    if (!hasStatus(mon)) game.applyStatus(mon, 'sleep', { dur: 3 });
+  }
+  // Curse: ¼ of its max HP every 3s until it leaves the field.
+  if (mon.cursed && (mon.cursed.t += dt) >= 3) {
+    mon.cursed.t = 0;
+    game.dotDamage(mon, 1 / 4, '#8a6ab8');
+    game.ui.log(`${mon.species.name} is afflicted by the curse!`, mon.side);
+  }
+  if (mon.cursed && !game.headless && Math.random() < dt * 6) game.particles.spawn({ x: mon.x + rand(-10, 10), y: mon.y, z: mon.headZ + rand(0, 8), vz: rand(10, 25), vx: rand(-8, 8), life: 0.7, size: rand(2, 3), sizeEnd: 1, colors: ['#d0b8ff', '#6a4a9a'] });
   if (mon.wish && (mon.wish.t -= dt) <= 0) {
     const w = mon.wish;
     mon.wish = null;
