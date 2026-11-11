@@ -434,7 +434,7 @@ Object.assign(MOVE_ANIMS, {
   moonblastShot: volley('fairy', 1, { style: 'orb', rgb: [255, 180, 220], scale: 1.6, charge: 0.35, glow: true, dome: 36 }),
   airSlash: volley('flying', 2, { single: true, style: 'crystal', rgb: [235, 248, 255], gap: 0.09, dur: 0.2, scale: 1.5, sound: 'airSlash' }),
   poltergeist: volley('ghost', 1, { style: 'boulder', rgb: [150, 110, 200], scale: 1.6, charge: 0.4, glow: true, shake: [7, 0.3], kb: 210 }),
-  leafStorm: volley('grass', 6, { single: true, style: 'seed', rgb: [150, 230, 100], gap: 0.06, dur: 0.3, charge: 0.3, orbit: true, r: 44 }),
+  // Leaf Storm keeps its own look (moves.js): six storm leaves fan out and home in on the foe.
   gigaDrain: { seq: { aim: 'target', end: 1, steps: [
     { at: 0, anim: 'Charge', orbit: { colors: EL.grass.colors, until: 0.25, r: 22 } },
     { at: 0.25, anim: 'Shoot', missile: { style: 'seed', dur: 0.25, rgb: [140, 220, 90], scale: 1.2 } },
@@ -587,7 +587,6 @@ addImpact('alluringVoice', [{ at: 0, fx: 'glitter', n: 14, rings: { colors: [W, 
 addImpact('drainingKiss', [{ at: 0.02, siphon: { n: 14, colors: [W, '#ffd0ec', '#f080b0'] } }, { at: 0.12, siphon: { n: 10, colors: [W, '#ffd0ec', '#f080b0'] } }]);
 addImpact('leechLife', [{ at: 0.02, siphon: { n: 14, colors: [W, '#f0ffc0', '#a8d040'] } }, { at: 0.12, siphon: { n: 8, colors: [W, '#f0ffc0', '#a8d040'] } }]);
 addImpact('hornLeech', [{ at: 0.02, siphon: { n: 14 } }]);
-addImpact('leafStorm', [{ at: 0, fx: 'leaves', n: 18 }]);
 addImpact('flashCannon', [{ at: 0, fx: 'metal', rings: { colors: [W, '#dfe7f2'], r: 36 } }]);
 addImpact('hyperVoice', [{ at: 0.08, rings: { colors: [W, '#f0f0d8'], r: 54 } }, { at: 0.16, rings: { colors: ['#f0f0d8'], r: 70 } }]);
 addImpact('rockSlide', [{ at: 0, fx: 'debris', n: 14 }, { at: 0.04, fx: 'dust', n: 8 }]);
