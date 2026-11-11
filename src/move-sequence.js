@@ -28,6 +28,13 @@
 //   orbit     energy circles the user until `until` ({ colors, r })
 //   fx        an element burst: 'splash', 'sparks', 'leaves', 'ice', 'metal', 'debris', 'wind', 'dust', 'flames'
 //   where: 'user' puts rings, burst, glow, fx and pillar on the user instead of the spot
+// Pixel-art and anime steps:
+//   sprite    a hand-drawn effect (public/fx) at the spot, the user or its mouth ({ key, tint, n, spread, speed, at })
+//   focus     concentration lines on the user or the spot ({ life, color })
+//   smear     solid crescent smears at the spot ({ n, radius, width, colors })
+//   element   a realistic burst of a type's element ({ type, s })
+//   bolt      a pixel lightning bolt from the sky into the spot ({ color, life })
+//   pring     a pixel ring at the spot ({ r, color, width })
 //   hit       the damage, at that exact moment: the foe takes the move if it is within `r` of the spot
 //             (dodging at the right time avoids it); knockback and stagger as given
 // The move's mechanics (accuracy, secondary effects, stat changes…) all resolve inside `hit` (combat.js),
@@ -37,6 +44,9 @@ import { rand, Glow, Ring, Lightning, Pillar, Falling, Spike, Missile, TidalWave
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
 import { sfx } from './audio.js';
 import { WEATHER_TINT } from './data/move-anims.js';
+import { FxSprite } from './fx-sprites.js';
+import { FocusLines, Smear, PixelBolt, PixelRing } from './fx-anime.js';
+import { elementBurst } from './fx-real.js';
 
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
@@ -130,13 +140,38 @@ export function scheduleSteps(action, steps, spot) {
       if (step.flash) g.flash(step.flash);
       if (step.hitstop) g.hitstop(step.hitstop);
       if (step.sound) sfx[step.sound]?.();
+      const tz = step.where === 'user' ? user.bodyZ : t?.alive ? t.bodyZ : 14;
+      if (step.sprite) {
+        const s = step.sprite, m = s.at === 'mouth' ? action.mouth() : null;
+        const base = m ? { x: m.x, y: m.y, z: m.z } : s.at === 'user' ? { x: user.x, y: user.y, z: user.bodyZ } : { x: p.x, y: p.y, z: s.z ?? tz };
+        for (let i = 0; i < (s.n ?? 1); i++) {
+          const ox = i ? rand(-(s.spread ?? 20), s.spread ?? 20) : 0, oy = i ? rand(-(s.spread ?? 20), s.spread ?? 20) * 0.6 : 0;
+          g.spawn(new FxSprite(s.key, base.x + ox + (s.dx ?? 0), base.y + oy + (s.dy ?? 0), base.z, { tint: s.tint, scale: s.scale ?? 1, speed: s.speed ?? 1, flip: s.flip ?? Math.random() < 0.5, anchor: s.anchor }));
+        }
+      }
+      if (step.focus) {
+        const at = step.where === 'user' || step.focus.at === 'user';
+        g.spawn(new FocusLines(p.x, p.y - tz, step.focus.life ?? 0.35, step.focus.color ?? '#ffffff', { follow: at ? user : null, inner: step.focus.inner ?? 40, outer: step.focus.outer ?? 240, n: step.focus.n ?? 22 }));
+      }
+      if (step.smear) {
+        const s = step.smear;
+        for (let i = 0; i < (s.n ?? 1); i++) g.spawn(new Smear(p.x, p.y, tz, (s.ang ?? action.aim) + i * (s.step ?? 1.6) + (s.turn ?? 0), { radius: s.radius ?? 24, spread: s.spread ?? 2.4, width: s.width ?? 10, colors: s.colors ?? ['#ffffff', '#c8c8c8'], mirror: i % 2 === 1, life: s.life ?? 0.22 }));
+      }
+      if (step.element) elementBurst(g, step.element.type ?? move.type, p.x, p.y, tz, step.element.s ?? 1);
+      if (step.bolt) g.spawn(new PixelBolt(p.x + rand(-4, 4), p.y - 300, p.x, p.y - 4, step.bolt.life ?? 0.2, step.bolt.color ?? '#fff27a'));
+      if (step.pring) g.spawn(new PixelRing(p.x, p.y, { z: step.pring.z ?? 0, r0: 4, r1: step.pring.r ?? 40, life: step.pring.life ?? 0.35, color: step.pring.color ?? '#ffffff', width: step.pring.width ?? 2, layer: step.pring.layer ?? 'ground' }));
       if (step.hit) {
         for (const m of marks) m.dead = true;
         const h = step.hit, near = t.alive && !t.hidden && Math.hypot(t.x - spot.x, t.y - spot.y) <= (h.r ?? 30) + t.radius;
         if (near) {
           const a = Math.atan2(t.y - spot.y, t.x - spot.x) || action.aim;
-          applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a) });
+          const landed = applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a) });
           sparkBurst(g, t.x, t.y, t.bodyZ, true);
+          // The move's own landing flourish (data/move-anims.js `impact`), once, as for strikes.
+          if (landed && move.impact && !action.impactShown) {
+            action.impactShown = true;
+            scheduleSteps(action, move.impact.map(s => ({ ...s, at: action.t + (s.at ?? 0) })), { x: t.x, y: t.y });
+          }
         }
       }
     });

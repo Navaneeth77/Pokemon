@@ -10,8 +10,10 @@ import { TYPE_COLORS } from './data/types.js';
 import { MOVEDEX } from './data/movedex.js';
 import { statusMove } from './effects-resolver.js';
 import { MOVE_ANIMS } from './data/move-anims.js';
+import { PRO_ANIMS, templateAnims } from './data/move-anims-pro.js';
 import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
 import { Smear, SpeedLines } from './fx-anime.js';
+import { FxSprite } from './fx-sprites.js';
 import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
 import { LEGEND_ULTS_2 } from './ult-legends2.js';
@@ -893,6 +895,9 @@ class Earthquake extends MoveAction {
     g.spawn(new Ring(u.x, u.y, { r0: 6, r1: R * 0.7, life: 0.35, color: '#ffffff', width: 3 }));
     debris(g, u.x, u.y, 28, 150);
     dustCloud(g, u.x, u.y, 18, 6);
+    // Pixel-art stomp: a dust shockwave rolling out and a dome of dust thrown up where it lands.
+    g.spawn(new FxSprite('weaponhit', u.x, u.y, 4, { tint: '#c8a060' }));
+    g.spawn(new FxSprite('firebomb', u.x, u.y, 0, { tint: '#b89868', anchor: 'bottom' }));
     g.shake(9, 0.7);
     g.hitstop(0.05);
     sfx.quake();
@@ -3023,6 +3028,16 @@ for (const [id, r] of Object.entries(MOVE_ANIMS)) {
     const colors = r.stream.colors;
     Object.assign(m, { Action: Stream, stream: { ...r.stream, colors: () => colors, sound: d => sfx.hydro(d) }, power: Math.round((m.dex?.power ?? m.power) / 6), range: r.stream.reach, minRange: 30, ai: 'ranged' });
   }
+}
+
+// The pixel-art / anime layer (data/move-anims-pro.js): hand-tuned for the most-used moves, a template for the rest,
+// added on top of each move's own wind-up, landing flourish and status look.
+for (const [id, m] of Object.entries(MOVES)) {
+  if (m.ultimate || !m.Action) continue;
+  const r = PRO_ANIMS[id] ?? templateAnims(m);
+  if (r.windup?.length) m.windup = [...(m.windup ?? []), ...r.windup];
+  if (r.impact?.length) m.impact = [...(m.impact ?? []), ...r.impact];
+  if (r.fx?.length && m.util) m.fx = [...(m.fx ?? []), ...r.fx];
 }
 for (const [id, m] of Object.entries(MOVES)) m.id = id;
 
