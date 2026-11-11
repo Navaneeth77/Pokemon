@@ -17,7 +17,7 @@ export const FX_META = {
   felspell: { fw: 100, fh: 100, fps: 90 }, midnight: { fw: 100, fh: 100, fps: 90 }, freezing: { fw: 100, fh: 100, fps: 90 },
   bubbles: { fw: 100, fh: 100, fps: 90 },
   spark: { fw: 32, fh: 32, fps: 20 }, lightning: { fw: 64, fh: 128, fps: 20, anchor: 'bottom' }, darkbolt: { fw: 88, fh: 88, fps: 20 },
-  firebomb: { fw: 64, fh: 64, fps: 22, anchor: 'bottom' }, plasmaburst: { fw: 38, fh: 38, fps: 22 },
+  firebomb: { fw: 64, fh: 64, fps: 22, anchor: 'bottom' }, gravityburst: { fw: 92, fh: 92, fps: 22 }, plasmaburst: { fw: 38, fh: 38, fps: 22 },
   plasmasparkle: { fw: 13, fh: 13, fps: 18 }, radialspark: { fw: 64, fh: 64, fps: 20 },
 };
 
@@ -78,9 +78,7 @@ export class FxSprite extends Effect {
   constructor(key, x, y, z = 0, { scale = 1, tint = null, speed = 1, flip = false, layer = 'air', anchor = null } = {}) {
     const s = SHEETS[key], fps = (s?.meta.fps ?? 30) * speed;
     super(layer, s ? s.frames.length / fps : 0.001);
-    const a = anchor ?? s?.meta.anchor ?? 'center';
-    // Ground-anchored effects (bolts striking, fire domes) stand on the floor, not at body height.
-    Object.assign(this, { key, x, y, z: a === 'bottom' ? 0 : z, scale, tint, fps, flip, anchor: a });
+    Object.assign(this, { key, x, y, z, scale, tint, fps, flip, anchor: anchor ?? s?.meta.anchor ?? 'center' });
   }
 
   draw(ctx) {

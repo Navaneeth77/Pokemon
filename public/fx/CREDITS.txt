@@ -5,7 +5,7 @@ Effect sprite sheets in this folder, all free for commercial use. Credit is not 
   https://opengameart.org/content/free-pixel-effects-pack
 - spark, lightning, darkbolt, firebomb: "Gothicvania Magic Pack 9" by Luis Zuno (ansimuz), CC0 / free for any use.
   https://opengameart.org/content/gothicvania-magic-pack-9
-- plasmaburst, plasmasparkle: "Plasma Electric Effect Animations" by Reactorcore, CC0.
+- gravityburst, plasmaburst, plasmasparkle: "Plasma Electric Effect Animations" by Reactorcore, CC0.
   https://opengameart.org/content/plasma-electric-effect-animations
 - radialspark: "Radial lightning effect" (pixelated version) by 13rice, CC0.
   https://opengameart.org/content/radial-lightning-effect
