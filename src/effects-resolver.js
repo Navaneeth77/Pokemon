@@ -16,10 +16,11 @@ import { applyHit } from './combat.js';
 import { setSide, toggleTrickRoom, breakScreens, swapCourts } from './field.js';
 import { Ring, Glow, Pillar, FloatText, BeamLine, ItemFly, rand } from './effects.js';
 import { sfx } from './audio.js';
+import { EXTRA_STATUS, extraPower, extraFixed, extraAfterUse, extraOnHit, tickExtra, setExtraTable } from './effects-extra.js';
 
 // The game's move table, set by moves.js once it is built (this module can't import it: moves.js imports this one).
 let MOVE_TABLE = {};
-export const setMoveTable = t => (MOVE_TABLE = t);
+export const setMoveTable = t => { MOVE_TABLE = t; setExtraTable(t); };
 const hasStatus = mon => Object.values(mon.status ?? {}).some(v => v > 0) || mon.frozen > 0;
 const onField = mon => mon?.alive && !mon.hidden;
 // A foe running away from the attacker (Pursuit): moving, and the move takes it further off.
@@ -63,7 +64,7 @@ export function movePower(game, user, target, move) {
     case 'pursuit': return fleeing(user, target) ? p * 2 : p;
     // Beat Up: every healthy teammate without a status joins in.
     case 'beatUp': return 12 * Math.max(1, game.teamOf(user).members.filter(m => m.alive && !m.fainted && !hasStatus(m)).length);
-    default: return p;
+    default: return extraPower(game, user, target, move) ?? p; // effects-extra.js: Echoed Voice, Rollout, Fling…
   }
 }
 
@@ -74,7 +75,7 @@ export function fixedDamage(game, user, target, move) {
     case 'superFang': return Math.max(1, Math.floor(target.hp / 2));
     case 'endeavor': return Math.max(0, target.hp - user.hp);
     case 'naturesMadness': case 'ruination': return Math.max(1, Math.floor(target.hp / 2));
-    default: return move.fixedDmg ?? null; // a Counter / Mirror Coat / Metal Burst blow
+    default: return extraFixed(game, user, target, move) ?? move.fixedDmg ?? null; // OHKO moves, Final Gambit; a Counter / Mirror Coat / Metal Burst blow
   }
 }
 
@@ -95,6 +96,7 @@ export function onHit(game, attacker, target, move, dmg, stack) {
   const d = move.dex;
   if (!d || stack.secondaryDone || !(dmg > 0)) return;
   stack.secondaryDone = true;
+  extraOnHit(game, attacker, target, move);
   const A = abilityOf(attacker), serene = A.serene ? 2 : 1;
   if (move.id === 'fakeOut' && target.alive) game.applyStatus(target, 'stun', { source: attacker, dur: 0.6 });
   // Dragon Tail and Circle Throw drag the foe out for a random teammate (not a substitute).
@@ -142,6 +144,7 @@ export function afterUse(game, user, move, stack = {}) {
   }
   if (move.id === 'explosion' || move.id === 'selfDestruct') game.dotDamage(user, 1, '#ff9a5a');
   if (move.id === 'glaiveRush' && user.alive) user.glaiveT = 3; // open to double damage for a moment
+  extraAfterUse(game, user, move);
 }
 
 // The user may switch out right away (U-turn's rule, for Parting Shot, Teleport, Shed Tail, Chilly Reception).
@@ -437,6 +440,7 @@ export function statusMove(game, user, move) {
       return;
     }
     default:
+      if (EXTRA_STATUS[move.id]) return EXTRA_STATUS[move.id](game, user, move); // effects-extra.js
       return game.floatText(user, `${move.name.toUpperCase()}!`, '#ffffff');
   }
 }
@@ -448,6 +452,7 @@ const fail = (game, user) => {
 
 // Ongoing effects ticked by the game: Wish landing, Salt Cure, binding moves, Taunt wearing off.
 export function tickVolatiles(game, mon, dt) {
+  tickExtra(game, mon, dt);
   if (mon.taunted > 0) mon.taunted = Math.max(0, mon.taunted - dt);
   for (const k of ['destinyBond', 'blocked', 'magnetRise', 'glaiveT']) if (mon[k] > 0) mon[k] = Math.max(0, mon[k] - dt);
   if (mon.counter && (mon.counter.t -= dt) <= 0) mon.counter = null;

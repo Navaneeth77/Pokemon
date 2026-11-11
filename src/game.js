@@ -22,6 +22,7 @@ import { addFlapAnim } from './flap.js';
 import { TYPE_COLORS } from './data/types.js';
 import { MOVES, chargedMove, adaptMove } from './moves.js';
 import { tickVolatiles, fakeOutFails } from './effects-resolver.js';
+import { moveBlocked, onFaintExtra, CALLERS } from './effects-extra.js';
 import { freshField, tickField, drawField, onEntry, dragOut } from './field.js';
 import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
@@ -43,7 +44,7 @@ const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afte
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 // Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
 // Shadow Tag-style abilities, and Block (the foe can't switch out while it lasts).
-const traps = (by, foe) => { if (foe.blocked > 0) return true; const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
+const traps = (by, foe) => { if (foe.blocked > 0 || foe.ingrained) return true; const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
 const ARENA_EVENTS = {
   mtSilver: { name: 'AVALANCHE!', hit: 'AVALANCHE!', n: 3, r: 30, color: '#e8f4ff', status: 'slow',
     fx: (g, z) => { iceShatter(g, z.x, z.y, 10); dustCloud(g, z.x, z.y, 12, 5); g.spawn(new Pillar(z.x, z.y, 0.5, [230, 244, 255], 140)); sfx.quake(); } },
@@ -106,7 +107,7 @@ export class Game {
     this.makeTeam = (ids, side, trainer, kits = {}) => new Team(side, trainer, ids.map(id => {
       const s = SPECIES[id], k = cleanKit(s, kits[id], () => true), shiny = k.shiny && sprites[`${s.sprite}~shiny`];
       const mon = new Pokemon(s, shiny || sprites[s.sprite], side);
-      Object.assign(mon, { item: k.item, teraType: k.tera, shiny: !!shiny, moveset: k.moves });
+      Object.assign(mon, { item: k.item, teraType: k.tera, shiny: !!shiny, moveset: k.moves, kitMoves: k.moves });
       return mon;
     }));
     this.selection = [...DEFAULT_TEAM];
@@ -519,6 +520,11 @@ export class Game {
     }
     // Sleep Talk works only while asleep: it uses one of the user's other moves at random.
     if (id === 'sleepTalk') return this.sleepTalk(user, force, copied);
+    // Snore, like Sleep Talk, only works while asleep.
+    if (id === 'snore' && !force) {
+      if (!(user.status.sleep > 0)) { this.floatText(user, 'IT FAILED!', '#c9d2de'); return false; }
+      return this.moveCD(user, id) > 0 ? false : this.useMove(user, id, 0, true);
+    }
     if (!force && fakeOutFails(this, user, base)) {
       this.floatText(user, 'IT FAILED!', '#c9d2de');
       this.startCooldown(user, id, base.cooldown);
@@ -532,6 +538,8 @@ export class Game {
       chain = !user.canAct() && !base.ultimate && this.canChain(user, base);
       if (!user.canAct() && !chain) return false;
       if (this.moveCD(user, id) > 0) return false;
+      // Disable, Torment, Imprison, Gravity, a move's own conditions, confusion and infatuation (effects-extra.js).
+      if (moveBlocked(this, user, id, base)) return false;
     }
     if (base.ultimate) {
       user.ult = 0;
@@ -542,7 +550,7 @@ export class Game {
       this.netSend(user, { t: 'move', id });
       return true;
     }
-    if (base.copy) return this.useCopy(user, copied, id);
+    if (base.copy || (copied && CALLERS.has(id))) return this.useCopy(user, copied, id); // a replayed Metronome names its pick
     if (chain) {
       user.cancelAction();
       user.busy = 0;
@@ -1255,6 +1263,7 @@ export class Game {
     if (!this.headless) playCry(mon.baseSpecies.dex, { rate: 0.8, gain: 0.45 });
     if (by && by !== mon && by.alive && !by.hidden) abilityOf(by).onKO?.(this, by, mon);
     // Destiny Bond: whatever knocks it out goes down with it.
+    onFaintExtra(this, mon, by, move); // Grudge
     if (mon.destinyBond > 0 && move && by && by !== mon && by.alive && !by.hidden && !by.remote && !by.boss) {
       this.ui.log(`${mon.species.name} took its attacker down with it!`, mon.side);
       this.later(0.35, () => {

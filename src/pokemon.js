@@ -48,6 +48,8 @@ export class Pokemon {
 
   // A fresh battle: full HP, base form.
   reset(x, y, dir) {
+    if (this.kitMoves !== undefined) this.moveset = this.kitMoves; // Sketch and Mimic only last the battle
+    Object.assign(this, { transformed: null, mimicSaved: null });
     this.species = this.baseSpecies;
     this.sprite.set = this.baseSet;
     this.portrait = this.baseSet.portrait;
@@ -61,6 +63,13 @@ export class Pokemon {
   // (Re)enters the field: clears transient combat state but keeps HP, form and Mega status.
   // Stays hidden until its trainer's Poké Ball opens.
   enter(x, y, dir) {
+    // Transform and Mimic last until it leaves the field.
+    if (this.transformed) {
+      Object.assign(this, { species: this.transformed.species, portrait: this.transformed.portrait, moveset: this.transformed.moveset });
+      this.sprite.set = this.transformed.set;
+      this.transformed = null;
+    }
+    if (this.mimicSaved) { this.moveset = this.mimicSaved.list; this.mimicSaved = null; }
     Object.assign(this, {
       x, y, z: 0, vx: 0, vy: 0, dir,
       shownHp: this.hp, trailHp: this.hp, trailDelay: 0,
@@ -74,6 +83,9 @@ export class Pokemon {
       // Volatile effects from the competitive move pools (effects-resolver.js): they end when it leaves the field.
       encore: null, yawn: 0, cursed: null, destinyBond: 0, blocked: 0, magnetRise: 0, glaiveT: 0, counter: null, focusEnergy: false,
       hurtAt: -9, focusing: false, lostFocus: false, vanished: false,
+      // effects-extra.js
+      confused: 0, infatuated: 0, disabled: null, tormented: 0, imprison: 0, perish: 0, ingrained: false, ingrainT: 0, laserFocus: 0, lockOn: 0,
+      endure: 0, charged: false, stockpile: 0, grudge: 0, identified: false, octolocked: null, wonderRoomT: 0, chainUse: null,
     });
     this.input.x = this.input.y = 0;
     this.sprite.play(this.idleAnim(), { force: true });

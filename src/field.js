@@ -17,13 +17,16 @@ export const SIDE_LOOK = {
   lightScreen: { name: 'Light Screen', color: '#ffe680', rgb: [255, 230, 128] },
   auroraVeil: { name: 'Aurora Veil', color: '#9ff0e0', rgb: [159, 240, 224] },
   tailwind: { name: 'Tailwind', color: '#c8f4ff', rgb: [200, 244, 255] },
+  safeguard: { name: 'Safeguard', color: '#9fe8ff', rgb: [159, 232, 255], msg: w => `${w[0].toUpperCase()}${w.slice(1)} team became cloaked in a mystical veil!` },
+  mist: { name: 'Mist', color: '#d8f0ff', rgb: [216, 240, 255], msg: w => `${w[0].toUpperCase()}${w.slice(1)} team became shrouded in mist!` },
+  luckyChant: { name: 'Lucky Chant', color: '#ffe680', rgb: [255, 230, 128], msg: w => `The Lucky Chant shielded ${w} team from critical hits!` },
 };
 const SCREENS = ['reflect', 'lightScreen', 'auroraVeil'];
 const BANNER_Y = { player: 470, opponent: 250 };
 const whose = side => (side === 'player' ? 'your' : "the foe's");
 
 export function freshField() {
-  return { sides: { player: {}, opponent: {} }, pending: { player: {}, opponent: {} }, trickRoom: 0 };
+  return { sides: { player: {}, opponent: {} }, pending: { player: {}, opponent: {} }, trickRoom: 0, gravity: 0 };
 }
 
 // Puts up a side condition; false if it is already up.
@@ -34,7 +37,7 @@ export function setSide(g, side, kind, by) {
   s[kind] = kind === 'tailwind' ? 12 : clay ? 24 : 15;
   const L = SIDE_LOOK[kind];
   g.hud.showBanner(L.name.toUpperCase(), { color: L.color, y: BANNER_Y[side], life: 1, size: 12 });
-  g.ui.log(kind === 'tailwind' ? `The Tailwind blew from behind ${whose(side)} team!`
+  g.ui.log(L.msg ? L.msg(whose(side)) : kind === 'tailwind' ? `The Tailwind blew from behind ${whose(side)} team!`
     : `${L.name} made ${whose(side)} team ${kind === 'reflect' ? 'stronger against physical moves' : kind === 'lightScreen' ? 'stronger against special moves' : 'stronger against attacks'}!`, by?.side);
   return true;
 }
@@ -66,6 +69,10 @@ export function tickField(g, dt) {
       const dir = side === 'player' ? -1 : 1;
       g.particles.spawn({ x: mon.x + rand(-40, 40), y: mon.y - dir * 40, z: rand(4, 30), vx: rand(-10, 10), vy: dir * rand(160, 220), life: 0.45, size: rand(1.5, 2.5), sizeEnd: 1, colors: ['#ffffff', '#c8f4ff'] });
     }
+  }
+  if (g.gravity > 0 && (g.gravity -= dt) <= 0) {
+    g.gravity = 0;
+    g.ui.log('Gravity returned to normal!');
   }
   if (g.trickRoom > 0 && (g.trickRoom -= dt) <= 0) {
     g.trickRoom = 0;
@@ -132,6 +139,14 @@ export function onEntry(g, mon) {
     g.spawn(new Glow(mon.x, mon.y, mon.bodyZ, 40, [255, 220, 250], 0.7));
     for (let i = 0; i < 16; i++) g.particles.spawn({ x: mon.x + rand(-20, 20), y: mon.y, z: rand(30, 70), vz: rand(-40, -10), vx: rand(-12, 12), life: 1, size: rand(2, 3.5), sizeEnd: 1, colors: ['#ffffff', '#ffd8f4', '#ffb0e0'] });
     g.ui.log(`The healing wish came true for ${mon.species.name}!`, mon.side);
+  }
+  // Baton Pass: the next Pokémon in takes over the stat changes (and a substitute).
+  if (p.baton && mon.alive) {
+    mon.stages = { ...p.baton.stages };
+    if (p.baton.shield > 0) Object.assign(mon, { shield: p.baton.shield, substitute: true });
+    p.baton = null;
+    g.spawn(new Ring(mon.x, mon.y, { z: mon.bodyZ, r0: 4, r1: mon.radius + 14, life: 0.4, color: '#9fe8ff', width: 3, layer: 'air' }));
+    g.ui.log(`${mon.species.name} took over the passed baton!`, mon.side);
   }
   if (p.shedTail > 0 && mon.alive) {
     mon.shield = p.shedTail;

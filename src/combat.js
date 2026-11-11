@@ -67,9 +67,11 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Accuracy (moves below 100): rolled once per move use. No Guard always hits; Compound Eyes +30%.
   // Accuracy and evasion stages count against every move, even 100% ones; sure-hit moves (Swift, Thunder in
   // rain…) skip the roll. A physical miss (the projectile was dodged, the foe was out of reach) never gets here.
+  // Lock-On / Mind Reader make its next move a sure hit; Gravity raises every accuracy by 5/3.
+  if (attacker.lockOn > 0 && !stack.accRolled) { attacker.lockOn = 0; stack.accRolled = true; }
   if (move.acc != null && !move.sure && (move.acc < 100 || accuracyMult(attacker, target) !== 1) && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
     stack.accRolled = true;
-    stack.missed = Math.random() * 100 >= move.acc * (A.compoundEyes ? 1.3 : 1) * (A.keenEye ? Math.max(1, accuracyMult(attacker, target)) : accuracyMult(attacker, target));
+    stack.missed = Math.random() * 100 >= move.acc * (game.gravity > 0 ? 5 / 3 : 1) * (A.compoundEyes ? 1.3 : 1) * (A.keenEye ? Math.max(1, accuracyMult(attacker, target)) : accuracyMult(attacker, target));
   }
   if (stack.missed) {
     if (!stack.missShown) {
@@ -91,6 +93,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
       if (isContact(move) && attacker.alive && attacker !== target) {
         if (guard.spiky) game.dotDamage(attacker, 1 / 8, '#7ac850');
         if (guard.baneful) applyStatus(game, attacker, 'poison', { source: target });
+        if (guard.drop) game.stage(attacker, guard.drop, target); // Obstruct, Silk Trap
       }
       game.spawn(new FloatText(target.x, head - 10, 'BLOCKED!', guard.color));
       game.spawn(new Ring(target.x, target.y, { z: target.bodyZ, r0: 6, r1: target.radius + 18, life: 0.25, color: guard.color, width: 3, layer: 'air' }));
@@ -105,7 +108,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const defTypes = typesOf(target);
   const winds = game.deltaStream && defTypes.includes('flying');
   // Scrappy: Normal and Fighting moves hit Ghost types normally.
-  const hitTypes = A.scrappy && (type === 'normal' || type === 'fighting') ? defTypes.filter(t => t !== 'ghost') : defTypes;
+  // Odor Sleuth / Foresight do the same for one foe; under Gravity, Ground moves hit Flying types normally.
+  const hitTypes = ((A.scrappy || target.identified) && (type === 'normal' || type === 'fighting') ? defTypes.filter(t => t !== 'ghost') : defTypes)
+    .filter(t => !(game.gravity > 0 && type === 'ground' && t === 'flying'));
   const raw = typeMultiplier(type, hitTypes, winds);
   const calmed = winds && raw < typeMultiplier(type, defTypes);
   let eff = typeTweak(move, hitTypes, soften(raw));
@@ -132,7 +137,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // matches an original type stacks a further 25%.
   const own = attacker.species.types.includes(type);
   const stab = typesOf(attacker).includes(type) || (attacker.tera && own) ? (A.stab ?? 1.2) * (attacker.tera === type && own ? 1.25 : 1) : 1;
-  const crit = !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0) + (attacker.focusEnergy ? 0.24 : 0);
+  // Laser Focus: its next hit is a critical hit; Lucky Chant keeps critical hits off its side.
+  const crit = !(game.sides?.[target.side]?.luckyChant > 0) && (attacker.laserFocus > 0 || !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0) + (attacker.focusEnergy ? 0.24 : 0));
+  if (attacker.laserFocus > 0) attacker.laserFocus = 0;
   // Sheer Force: moves with an added effect hit harder and lose the effect.
   const sheer = !!(A.sheerForce && (move.status || move.debuff || move.statusPool || move.selfBuff || o.burnChance || o.freezeChance || o.flinchChance));
   const power = o.power ?? movePower(game, attacker, target, move);
@@ -145,7 +152,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   let aStage = D.unaware ? 0 : stageOf(atkSrc, aStat), dStage = A.unaware ? 0 : stageOf(target, dStat);
   if (crit) { aStage = Math.max(0, aStage); dStage = Math.min(0, dStage); }
   const stats = ((attackStatOf(move, atkSrc) ?? (special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1))) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * stageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
-    / ((special ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')) * stageMult(dStage));
+    / (((special !== (target.wonderRoomT > 0)) ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')) * stageMult(dStage)); // Wonder Room swaps them
   const auraMult = [attacker, target].reduce((m, mon) => {
     const au = abilityOf(mon).aura;
     return m * (au && au.type === type && !mon.hidden && mon.alive ? au.mult : 1);
@@ -223,6 +230,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   if (guard) dmg *= guard.mult;
   // Reflect, Light Screen and Aurora Veil on the target's side (field.js); Glaive Rush leaves its user open.
   dmg *= screenMult(game, attacker, target, cat, crit);
+  if (attacker.charged && type === 'electric') { dmg *= 2; attacker.charged = false; } // Charge
   if (target.glaiveT > 0) dmg *= 2;
   // Fixed-damage moves (Seismic Toss, Super Fang, Endeavor) ignore the formula.
   const fixed = fixedDamage(game, attacker, target, move);
@@ -276,6 +284,11 @@ export function applyHit(game, attacker, target, move, o = {}) {
     target.hurtAt = game.time; // Payback
     if (target.focusing) target.lostFocus = true; // Focus Punch
     counterHit(game, attacker, target, move, cat, dmg);
+  }
+  if (target.endure > 0 && dmg >= target.hp && target.hp > 1) {
+    dmg = Math.ceil(target.hp) - 1;
+    game.spawn(new FloatText(target.x, head - 10, 'ENDURED!', '#ffd84a'));
+    game.ui.log(`${target.species.name} endured the hit!`, target.side);
   }
   if (dmg > 0) target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
 

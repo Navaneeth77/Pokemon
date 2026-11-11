@@ -179,7 +179,7 @@ export const ITEM_LIST = Object.keys(ITEMS);
 // bosses never hold one).
 export function itemOf(mon) {
   const id = mon?.item;
-  return id && !mon.boss && !(mon.itemOff > 0) && !abilityOf(mon).noItem ? ITEMS[id] ?? null : null;
+  return id && !mon.boss && !(mon.itemOff > 0) && !(mon.magicRoomT > 0) && !abilityOf(mon).noItem ? ITEMS[id] ?? null : null; // Magic Room switches items off
 }
 
 export const TERA_TYPES = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'];

@@ -37,6 +37,11 @@ export function applyStatus(game, mon, name, { dur, source, toxic } = {}) {
     else text(game, mon, 'IMMUNE', '#c9d2de', 6);
     return false;
   }
+  // Safeguard keeps the foe's statuses off its side.
+  if (source && source.side !== mon.side && game.sides?.[mon.side]?.safeguard > 0) {
+    text(game, mon, 'SAFEGUARD!', '#9fe8ff', 6);
+    return false;
+  }
   // Misty Terrain keeps every status off grounded Pokémon; Electric Terrain keeps them awake.
   const onGround = !mon.species.fly && !mon.airborne && !ab.levitating && !itemOf(mon)?.levitating;
   if (onGround && (game.terrain?.kind === 'misty' || (game.terrain?.kind === 'electric' && name === 'sleep'))) {
@@ -189,6 +194,7 @@ export function changeStage(game, mon, changes, source = null) {
     if (ab.contrary) n = -n;
     if (ab.simple) n *= 2;
     if (n < 0 && byFoe) {
+      if (game.sides?.[mon.side]?.mist > 0) { text(game, mon, 'PROTECTED BY MIST', '#d8f0ff', 6); continue; }
       if (item?.noDebuff) { game.itemPop(mon, 'The Clear Amulet kept its stats up!'); continue; }
       if (ab.noDebuff || ab.keepStat === (stat === 'spa' ? 'atk' : stat)) { game.abilityPop(mon, `Its ${STAT_NAME[stat]} can't be lowered!`); continue; }
       if (ab.mirror && source.alive && !source.hidden) {
