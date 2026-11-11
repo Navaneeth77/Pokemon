@@ -3,6 +3,7 @@
 import '../server/shim.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { typeMultiplier } from '../src/data/types.js';
 import { Game } from '../src/game.js';
 import { loadSpriteSets } from '../server/sprites.js';
 import { MOVES, adaptMove } from '../src/moves.js';
@@ -159,14 +160,19 @@ test('Protect blocks incoming attacks while it is up', () => {
   assert.equal(applyHit(g, g.player, foe, MOVES.dragonClaw, { stack: {} }), true, 'and drops afterwards');
 });
 
-test('Type immunities: an immune Pokémon takes no damage', () => {
+test('Type immunities are a double resistance: the hit lands for a quarter of the damage', () => {
+  assert.equal(typeMultiplier('ground', ['flying']), 0.25);
+  assert.equal(typeMultiplier('normal', ['ghost']), 0.25);
+  assert.equal(typeMultiplier('dragon', ['fairy']), 0.25);
+  assert.equal(typeMultiplier('electric', ['ground', 'dragon']), 0.125, 'stacks with a resistance');
   const g = battle(['garchomp', 'zapdos', 'lapras'], ['corviknight', 'garchomp', 'dragonite']);
   const foe = g.opponent, hp = foe.hp;
-  assert.equal(applyHit(g, g.player, foe, MOVES.earthquake, { stack: {} }), false, 'Ground vs Flying');
-  assert.equal(foe.hp, hp);
+  assert.equal(applyHit(g, g.player, foe, MOVES.earthquake, { stack: {} }), true, 'Ground vs Flying lands');
+  assert.ok(foe.hp < hp, 'and deals some damage');
   const g2 = battle(['zapdos', 'snorlax', 'lapras'], ['garchomp', 'lapras', 'dragonite']), hp2 = g2.opponent.hp;
-  assert.equal(applyHit(g2, g2.player, g2.opponent, MOVES.thunderbolt, { stack: {} }), false, 'Electric vs Ground');
-  assert.equal(g2.opponent.hp, hp2);
+  assert.equal(applyHit(g2, g2.player, g2.opponent, MOVES.thunderbolt, { stack: {} }), true, 'Electric vs Ground lands');
+  assert.ok(hp2 - g2.opponent.hp < 0.2 * g2.opponent.maxHp, 'but only weakly');
+  assert.ok(MOVES.thunderWave.util.immune.includes('ground'), 'status moves keep their own immunities (Thunder Wave vs Ground)');
 });
 
 test('Intimidate lowers the foe\'s Attack a stage, and its attacks really hit softer', () => {

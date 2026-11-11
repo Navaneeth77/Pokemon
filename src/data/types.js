@@ -40,11 +40,15 @@ const CHART = {
   bug: { grass: 2, psychic: 2, dark: 2, fire: 0.5, fighting: 0.5, poison: 0.5, flying: 0.5, ghost: 0.5, steel: 0.5, fairy: 0.5 },
 };
 
+// A type the games make immune (Ground → Flying, Normal/Fighting → Ghost, Dragon → Fairy…) takes a double
+// resistance here instead of nothing, as in Pokémon GO: the move still lands, for a quarter of the damage.
+export const IMMUNE_MULT = 0.25;
+
 // negateFlyingWeakness: Delta Stream's strong winds — a move that would be super effective against
 // the Flying type treats that type as neutral instead.
 export function typeMultiplier(moveType, defTypes, negateFlyingWeakness = false) {
   return defTypes.reduce((m, t) => {
-    const k = CHART[moveType]?.[t] ?? 1;
+    const c = CHART[moveType]?.[t] ?? 1, k = c === 0 ? IMMUNE_MULT : c;
     return m * (negateFlyingWeakness && t === 'flying' && k > 1 ? 1 : k);
   }, 1);
 }

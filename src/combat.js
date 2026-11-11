@@ -9,7 +9,8 @@ import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { prepareReaction, resolveReaction } from './elemental.js';
 import { sfx } from './audio.js';
 
-// Type matchups use the games' multipliers: 2× and 4× super effective, ½× and ¼× resisted, 0 immune.
+// Type matchups use the games' multipliers: 2× and 4× super effective, ½× and ¼× resisted; a type the games make
+// immune takes ¼× (data/types.js IMMUNE_MULT) instead of nothing. Only Magnet Rise still makes a Pokémon immune.
 export const soften = m => m;
 
 // Combo roles from a move's own properties: quick openers chain into launchers, launchers into finishers.
@@ -113,7 +114,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   if (A.tinted && eff < 1 && eff > 0) eff *= 2;
   // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped at 2×.
   if (move.ultimate) eff = Math.min(eff, 2);
-  // Type immunity: no damage and no added effects.
+  // Immunity (only Magnet Rise against Ground now): no damage and no added effects.
   if (eff === 0) {
     if (!stack.immune) {
       stack.immune = true;
