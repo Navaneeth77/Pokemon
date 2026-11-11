@@ -256,8 +256,6 @@ export function applyHit(game, attacker, target, move, o = {}) {
 
   const actualDamage = Math.min(target.hp, dmg);
   if (dmg > 0) target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
-  // Visual layer (hit-fx.js): realistic element bursts and anime impact frames, scaled by how hard this landed.
-  if (dmg > 0) game.emit?.('hit', { attacker, target, move, dmg, crit, eff, power, guard: !!guard, dirX, dirY });
 
   // Launchers start an aerial combo; up to three hits keep a juggled foe up, then it drops.
   if (target.alive && !guard && !(Dfull.kbMult < 1) && !target.action?.move.ultimate) {

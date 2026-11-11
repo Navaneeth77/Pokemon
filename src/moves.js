@@ -11,7 +11,6 @@ import { MOVEDEX } from './data/movedex.js';
 import { statusMove } from './effects-resolver.js';
 import { MOVE_ANIMS } from './data/move-anims.js';
 import { runSequence, tickGather, scheduleSteps } from './move-sequence.js';
-import { Smear, SpeedLines } from './fx-anime.js';
 import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
 import { LEGEND_ULTS_2 } from './ult-legends2.js';
@@ -388,9 +387,6 @@ class Melee extends MoveAction {
   strike(h, i) {
     const c = this.move.melee;
     this.retarget(0.6);
-    // A solid smear of the swing, heavier for stronger moves.
-    const u = this.user, p = this.front(u.radius + 8), pw = this.move.power ?? 60;
-    this.game.spawn(new Smear(p.x, p.y, u.bodyZ, this.aim, { radius: u.radius + 10, spread: 2.2, width: Math.min(14, 5 + pw / 18), colors: ['#ffffff', TYPE_COLORS[this.move.type]?.[0] ?? '#ffffff'], mirror: i % 2 === 1 }));
     SWING_FX[c.fx](this.game, this.user, this.aim, i, this.move);
     if(skyLegend(this.user)) {
       const p=this.front(this.user.radius+18);
@@ -449,7 +445,6 @@ class Dash extends MoveAction {
     this.anim('Attack', 2);
     sfx.dash();
     this.game.spawn(new BeamLine(this.from.x, this.from.y - u.bodyZ, this.to.x, this.to.y - u.bodyZ, 0.3, c.color, c.width ?? 3));
-    this.game.spawn(new SpeedLines(u, this.aim, c.dur + 0.12, '#ffffff'));
     if(skyLegend(u))this.game.spawn(new Slipstream(u,c.dur+.2,'#bcffe5',u.radius*1.6));
   }
 

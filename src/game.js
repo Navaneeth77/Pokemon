@@ -1,4 +1,3 @@
-import { installHitFx } from './hit-fx.js';
 import { drawCosmeticAura, CosmeticStarburst } from './economy-art.js';
 import { newSummary, recordCombat, cosmeticLoadout } from './mastery.js';
 import { quality, observeFrame } from './quality.js';
@@ -38,7 +37,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent','ImpactFrame','FocusLines','SpeedLines','Smear']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 // Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
 const traps = (by, foe) => { const t = abilityOf(by).shadowTag; return typeof t === 'function' ? t(foe) : !!t; };
@@ -96,7 +95,6 @@ export class Game {
     this.arena = new Arena(this.headless);
     this.marks = this.arena.marks;
     this.particles = new ParticleSystem();
-    installHitFx(this);
     if(this.headless)this.particles.max=-1;
     this.hud = new Hud(this);
     this.red = new Trainer('red', 'Red', 180, 598);
