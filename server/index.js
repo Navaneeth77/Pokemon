@@ -47,9 +47,11 @@ const STEP = 1 / 60;
 const WAKE_MS = 1000 / 30;
 const MAX_CATCHUP = 6; // after a stall, at most this many steps are made up at once
 const QUEUE_TIMEOUT_MS = 3 * 60_000; // nobody compatible found: tell the player, they can retry
-// Ranked Online Battles: after this long with nobody compatible, the player is matched with a computer
-// trainer (server/bots.js). BOT_MATCH_AFTER_MS=0 turns this off.
-const BOT_AFTER_MS = Number.isFinite(Number(process.env.BOT_MATCH_AFTER_MS)) && process.env.BOT_MATCH_AFTER_MS !== '' ? Number(process.env.BOT_MATCH_AFTER_MS) : 25_000;
+// Every online queue (Online Battles, Tag Battles, Draft Battles, public Legendary Raids): after this long
+// with nobody compatible, a computer trainer (server/bots.js) takes the other seat. BOT_MATCH_AFTER_MS=0 turns
+// this off.
+const BOT_AFTER_MS = Number.isFinite(Number(process.env.BOT_MATCH_AFTER_MS)) && process.env.BOT_MATCH_AFTER_MS !== '' ? Number(process.env.BOT_MATCH_AFTER_MS) : 10_000;
+const makeBot = human => botEntry(human, { roster: ROSTER, species: SPECIES, looks: LOOKS });
 const LOAD_TIMEOUT_MS = 45_000; // both players must load the battle within this
 const AFK_MS = 60_000; // no input at all for this long in battle forfeits
 const MAX_BATTLE_S = 8 * 60; // then the side with more HP left wins
@@ -69,7 +71,7 @@ const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queu
 const queues = { 3: [], 6: [], tag: [] }; // waiting entries per format (tag: 2v2 Tag Battles), oldest first
 const matches = new Map();
 const MAX_MATCHES = Math.max(1, Math.min(32, Number(process.env.MAX_MATCHES) || 3));
-const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES, (team, kits) => validKits(team, kits));
+const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES, (team, kits) => validKits(team, kits), { makeBot: h => makeBot(h), botAfter: BOT_AFTER_MS });
 setInterval(() => drafts.tick(Date.now()), 1000).unref();
 // Online results and ratings (Elo, starting at 1000). Kept in Upstash Redis when
 // UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set, so they survive restarts and redeploys;
@@ -769,7 +771,8 @@ function snapshot(team, switchCD, ack, g = null) {
 
 const raids = new RaidRooms({send:sendTo,award:(p,s)=>economy.award(p,s),validate:validTeam,create:(a,b)=>new Match(a,b),
   register:s=>{matches.set(s.id,s);ensureLoop();},remove:id=>matches.delete(id),snapshot,
-  capacity:()=>raids.sessions.size < Math.max(1, Number(process.env.MAX_RAIDS)||1) && matches.size<MAX_MATCHES});
+  capacity:()=>raids.sessions.size < Math.max(1, Number(process.env.MAX_RAIDS)||1) && matches.size<MAX_MATCHES,
+  makeBot:h=>makeBot(h),botAfter:BOT_AFTER_MS,AI:OpponentAI});
 setInterval(()=>raids.tick(Date.now()),1000).unref();
 
 function createMatch(a, b) {

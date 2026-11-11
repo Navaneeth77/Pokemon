@@ -2,8 +2,9 @@ import { resultSummary } from '../src/mastery.js';
 import { randomBytes } from 'node:crypto';
 import { BOSSES, BossEncounter, RAID_DIFFICULTY } from '../src/bosses.js';
 export class RaidRooms {
-  constructor({ send, validate, create, register, remove, snapshot, capacity, award }) {
-    Object.assign(this,{send,validate,create,register,remove,snapshot,capacity,award,waiting:[],sessions:new Map()});
+  // makeBot(entry) and botAfter: a computer ally for a public raid nobody joins; AI plays it.
+  constructor({ send, validate, create, register, remove, snapshot, capacity, award, makeBot = null, botAfter = 0, AI = null }) {
+    Object.assign(this,{send,validate,create,register,remove,snapshot,capacity,award,makeBot:AI?makeBot:null,botAfter,AI,waiting:[],sessions:new Map()});
   }
   handle(p,m) {
     if(m.t==='raid-cancel') {this.leaveWaiting(p);return true;}
@@ -27,7 +28,17 @@ export class RaidRooms {
   }
   leaveWaiting(p) {this.waiting=this.waiting.filter(e=>e.player!==p);if(p.state==='raid')p.state='idle';}
   tick(now) {
-    for(const e of [...this.waiting]) if(now-e.at>180000 || !e.player.ws){this.leaveWaiting(e.player);this.send(e.player,{t:'raid-cancelled',message:'Raid lobby expired.'});}
+    for(const e of [...this.waiting]) {
+      // A public raid with nobody to join it after a while: a computer trainer comes along as the ally.
+      if(e.kind==='public' && this.makeBot && this.botAfter>0 && now-e.at>=this.botAfter && e.player.ws?.readyState===1 && this.capacity()) {
+        this.waiting.splice(this.waiting.indexOf(e),1);
+        const bot=this.makeBot({format:e.format,player:e.player});
+        const ally={...bot,boss:e.boss,kind:'public',difficulty:e.difficulty,code:e.code,at:now};
+        const session=new RaidSession(this,[e,ally]);this.sessions.set(session.id,session);this.register(session);session.intro();
+        continue;
+      }
+      if(now-e.at>180000 || !e.player.ws){this.leaveWaiting(e.player);this.send(e.player,{t:'raid-cancelled',message:'Raid lobby expired.'});}
+    }
     for(const s of this.sessions.values()) s.housekeeping(now);
   }
 }
@@ -42,6 +53,8 @@ class RaidSession {
       match.finish=(winner,reason)=>{if(winner==='A')this.finish('win',reason);else this.eliminated.add(i);};
       match.leave=(_side,reason)=>{if(reason==='disconnect'){this.disconnected.set(i,Date.now()+15000);match.vec.A={x:0,y:0};}else{this.abandoned.add(i);this.eliminated.add(i);if(this.phase==='loading')this.finish('draw','cancelled');}};
       this.members.push(match);
+      // A computer ally is loaded at once and played by the opponent AI, seeing its battle turned around.
+      if(e.player.bot){this.loaded[i?'B':'A']=true;match.allyAI=new manager.AI();}
     }
   }
   intro(player = null) {
@@ -59,7 +72,12 @@ class RaidSession {
     const dt=1/60;this.clock+=dt;this.encounter.tick(dt);
     for(let i=0;i<this.members.length;i++) {
       const m=this.members[i];if(this.eliminated.has(i))continue;
-      m.game.update(dt);m.clock=this.clock;
+      const g=m.game;
+      if(m.allyAI&&g.state==='fighting'){
+        m.allyAI.update(dt,new Proxy(g,{get:(t,k)=>(k==='opponent'?t.player:k==='player'?t.opponent:typeof t[k]==='function'?t[k].bind(t):t[k])}));
+        m.vec.A={x:g.player.input.x,y:g.player.input.y};
+      }
+      g.update(dt);m.clock=this.clock;
       if(!m.game.playerTeam.remaining)this.eliminated.add(i);
     }
     if(!this.encounter.boss.alive)this.finish('win','ko');
@@ -90,6 +108,6 @@ class RaidSession {
     const party=this.members.map((m,i)=>{const own=m.game?.summary?.species.player??{},sum=k=>Math.round(Object.values(own).reduce((n,s)=>n+(s[k]??0),0));
       return {name:this.entries[i].player.name,damage:sum('bossDamage'),faints:sum('faints'),reactions:sum('reactions'),survived:!this.eliminated.has(i)};});
     const time=Math.round(this.encounter?.time??0),stage=this.encounter?.stage??1,difficulty=this.entries[0].difficulty;
-    this.entries.forEach((e,i)=>{if(!this.abandoned.has(i)&&!this.disconnected.has(i)&&['ko','team-eliminated','time'].includes(reason)&&this.members[i].game)this.manager.award?.(e.player,resultSummary(this.members[i].game,'player',{id:this.id,result,reason,mode:'raid',team:e.team}));e.player.match=null;e.player.state='idle';this.manager.send(e.player,{t:'end',id:this.id,result,reason,raid:e.boss,difficulty,stage,time,party,you:i,summary:this.members[i].game?resultSummary(this.members[i].game,'player',{mode:'raid'}):null,record:e.player.record,delta:0});});
+    this.entries.forEach((e,i)=>{if(e.player.bot){e.player.match=null;e.player.state='idle';return;}if(!this.abandoned.has(i)&&!this.disconnected.has(i)&&['ko','team-eliminated','time'].includes(reason)&&this.members[i].game)this.manager.award?.(e.player,resultSummary(this.members[i].game,'player',{id:this.id,result,reason,mode:'raid',team:e.team}));e.player.match=null;e.player.state='idle';this.manager.send(e.player,{t:'end',id:this.id,result,reason,raid:e.boss,difficulty,stage,time,party,you:i,summary:this.members[i].game?resultSummary(this.members[i].game,'player',{mode:'raid'}):null,record:e.player.record,delta:0});});
   }
 }

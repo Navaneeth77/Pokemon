@@ -101,3 +101,51 @@ test('two players queueing together still meet each other, not bots', async () =
     b.ws.close();
   }
 });
+
+test('alone in a draft queue: a computer drafter takes the other seat, drafts, confirms and battles', async () => {
+  const c = client('draft-solo-0001');
+  await c.hello();
+  try {
+    c.send({ t: 'draft-queue', mode: 'snake', format: 3 });
+    let s = await c.wait('draft-state');
+    assert.equal(s.names[0], 'SOLO');
+    assert.ok(s.names[1] && s.names[1] !== 'SOLO', `a computer drafter joined: ${s.names[1]}`);
+    for (let n = 0; n < 40 && s.phase !== 'confirm'; n++) {
+      if (s.phase === 'picking' && s.turn === s.you) c.send({ t: 'draft-pick', id: s.id, species: s.pool[0] });
+      s = await c.wait('draft-state');
+    }
+    assert.equal(s.phase, 'confirm');
+    assert.equal(s.teams[0].length, 3);
+    assert.equal(s.teams[1].length, 3, 'the computer drafted its own three');
+    c.send({ t: 'draft-confirm', id: s.id });
+    const m = await c.wait('matched');
+    assert.deepEqual(m.foe.team, s.teams[1]);
+    c.send({ t: 'loaded', id: m.id });
+    await c.wait('start');
+    const foe = m.you === 'A' ? 'B' : 'A';
+    await c.wait('b', b => b.e?.some(e => e.t === 'move' && e.side === (foe === 'A' ? 'player' : 'opponent')), 20000);
+    c.send({ t: 'leave', id: m.id });
+    await c.wait('end');
+  } finally {
+    c.ws.close();
+  }
+});
+
+test('alone in a public raid: a computer ally comes along and fights the boss', async () => {
+  const c = client('raid-solo-0001');
+  await c.hello();
+  try {
+    c.send({ t: 'raid-queue', kind: 'public', boss: 'rayquaza', format: 3, team: ['charizard', 'raichu', 'lucario'], lead: 0, mega: {} });
+    await c.wait('raid-waiting');
+    const m = await c.wait('matched', x => !!x.raid);
+    assert.equal(m.allyTeam.length, 3, 'the ally brought a team of three');
+    c.send({ t: 'loaded', id: m.id });
+    await c.wait('start');
+    const first = await c.wait('b', b => !!b.ally && !b.ally.hidden);
+    // The ally is played by the AI: it moves around the arena.
+    await c.wait('b', b => b.ally && Math.hypot(b.ally.x - first.ally.x, b.ally.y - first.ally.y) > 20, 15000);
+    assert.ok(!/TypeError|ReferenceError/.test(logs), 'no server errors');
+  } finally {
+    c.ws.close();
+  }
+});
