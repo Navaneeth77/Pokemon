@@ -555,6 +555,7 @@ class Shot extends MoveAction {
 }
 
 // Charged straight beams (Hyper Beam, Ice Beam) with a visible firing lane during the charge.
+const BEAM_CLASH_T = 0.12;
 class BeamAttack extends MoveAction {
   start() {
     const c = this.move.beam, u = this.user;
@@ -572,7 +573,9 @@ class BeamAttack extends MoveAction {
       if (this.t < (this.move.targeting?.trackTime ?? c.lock)) this.retarget((this.move.targeting?.track ?? 2.2) * dt);
       this.tele.set(this.user.x, this.user.y, this.aim);
       this.converge(80, dt, c.chargeColors, 28);
-    } else if (this.firing && !this.hitDone && this.t - this.fireT < 0.2) {
+    // The hit lands a moment after it fires (BEAM_CLASH_T): a foe's beam fired back within that moment clashes with it
+    // instead (game.js updateClashes).
+    } else if (this.firing && !this.hitDone && this.t - this.fireT >= BEAM_CLASH_T && this.t - this.fireT < 0.2 + BEAM_CLASH_T) {
       const t = this.target;
       if (t.alive && rayDistance(t.x, t.y, this.user.x, this.user.y, this.aim, this.move.range) <= c.width + t.radius) {
         this.hitDone = true;
