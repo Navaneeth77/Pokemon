@@ -120,7 +120,7 @@ function throwSequence(action, spot) {
 class SeqShot {
   constructor(action, gp, k = 0, n = 1) {
     const P = action.move.targeting, t = action.target, m = action.mouth(), ms = gp.missile.missile;
-    Object.assign(this, { action, gp, P, x: m.x, y: m.y, z0: m.z, layer: 'air', isProjectile: true, dead: false, age: 0, traveled: 0, turned: 0 });
+    Object.assign(this, { action, gp, P, x: m.x, y: m.y, x0: m.x, y0: m.y, z0: m.z, layer: 'air', isProjectile: true, dead: false, age: 0, traveled: 0, turned: 0 });
     // A projectile like any other (game.js clashes): its own move, owner and target (Rapid Spin can bat it back).
     Object.assign(this, { move: action.move, user: action.user, target: t, elem: action.move.type, radius: P.hitbox, reacted: new Set() });
     // Thrown at where the foe is now; a volley with a fan (targeting.js) deploys its shots across it, left to
@@ -155,7 +155,7 @@ class SeqShot {
     this.traveled += step;
     // It hits what it touches: the foe's body inside the projectile's hitbox. A dodge's i-frames let it through.
     if (t.alive && !t.hidden && !t.untouchable && !t.invuln && Math.hypot(t.x - this.x, t.y - this.y) <= P.hitbox + t.radius) return this.impact(true);
-    if (this.traveled >= this.reach) return this.impact(false);
+    if (Math.hypot(this.x - this.x0, this.y - this.y0) >= this.reach || this.traveled >= this.reach * 1.6) return this.impact(false); // reach from where it was thrown
     return true;
   }
 

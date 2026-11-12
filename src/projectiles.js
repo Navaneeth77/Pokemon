@@ -5,7 +5,7 @@ import { skyLegend, PressureWave } from './legendary-effects.js';
 
 class Projectile {
   constructor(game, user, move, x, y, z, angle, speed, maxDist, radius) {
-    Object.assign(this, { game, user, target: user.foe, move, x, y, z0: z, angle, speed, maxDist, radius });
+    Object.assign(this, { game, user, target: user.foe, move, x, y, x0: x, y0: y, z0: z, angle, speed, maxDist, radius });
     this.layer = 'air';
     this.isProjectile = true;
     this.age = 0;
@@ -42,7 +42,9 @@ class Projectile {
     const t = this.target;
     // A dodging target is untouchable: the projectile flies straight through.
     if (t.alive && !t.hidden && !t.untouchable && Math.hypot(t.x - this.x, t.y - this.y) <= this.radius + t.radius) this.impact(true);
-    else if (this.traveled >= this.maxDist || this.outside()) this.impact(false);
+    // Its reach is how far from where it was thrown it gets (a shot that curves in a fan still reaches as far), with a
+    // cap on the path so nothing circles for ever.
+    else if (Math.hypot(this.x - this.x0, this.y - this.y0) >= this.maxDist || this.traveled >= this.maxDist * 1.6 || this.outside()) this.impact(false);
     return !this.dead;
   }
 }
