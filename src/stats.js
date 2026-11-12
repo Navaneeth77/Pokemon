@@ -1,8 +1,5 @@
-// Stat stages and effective Speed, as in the main series, translated to real time.
-//
-// Stages run from −6 to +6 per stat (atk, def, spa, spd, spe) with the games' multipliers (+1 = ×1.5,
-// +2 = ×2 … −1 = ×2/3). They come from moves (Swords Dance, Dragon Dance, Calm Mind, Intimidate…), last
-// until the Pokémon switches out, and are what the damage calculation uses.
+// Stat stages run from −6 to +6 and reset when a Pokémon switches out.
+// Damage stats have diminishing returns. Speed uses its own curve for movement and recharge.
 //
 // Effective Speed is the species' Speed with its stage, ability (Chlorophyll, Swift Swim…), item (Choice
 // Scarf) and paralysis applied. In a real-time battle "acting first" means acting more often, so effective
@@ -14,13 +11,18 @@ import { itemOf } from './data/items.js';
 export const STATS = ['atk', 'def', 'spa', 'spd', 'spe'];
 export const STAT_NAME = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' };
 
-export const stageMult = n => (n >= 0 ? (2 + n) / 2 : 2 / (2 - n));
+const DAMAGE_STAGE_MULTIPLIERS = [1, 1.25, 1.5, 1.65, 1.8, 1.9, 2];
+export const damageStageMult = stage => {
+  const mult = DAMAGE_STAGE_MULTIPLIERS[Math.min(6, Math.abs(stage))];
+  return stage < 0 ? 1 / mult : mult;
+};
+const speedStageMult = stage => stage >= 0 ? (2 + stage) / 2 : 2 / (2 - stage);
 export const stageOf = (mon, stat) => mon.stages?.[stat] ?? 0;
 
 // The Speed number the battle uses (species Speed is on the game's walking scale, about 50–125).
 export function effectiveSpeed(mon, game) {
   const ab = abilityOf(mon), item = itemOf(mon);
-  let s = mon.species.speed * stageMult(stageOf(mon, 'spe'));
+  let s = mon.species.speed * speedStageMult(stageOf(mon, 'spe'));
   s *= ab.speedMult?.(mon, game) ?? 1;
   s *= item?.speedMult?.() ?? 1;
   if (mon.status?.para > 0 && !ab.quickFeet) s *= 0.5;

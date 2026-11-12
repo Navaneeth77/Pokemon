@@ -4,6 +4,7 @@ import { LegendaryBeam, AeroblastBeam } from './raid-art.js';
 import { skyLegend, CastEnergy, Slipstream, PressureWave, ElementColumn } from './legendary-effects.js';
 import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
 import { applyHit } from './combat.js';
+import { typesOf } from './data/abilities.js';
 import { itemOf, ITEMS } from './data/items.js';
 import { BOUNDS } from './arena.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -671,14 +672,32 @@ class Shockwave extends MoveAction {
   }
 }
 
+// Setup handled by bespoke status effects. Generic stat raises and timed buffs are handled by their utility kind.
+const SETUP_STATUS_MOVES = new Set([
+  'acupressure', 'bellyDrum', 'charge', 'clangorousSoul', 'defenseCurl', 'filletAway', 'focusEnergy', 'guardSwap',
+  'heartSwap', 'laserFocus', 'powerSwap', 'psychUp', 'stockpile', 'stuffCheeks', 'tailwind', 'takeHeart', 'tidyUp',
+]);
+
 // Status moves: self buffs, healing, regeneration and protective stances.
 class Utility extends MoveAction {
   start() {
     const c = this.move.util;
+    const { id, type } = this.move;
+    this.settingUp = c.kind === 'stages' || c.kind === 'buff' || SETUP_STATUS_MOVES.has(id)
+      || (id === 'curse' && !typesOf(this.user).includes('ghost'));
+    const release = Math.max(c.at ?? 0.22, this.settingUp ? 0.6 : 0);
+    const end = Math.max(c.end ?? 0.5, this.settingUp ? release + 0.25 : 0);
+    if (this.settingUp) {
+      this.setupRing = this.game.spawn(new Ring(this.user.x, this.user.y, {
+        r0: this.user.radius + 28, r1: this.user.radius + 4, life: release, color: TYPE_COLORS[type][0], width: 3, hold: true,
+      }));
+    }
     // A status move's own look (data/move-anims.js `fx`), around the user (or the foe for aimed moves).
     if (this.move.fx) scheduleSteps(this, this.move.fx, c.kind === 'ray' || c.aim ? { x: this.target.x, y: this.target.y } : { x: this.user.x, y: this.user.y });
     this.anim(c.anim ?? 'Charge', 1);
-    this.at(c.at ?? 0.22, () => {
+    this.at(release, () => {
+      this.settingUp = false;
+      if (this.setupRing) this.setupRing.dead = true;
       // Magic Coat: a status move aimed at it bounces back onto the user.
       const foe = this.user.foe;
       if ((c.kind === 'ray' || c.aim) && foe?.magicCoat > 0 && foe.alive && !foe.hidden && this.move.id !== 'magicCoat') {
@@ -688,7 +707,11 @@ class Utility extends MoveAction {
       }
       UTIL_FX[c.kind](this, this.game, this.user, c);
     });
-    this.at(c.end ?? 0.5, () => this.finish(0.08));
+    this.at(end, () => this.finish(0.08));
+  }
+
+  cleanup() {
+    if (this.setupRing) this.setupRing.dead = true;
   }
 }
 

@@ -2,6 +2,8 @@
 
 Connected moves resolve without accuracy or evasion rolls. Range, tracking, dodges and protections still
 determine whether a hit lands. Accuracy-only moves, one-hit KO moves and Bright Powder are no longer available in battle kits.
+Damage stats reach ×1.25 at +1, ×1.5 at +2 and ×2 at +6. Setup moves have an interruptible windup
+of at least 0.6 seconds and spend their cooldown when started.
 
 ## Audit (10 Nov 2026)
 
@@ -33,7 +35,7 @@ How it works today:
 | Animation recipes | `src/data/move-anims.js` | per move: delivery (melee, dash, projectile, beam, stream, wave, rain, pillar, self) + stages (charge, release, travel, impact) with element palette, shape, intensity and timing |
 | Move builder | `src/moves.js` (`buildMove`) | combines movedex + recipe into the engine's move spec; hand-made legendary moves keep their custom Actions |
 | Effect resolver | `src/effects-resolver.js` | runs a move's effects at the right moment: before (priority, protect checks), on hit (damage, secondary), after (stat stages, heal, drain, recoil, pivot, field) |
-| Stats | `src/stats.js` | stat stages (−6…+6, the games' multipliers) and effective Speed (stages, abilities, items, paralysis) used by movement *and* move recharge |
+| Stats | `src/stats.js` | stat stages (−6…+6, with diminishing returns for damage stats) and effective Speed (stages, abilities, items, paralysis) used by movement *and* move recharge |
 | Weather | `src/game.js` + `combat.js` | timed weather (abilities too), the games' modifiers, weather-dependent moves and abilities, residual damage |
 | Battle events | `game.emit(type, payload)` | mechanics, animation, log and HUD subscribe to the same events (ability triggered, form change, stat change, weather start/end, protect, miss…) |
 | Validation | `tests/battle-rules.test.js` + `scripts/validate-moves.mjs` | acceptance scenarios and a check that every move in every moveset has mechanics and an animation recipe |

@@ -37,7 +37,10 @@ export function movePower(game, user, target, move) {
     case 'gyroBall': return Math.min(150, Math.round(25 * (target.species.speed / user.species.speed)) + 30);
     case 'lowKick': case 'grassKnot': return [20, 40, 60, 80, 100, 120][Math.min(5, Math.floor(weightOf(target) * 2.2))];
     case 'heavySlam': case 'heatCrash': return [40, 60, 80, 100, 120][Math.min(4, Math.floor(2 * weightOf(user) / weightOf(target)))];
-    case 'storedPower': case 'powerTrip': return 20 + 20 * Object.values(user.stages ?? {}).reduce((s, n) => s + Math.max(0, n), 0);
+    case 'storedPower': case 'powerTrip': {
+      const positiveStages = Object.values(user.stages ?? {}).reduce((sum, stage) => sum + Math.max(0, stage), 0);
+      return Math.min(140, 20 + 10 * positiveStages);
+    }
     case 'waterSpout': case 'eruption': case 'dragonEnergy': return Math.max(1, Math.round(150 * user.hp / user.maxHp));
     // Reversal / Flail: the less HP it has left, the harder it hits (the games' six steps).
     case 'reversal': case 'flail': { const r = user.hp / user.maxHp; return r < 0.042 ? 200 : r < 0.104 ? 150 : r < 0.208 ? 100 : r < 0.354 ? 80 : r < 0.688 ? 40 : 20; }

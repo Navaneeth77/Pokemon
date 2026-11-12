@@ -108,8 +108,8 @@ test('Snore only while asleep; Dream Eater only on a sleeping foe; Spit Up needs
 
 test('Stockpile then Spit Up: 100 power per stockpile, and the boosts go', () => {
   const g = battle(['swalot', 'snorlax', 'lapras'], ['blissey', 'snorlax', 'lapras']), p = g.player;
-  use(g, p, 'stockpile', 0.6);
-  use(g, p, 'stockpile', 0.6);
+  use(g, p, 'stockpile', 1);
+  use(g, p, 'stockpile', 1);
   assert.equal(p.stockpile, 2);
   assert.equal(p.stages.def, 2);
   p.status = {};

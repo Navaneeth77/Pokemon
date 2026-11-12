@@ -10,6 +10,7 @@ import { MOVES, adaptMove } from '../src/moves.js';
 import { applyHit, weatherMult } from '../src/combat.js';
 import { typesOf, ABILITIES } from '../src/data/abilities.js';
 import { speedRatio } from '../src/stats.js';
+import { movePower } from '../src/effects-resolver.js';
 
 const sprites = loadSpriteSets(), noop = () => {};
 
@@ -124,7 +125,51 @@ test('Dragon Dance raises Attack and Speed one stage each, and the boosts are us
   assert.deepEqual({ atk: g.player.stages.atk, spe: g.player.stages.spe }, { atk: 1, spe: 1 });
   assert.equal(speedRatio(g.player, g), 1.5);
   const after = hit();
-  assert.ok(Math.abs(after / before - 1.5) < 0.06, `+1 Attack ≈ ×1.5 damage: ${before} → ${after}`);
+  assert.ok(Math.abs(after / before - 1.25) < 0.06, `+1 Attack ≈ ×1.25 damage: ${before} → ${after}`);
+});
+
+test('a light hit interrupts setup and the move still spends its cooldown', () => {
+  for (const id of ['dragonDance', 'coil', 'swordsDance', 'bellyDrum']) {
+    const g = battle(['dragonite', 'snorlax', 'lapras'], ['snorlax', 'lapras', 'blissey']);
+    const { player, opponent } = g;
+    assert.ok(g.useMove(player, id), id);
+    run(g, 0.4);
+    assert.equal(player.action?.settingUp, true, id);
+    assert.deepEqual(player.stages, {}, id);
+    assert.ok(fixedRandom(() => applyHit(g, opponent, player, MOVES.tackle)), id);
+    const hp = player.hp;
+    assert.equal(player.action, null, id);
+    run(g, 0.5);
+    assert.deepEqual(player.stages, {}, id);
+    assert.equal(player.buffs.atk, undefined, id);
+    assert.equal(player.hp, hp, id);
+    assert.ok(g.moveCD(player, id) > 0, id);
+    assert.equal(g.useMove(player, id), false, id);
+  }
+});
+
+test('two completed Dragon Dances strengthen Outrage and a healthy neutral foe survives', () => {
+  fixedRandom(() => {
+    const g = battle(['salamence', 'snorlax', 'lapras'], ['snorlax', 'lapras', 'blissey']);
+    const { player, opponent } = g;
+    for (let i = 0; i < 2; i++) {
+      assert.ok(g.useMove(player, 'dragonDance'));
+      run(g, 4.5);
+    }
+    assert.equal(player.stages.atk, 2);
+    player.ult = 100;
+    assert.ok(g.useMove(player, player.species.ultimate));
+    run(g, 7);
+    assert.ok(opponent.alive && opponent.hp < opponent.maxHp);
+  });
+});
+
+test('Stored Power and Power Trip cap the payoff from stacking stages', () => {
+  for (const id of ['storedPower', 'powerTrip']) {
+    const power = stages => movePower(null, { stages }, null, MOVES[id]);
+    assert.equal(power({ atk: 1, spe: 1, def: -1 }), 40);
+    assert.equal(power({ atk: 6, def: 6, spe: 6 }), 140);
+  }
 });
 
 test('physical and special ultimates use the matching stat stages at impact', () => {
@@ -148,9 +193,9 @@ test('physical and special ultimates use the matching stat stages at impact', ()
     const boosted = damage(attacker, { [offense]: 2 });
     const lowered = damage(attacker, { [offense]: -2 });
     const defended = damage(attacker, {}, { [defense]: 2 });
-    assert.ok(Math.abs(boosted - 2 * base) <= 10, `${attacker}: ${offense} +2 doubles damage (${base} → ${boosted})`);
-    assert.ok(Math.abs(lowered - base / 2) <= 10, `${attacker}: ${offense} −2 halves damage (${base} → ${lowered})`);
-    assert.equal(defended, lowered, `${attacker}: ${defense} +2 halves damage`);
+    assert.ok(Math.abs(boosted - 1.5 * base) <= 10, `${attacker}: ${offense} +2 increases damage by 50% (${base} → ${boosted})`);
+    assert.ok(Math.abs(lowered - base / 1.5) <= 10, `${attacker}: ${offense} −2 reduces damage by a third (${base} → ${lowered})`);
+    assert.equal(defended, lowered, `${attacker}: ${defense} +2 reduces damage by a third`);
     assert.equal(damage(attacker, { [otherOffense]: 2 }), base);
     assert.equal(damage(attacker, {}, { [otherDefense]: 2 }), base);
   }
@@ -219,7 +264,7 @@ test('Intimidate lowers the foe\'s Attack a stage, and its attacks really hit so
     return hp - target.hp;
   });
   const normal = dmg(plain, plain.player), lowered = dmg(scared, scared.player);
-  assert.ok(Math.abs(lowered / normal - 2 / 3) < 0.05, `−1 Attack ≈ ×2/3: ${normal} → ${lowered}`);
+  assert.ok(Math.abs(lowered / normal - 0.8) < 0.05, `−1 Attack ≈ ×0.8: ${normal} → ${lowered}`);
 });
 
 test('Toxic damage grows each tick; Thunder Wave paralyses (Speed halved) but not Ground types', () => {

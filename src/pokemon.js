@@ -197,7 +197,10 @@ export class Pokemon {
     this.vx += dirX * kb;
     this.vy += dirY * kb;
     if (!this.alive) return;
-    if (flinch) this.cancelAction();
+    if (flinch) {
+      if (this.action?.settingUp) game?.floatText(this, 'SETUP INTERRUPTED!', '#ffb070');
+      this.cancelAction();
+    }
     if (this.charging && stagger > 0 && game) this.cancelCharge(game, true);
     // Attacks in progress have super armour: the hit lands but doesn't interrupt.
     if (!this.action && this.frozen <= 0 && !(this.animHold > 0)) {

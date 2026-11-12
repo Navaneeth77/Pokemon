@@ -2,7 +2,7 @@ import { typeMultiplier } from './data/types.js';
 import { roleDamage } from './roles.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
-import { stageOf, stageMult } from './stats.js';
+import { stageOf, damageStageMult } from './stats.js';
 import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse, beforeHit, moveCategory, counterHit, crashOnMiss } from './effects-resolver.js';
 import { screenMult } from './field.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
@@ -135,8 +135,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const cat = moveCategory(move, attacker), special = cat === 'special', aStat = special ? 'spa' : 'atk', dStat = special ? 'spd' : 'def';
   let aStage = D.unaware ? 0 : stageOf(atkSrc, aStat), dStage = A.unaware ? 0 : stageOf(target, dStat);
   if (crit) { aStage = Math.max(0, aStage); dStage = Math.min(0, dStage); }
-  const stats = ((attackStatOf(move, atkSrc) ?? (special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1))) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * stageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
-    / (((special !== (target.wonderRoomT > 0)) ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')) * stageMult(dStage)); // Wonder Room swaps them
+  const stats = ((attackStatOf(move, atkSrc) ?? (special ? (atkSrc.species.spa ?? atkSrc.species.atk ?? 1) : (atkSrc.species.atk ?? 1))) * (D.unaware ? 1 : buffMult(atkSrc, 'atk')) * damageStageMult(aStage) * (atkSrc.buffT > 0 ? 1.3 : 1))
+    / (((special !== (target.wonderRoomT > 0)) ? (target.species.spdef ?? target.species.def ?? 1) : (target.species.def ?? 1)) * (A.unaware ? 1 : buffMult(target, 'def')) * damageStageMult(dStage)); // Wonder Room swaps them
   const auraMult = [attacker, target].reduce((m, mon) => {
     const au = abilityOf(mon).aura;
     return m * (au && au.type === type && !mon.hidden && mon.alive ? au.mult : 1);
@@ -263,7 +263,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
     dirY = -dirY;
   }
   const knock = guard ? 0 : (o.knockback ?? 100) * weight * catMult * (move.push ?? 1) * (move.pull ? 0.6 : 1) * (Dfull.kbMult ?? 1);
-  // Heavy hits and launchers interrupt the foe's attack (never an ultimate).
+  // Any clean damaging hit can interrupt setup. Other actions need a heavy hit or a launcher.
+  const interruptedSetup = !guard && target.action?.settingUp;
   const interrupt = !guard && !move.ultimate && (power >= 100 || move.launch) && target.action && !target.action.move.ultimate;
 
   const actualDamage = Math.min(target.hp, dmg);
@@ -277,7 +278,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.spawn(new FloatText(target.x, head - 10, 'ENDURED!', '#ffd84a'));
     game.ui.log(`${target.species.name} endured the hit!`, target.side);
   }
-  if (dmg > 0) target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt }, game);
+  if (dmg > 0) target.takeHit(dmg, { dirX, dirY, knockback: knock, stagger, flinch: flinch || interrupt || interruptedSetup }, game);
 
   // Launchers start an aerial combo; up to three hits keep a juggled foe up, then it drops.
   if (target.alive && !guard && !(Dfull.kbMult < 1) && !target.action?.move.ultimate) {
