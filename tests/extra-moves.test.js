@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
 import { loadSpriteSets } from '../server/sprites.js';
-import { MOVES } from '../src/moves.js';
+import { MOVES, adaptMove } from '../src/moves.js';
 import { applyHit } from '../src/combat.js';
 import { typeMultiplier } from '../src/data/types.js';
 
@@ -226,4 +226,59 @@ test('Power Split and Speed Swap change stats until it switches out; Electrify, 
   assert.ok(o.blocked > 0 && g.player.blocked > 0);
   use(g, g.player, 'electrify');
   assert.ok(o.electrified > 0);
+});
+
+test('Hail chips everything but Ice types and brings out Castform\'s Snowy Form; Blizzard is sure in hail', () => {
+  const g = battle(['castform', 'snorlax', 'lapras'], ['charizard', 'snorlax', 'lapras']), p = g.player, o = g.opponent;
+  use(g, p, 'hail', 0.6);
+  assert.equal(g.weather, 'hail');
+  run(g, 1);
+  assert.deepEqual(p.typeOverride, ['ice'], 'Castform turned Ice type (Snowy Form)');
+  const hp = o.hp;
+  run(g, 3.2);
+  assert.ok(o.hp < hp, 'Charizard was chipped by the hail');
+  assert.equal(adaptMove(g, p, MOVES.blizzardAtk).sure, true);
+});
+
+test('Solar Blade strikes at once in sun; Present can heal; Rollout and Thrash lock it in; Uproar keeps everyone awake', () => {
+  const g = battle(['sceptile', 'snorlax', 'lapras'], ['blissey', 'snorlax', 'lapras']), p = g.player, o = g.opponent;
+  g.setWeather('sun', 25);
+  run(g, 0.1);
+  const hp = o.hp;
+  use(g, p, 'solarBlade', 0.35);
+  assert.ok(o.hp < hp, 'it hit within 0.35s, with no charge');
+  const before = o.hp - 1;
+  o.hp = before;
+  rolls(0.1, () => applyHit(g, p, o, MOVES.present, { stack: {} }));
+  assert.ok(o.hp > before, 'Present healed the foe');
+  p.cooldowns = {};
+  rolls(0.05, () => use(g, p, 'rollout', 0.8)); // Rollout has 90% accuracy; a miss ends the roll
+  p.cooldowns = {};
+  assert.equal(g.useMove(p, 'leafBlade'), false, 'locked into Rollout');
+  p.rampage = null;
+  use(g, p, 'thrash', 0.8);
+  use(g, p, 'thrash', 0.8);
+  assert.ok(p.confused > 0, 'confused after its rampage');
+  use(g, p, 'uproar', 0.8);
+  assert.equal(g.applyStatus(o, 'sleep', { source: p }), false);
+});
+
+test("Own Tempo, Oblivious, Soundproof, Storm Drain and Piercing Drill", () => {
+  const g = battle(['gengar', 'snorlax', 'lapras'], ['smeargle', 'snorlax', 'lapras']);
+  rolls(0.1, () => use(g, g.player, 'confuseRay'));
+  assert.ok(!(g.opponent.confused > 0), 'Own Tempo: no confusion');
+  const g2 = battle(['blastoise', 'snorlax', 'lapras'], ['gastrodon', 'snorlax', 'lapras']), gas = g2.opponent, hp = gas.hp;
+  applyHit(g2, g2.player, gas, MOVES.hydroPumpAtk, { stack: {} });
+  assert.equal(gas.hp, hp, 'Storm Drain soaked up the water');
+  const g3 = battle(['exploud', 'snorlax', 'lapras'], ['bastiodon', 'snorlax', 'lapras']), bas = g3.opponent, hp3 = bas.hp;
+  applyHit(g3, g3.player, bas, MOVES.hyperVoice, { stack: {} });
+  assert.equal(bas.hp, hp3, 'Soundproof: Hyper Voice did nothing');
+  const g4 = battle(['excadrill', 'snorlax', 'lapras'], ['blissey', 'snorlax', 'lapras']), ex = g4.player, bl = g4.opponent;
+  g4.megaEvolve(ex, true);
+  run(g4, 2);
+  assert.equal(ex.species.id, 'excadrillMega');
+  bl.guard = { mult: 0, color: '#fff', label: 'PROTECT' };
+  const hp4 = bl.hp;
+  rolls(0.5, () => applyHit(g4, ex, bl, MOVES.ironHead, { stack: {} }));
+  assert.ok(bl.hp < hp4, 'Piercing Drill went through Protect');
 });

@@ -477,9 +477,9 @@ export const ABILITIES = {
     name: 'Lightning Rod', desc: 'Absorbs Electric attacks and raises attack 30% for 5s.',
     ...absorbType('electric', 'Drew in the lightning!', (g, me) => g.buff(me, 'atk', 1.3, 5)),
   },
+  piercingDrill: { name: 'Piercing Drill', desc: 'Its contact moves drill through Protect and similar moves for ¼ of their damage.', piercing: 0.25 },
   shadowTag: { name: 'Shadow Tag', desc: "While it is on the field, the foe can't switch out.", shadowTag: true },
   insomnia: { name: 'Insomnia', desc: "Can't fall asleep or be stunned.", immune: ['sleep', 'stun'] },
-  simple: { name: 'Simple', desc: 'Stat changes are doubled.', simple: true }, // Simple Beam
   // ── Newcomers ──
   swarm: { name: 'Swarm', ...pinch('bug', 'SWARM', '#a8b820') },
   sharpness: { name: 'Sharpness', desc: 'Slicing moves (blades, claws, cuts) hit 30% harder.', dealMult: (g, me, foe, move) => (move.slice ? 1.3 : 1) },

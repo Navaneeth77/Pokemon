@@ -13,6 +13,12 @@ import { movePool, isCompetitive, learnGen } from './data/movepool.js';
 import { ROLES, STYLES, roleOf, moveStyle, fitsRole } from './roles.js';
 
 // Role badge (roles.js) and a move's style tag, with "+20%" when it suits the Pokémon's role.
+// Moves whose power depends on the battle (Gyro Ball, Low Kick, Reversal, Seismic Toss…) show VAR instead of a number.
+const VARIES = new Set(['gyroBall', 'lowKick', 'grassKnot', 'heavySlam', 'heatCrash', 'storedPower', 'powerTrip', 'waterSpout', 'eruption', 'dragonEnergy',
+  'reversal', 'flail', 'wringOut', 'crushGrip', 'hardPress', 'frustration', 'return', 'beatUp', 'rageFist', 'lastRespects', 'echoedVoice', 'furyCutter',
+  'rollout', 'iceBall', 'spitUp', 'present', 'fling', 'seismicToss', 'nightShade', 'superFang', 'endeavor', 'naturesMadness', 'ruination', 'finalGambit',
+  'comeuppance', 'fissure', 'sheerCold', 'guillotine', 'hornDrill']);
+const powerOf = m => (m.power > 0 && !VARIES.has(m.id) ? m.power : 'VAR');
 const roleBadge = s => { const R = ROLES[roleOf(s)]; return `<b class="role-badge" style="--rc:${R.color}" title="${R.name}: ${R.blurb}">${R.short}</b>`; };
 const styleTag = (s, m) => { const st = STYLES[moveStyle(m)]; return st ? `<i class="style-tag" style="--sc:${st.color}">${st.short}</i>${fitsRole(s, m) ? '<i class="fit-tag" title="Suits its role: 20% stronger, recharges 15% faster">+20%</i>' : ''}` : ''; };
 const roleLine = s => { const r = roleOf(s), R = ROLES[r]; return `<div class="role-line">${roleBadge(s)} ${R.blurb}. ${R.fits.map(k => STYLES[k].name).join(' and ')} moves are 20% stronger${r === 'support' ? ' (status moves recharge faster)' : ''} and recharge 15% faster.</div>`; };
@@ -31,7 +37,7 @@ const esc = str => str.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>'
 function moveLine(id) {
   const m = MOVES[id], [c1] = TYPE_COLORS[m.type];
   return `<li><b style="color:${c1}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}`
-    + `<span>${m.ultimate ? 'ULT' : m.power} · ${esc(m.tag)}</span></li>`;
+    + `<span>${m.ultimate ? 'ULT' : powerOf(m)} · ${esc(m.tag)}</span></li>`;
 }
 
 export class UI {
@@ -349,7 +355,7 @@ export class UI {
     const s = SPECIES[id], ab = ABILITIES[s.ability];
     const mv = mid => {
       const m = MOVES[mid];
-      return `<li><b style="color:${TYPE_COLORS[m.type][0]}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}<small>${m.ultimate ? 'ULT' : m.power}</small></li>`;
+      return `<li><b style="color:${TYPE_COLORS[m.type][0]}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}<small>${m.ultimate ? 'ULT' : powerOf(m)}</small></li>`;
     };
     const megas = (s.mega ?? []).map(m => SPECIES[m].name).join(' / ');
     return `
@@ -444,7 +450,7 @@ export class UI {
     const byName = (a, b) => MOVES[a].name.localeCompare(MOVES[b].name), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
     const pool = [...movePool(s)].sort((a, b) => fitsRole(s, MOVES[b]) - fitsRole(s, MOVES[a]) || byName(a, b)), gen = learnGen(id);
     let query = '';
-    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${m.power}`} · ${m.sure || m.acc == null ? '—' : `${m.acc}%`}`;
+    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${powerOf(m)}`} · ${m.sure || m.acc == null ? '—' : `${m.acc}%`}`;
     let draft = [...(this.kitOf(id).moves ?? s.moves)], msg = '';
     const saveMoves = () => this.setKit(id, { moves: draft.filter(Boolean) });
     const poolBtn = mid => {
@@ -886,7 +892,7 @@ export class UI {
       btn.style.setProperty('--c1', c1);
       btn.style.setProperty('--c2', c2);
       btn.innerHTML = `<span class="key">${i + 1}</span>
-        <span class="info"><span class="name">${m.name}${m.chargeable ? ' <em class="hold">⚡ HOLD</em>' : ''} ${styleTag(mon.species, m)}</span><span class="meta">${m.cat === 'status' ? CAT.status : `${CAT[m.cat]} · ${m.power}`} · ${esc(m.tag)}</span></span>
+        <span class="info"><span class="name">${m.name}${m.chargeable ? ' <em class="hold">⚡ HOLD</em>' : ''} ${styleTag(mon.species, m)}</span><span class="meta">${m.cat === 'status' ? CAT.status : `${CAT[m.cat]} · ${powerOf(m)}`} · ${esc(m.tag)}</span></span>
         <span class="type">${m.type.toUpperCase()}</span><span class="cd"></span><span class="cdt"></span>`;
       btn.addEventListener('mousedown', e => {
         e.preventDefault();

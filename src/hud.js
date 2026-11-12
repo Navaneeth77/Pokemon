@@ -284,8 +284,8 @@ export class Hud {
   drawWeather(ctx) {
     const g = this.game;
     const chips = [];
-    const label = g.deltaStream ? 'STRONG WINDS' : { rain: 'RAIN', sun: 'HARSH SUN', sand: 'SANDSTORM', snow: 'SNOW' }[g.weather];
-    if (label) chips.push([label, g.deltaStream ? '#2f9e95' : { rain: '#3a6ad0', sun: '#d8781a', sand: '#a88a4a', snow: '#6a9ac8' }[g.weather]]);
+    const label = g.deltaStream ? 'STRONG WINDS' : { rain: 'RAIN', sun: 'HARSH SUN', sand: 'SANDSTORM', snow: 'SNOW', hail: 'HAIL' }[g.weather];
+    if (label) chips.push([label, g.deltaStream ? '#2f9e95' : { rain: '#3a6ad0', sun: '#d8781a', sand: '#a88a4a', snow: '#6a9ac8', hail: '#5a8ab8' }[g.weather]]);
     if (g.terrain) chips.push([`${g.terrain.kind.toUpperCase()} TERRAIN ${Math.ceil(g.terrain.t)}`, { electric: '#c8a018', grassy: '#3f9a2c', psychic: '#c03a98', misty: '#d070a8' }[g.terrain.kind]]);
     if (!chips.length) return;
     ctx.font = '400 7px "Luckiest Guy"';

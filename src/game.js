@@ -58,8 +58,8 @@ const ARENA_EVENTS = {
   indigo: { name: 'LIGHTNING STRIKE!', hit: 'ZAP!', n: 3, r: 24, color: '#ffe066', status: 'para',
     fx: (g, z) => { g.spawn(new Lightning(z.x, z.y - 240, z.x, z.y, 0.3)); electricBurst(g, z.x, z.y, 6); g.marks.burn(z.x, z.y, 16); sfx.thunder(); } },
 };
-const WEATHER_START = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!', snow: 'It started to snow!' };
-const WEATHER_END = { rain: 'The rain stopped.', sun: 'The harsh sunlight faded.', sand: 'The sandstorm subsided.', snow: 'The snow stopped.' };
+const WEATHER_START = { rain: 'It started to rain!', sun: 'The sunlight turned harsh!', sand: 'A sandstorm kicked up!', snow: 'It started to snow!', hail: 'It started to hail!' };
+const WEATHER_END = { rain: 'The rain stopped.', sun: 'The harsh sunlight faded.', sand: 'The sandstorm subsided.', snow: 'The snow stopped.', hail: 'The hail stopped.' };
 const HAZARD_MAX = { rocks: 1, spikes: 3, toxic: 2, web: 1 };
 const HAZARD_NAME = { rocks: 'Stealth Rock', spikes: 'Spikes', toxic: 'Toxic Spikes', web: 'Sticky Web' };
 const HAZARD_COLOR = { rocks: '#e8dcc0', spikes: '#d8b878', toxic: '#e0a0f0', web: '#ffffff' };
@@ -1665,10 +1665,11 @@ export class Game {
       for (const m of field) if (grounded(m) && m.hp < m.maxHp) this.heal(m, m.maxHp * 0.015);
     }
     if (!w) return;
-    const n = w === 'rain' ? 4 : w === 'sand' ? 3 : w === 'snow' ? 2 : 0;
+    const n = w === 'rain' ? 4 : w === 'sand' ? 3 : w === 'snow' ? 2 : w === 'hail' ? 3 : 0;
     for (let i = 0; i < n; i++) {
       if (w === 'rain') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: 120, vx: -40, vz: -420, life: 0.28, size: 1.5, colors: ['#bfe6ff', '#8fc8f0'] });
       else if (w === 'snow') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: rand(60, 120), vx: rand(-20, 10), vz: rand(-60, -40), life: 1.6, size: rand(1.5, 2.5), colors: ['#ffffff', '#e0f4ff'] });
+      else if (w === 'hail') this.particles.spawn({ x: rand(-20, 380), y: rand(60, 640), z: 120, vx: -30, vz: -300, life: 0.4, size: rand(2, 3), colors: ['#ffffff', '#c8ecff'] });
       else this.particles.spawn({ x: rand(-40, 360), y: rand(60, 640), z: rand(2, 40), vx: rand(160, 240), vy: rand(-10, 20), life: 0.5, size: rand(1.5, 2.5), colors: ['#e8d8b0', '#c8b080'] });
     }
     // Sandstorm: 1/16 of max HP every 3s (a "turn") to anything that isn't Rock, Ground or Steel.
@@ -1679,6 +1680,17 @@ export class Game {
         if (!immune) {
           this.dotDamage(m, 1 / 16, '#c8b080');
           this.ui.log(`${m.species.name} is buffeted by the sandstorm!`, m.side);
+        }
+      }
+    }
+    // Hail: 1/16 of max HP every 3s to anything that isn't an Ice type.
+    if (w === 'hail' && (this.weatherT += dt) >= 3) {
+      this.weatherT = 0;
+      for (const m of field) {
+        const ab = abilityOf(m);
+        if (!typesOf(m).includes('ice') && !ab.weather && ITEMS[m.item]?.id !== 'safetyGoggles') {
+          this.dotDamage(m, 1 / 16, '#c8ecff');
+          this.ui.log(`${m.species.name} is buffeted by the hail!`, m.side);
         }
       }
     }

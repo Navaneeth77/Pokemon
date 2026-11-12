@@ -12,6 +12,7 @@ const FORECAST = {
   rain: { name: 'Rainy Form', type: 'water', sprite: 'castform-rainy', color: '#5a8ef0' },
   snow: { name: 'Snowy Form', type: 'ice', sprite: 'castform-snowy', color: '#9fd8ff' },
 };
+FORECAST.hail = FORECAST.snow; // hail brings out the Snowy Form too
 const dec = (me, k, dt) => (me.ab[k] = Math.max(0, (me.ab[k] ?? 0) - dt));
 const hasStatus = me => me.frozen > 0 || STATUSES.some(k => me.status[k] > 0);
 const onField = mon => mon?.alive && !mon.hidden;
@@ -66,7 +67,7 @@ function whileOn(test, text, label, color, extra = {}) {
   };
 }
 
-const inWeather = w => (g, me) => g.weather === w;
+const inWeather = w => (g, me) => g.weather === w || (w === 'snow' && g.weather === 'hail'); // snow abilities work in hail too
 // Chlorophyll, Swift Swim, Sand Rush, Slush Rush: Speed doubles in their weather (stats.js effective Speed).
 const weatherSpeed = (w, label, color, text) => whileOn(inWeather(w), text, label, color, { speedMult: me => (me.ab.on ? 2 : 1) });
 const weatherDodge = (w, label, color) => whileOn(inWeather(w), 'Hidden by the weather!', label, color, {
@@ -573,7 +574,7 @@ export const OFFICIAL = {
       return 0.05;
     },
     tick(g, me) {
-      if (!me.ab.mask && g.weather === 'snow') {
+      if (!me.ab.mask && (g.weather === 'snow' || g.weather === 'hail')) {
         me.ab.mask = true;
         g.abilityPop(me, 'Its ice face was restored!');
       }
@@ -585,7 +586,7 @@ export const OFFICIAL = {
   heavyMetal: { name: 'Heavy Metal', desc: 'So heavy it barely budges: 60% less knockback.', kbMult: 0.4 },
   lightMetal: { name: 'Light Metal', desc: 'Light on its feet: 15% faster, but knocked back further.', speedMult: () => 1.15, kbMult: 1.3 },
   bulletproof: { name: 'Bulletproof', desc: 'Ball and bomb moves bounce off it.', ...immuneTo(m => !!m.bullet, 'It is bulletproof!') },
-  soundproof: { name: 'Soundproof', desc: 'Sound moves have no effect on it.', ...immuneTo(m => !!m.sound, 'It blocked out the sound!') },
+  soundproof: { name: 'Soundproof', desc: 'Sound moves (Hyper Voice, Supersonic, Perish Song…) have no effect on it.', soundproof: true, ...immuneTo(m => !!m.sound, 'It blocked out the sound!') },
   armorTail: { name: 'Armor Tail', desc: 'Lightning-fast priority strikes have no effect on it.', ...immuneTo(m => !!m.priority, 'Its tail blocked the strike!') },
   queenlyMajesty: { name: 'Queenly Majesty', desc: 'Lightning-fast priority strikes have no effect on it.', ...immuneTo(m => !!m.priority, 'Its majesty repelled the strike!') },
   dazzling: { name: 'Dazzling', desc: 'Lightning-fast priority strikes have no effect on it.', ...immuneTo(m => !!m.priority, 'It dazzled the attacker!') },
@@ -606,8 +607,8 @@ export const OFFICIAL = {
     },
   },
   guardDog: { name: 'Guard Dog', desc: "Intimidate raises its attack instead; it can't be knocked back much.", guardDog: true, kbMult: 0.5 },
-  oblivious: { name: 'Oblivious', weak: true, desc: "Too oblivious to be intimidated or charmed.", noIntimidate: true },
-  ownTempo: { name: 'Own Tempo', weak: true, desc: "Goes at its own pace: can't be intimidated or stunned.", noIntimidate: true, immune: ['stun'] },
+  oblivious: { name: 'Oblivious', weak: true, desc: "Too oblivious to be intimidated, charmed (Attract) or taunted.", noIntimidate: true, noInfatuation: true, noTaunt: true },
+  ownTempo: { name: 'Own Tempo', weak: true, desc: "Goes at its own pace: can't be confused, intimidated or stunned.", noIntimidate: true, noConfusion: true, immune: ['stun'] },
   hyperCutter: { name: 'Hyper Cutter', weak: true, desc: "Its attack can't be lowered.", keepStat: 'atk' },
   bigPecks: { name: 'Big Pecks', weak: true, desc: "Its defence can't be lowered.", keepStat: 'def' },
   whiteSmoke: { name: 'White Smoke', desc: "Its stats can't be lowered.", noDebuff: true },
@@ -705,7 +706,7 @@ export const OFFICIAL = {
   grassPelt: { ...whileOn((g) => g.terrain?.kind === 'grassy', 'Its pelt toughened!', 'GRASS PELT', '#62b947', { takeMult: (g, me) => (me.ab.on ? 0.75 : 1) }), name: 'Grass Pelt', desc: 'On Grassy Terrain it takes 25% less damage.' },
   // Castform: changes form with the weather — its sprite and its type — the moment the weather changes.
   forecast: {
-    name: 'Forecast', desc: 'Changes form with the weather: Sunny Form (Fire) in harsh sunlight, Rainy Form (Water) in rain, Snowy Form (Ice) in snow.',
+    name: 'Forecast', desc: 'Changes form with the weather: Sunny Form (Fire) in harsh sunlight, Rainy Form (Water) in rain, Snowy Form (Ice) in snow or hail.',
     tick(g, me) {
       const form = FORECAST[g.weather] ?? null, now = me.ab.form ?? null;
       if (form?.sprite === (now?.sprite ?? null) || (!form && !now)) return;

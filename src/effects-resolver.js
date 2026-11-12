@@ -211,6 +211,7 @@ export function statusMove(game, user, move) {
       return say(`${user.species.name} put in a substitute!`);
     case 'taunt':
       if (!foe?.alive || foe.hidden) return;
+      if (abilityOf(foe).noTaunt) return game.abilityPop(foe, "It isn't fooled by the taunt!");
       foe.taunted = 6;
       game.floatText(foe, 'TAUNTED!', '#ff7a5a');
       return say(`${foe.species.name} fell for the taunt! It can't use status moves for 6s.`);

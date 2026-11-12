@@ -546,6 +546,8 @@ class Shot extends MoveAction {
     const projectile=this.game.spawn(style
       ? new Orb(this.game, this.user, this.move, m.x, m.y, m.z, ang, style, i)
       : new AirBlade(this.game, this.user, this.move, m.x, m.y, m.z, ang));
+    // A split volley: the shots share one hit (one accuracy roll, one added effect) and each carries a part of it.
+    if (c.part) Object.assign(projectile, { part: 1 / (c.spread?.length ?? 1), stack: (this.volleyStack ??= {}) });
     if(skyLegend(this.user))this.game.spawn(new Slipstream(projectile,this.move.range/(projectile.speed||300)+.15,style?'#dab8ff':'#b8f0ff',style?14:20));
     sfx[c.sound]();
     this.allowMove = true;
@@ -1367,7 +1369,10 @@ class TwoTurn extends MoveAction {
       }
       sfx.zap(0.3);
     }
-    this.at(c.hold, () => this.strike());
+    // Solar Blade needs no charging in harsh sunlight, Electro Shot none in rain.
+    const instant = c.instantIn && g.weather === c.instantIn;
+    if (instant) g.floatText(u, c.instantIn === 'sun' ? 'SUNLIGHT!' : 'RAIN!', c.instantIn === 'sun' ? '#ffe680' : '#86ccff');
+    this.at(instant ? 0.08 : c.hold, () => this.strike());
   }
 
   tick(dt) {
@@ -3210,7 +3215,7 @@ const POOL_MOVES = {
   partingShot: sp('Parting Shot', 'dark', 8, "Lowers the foe's Attack and Sp. Atk · switch ready", { aim: true }),
   reflect: sp('Reflect', 'psychic', 16, 'Halves physical damage to your side for 15s'),
   lightScreen: sp('Light Screen', 'psychic', 16, 'Halves special damage to your side for 15s'),
-  auroraVeil: sp('Aurora Veil', 'ice', 16, 'In snow: halves all damage to your side for 15s'),
+  auroraVeil: sp('Aurora Veil', 'ice', 16, 'In snow or hail: halves all damage to your side for 15s'),
   tailwind: sp('Tailwind', 'flying', 16, "Doubles your side's Speed for 12s"),
   trickRoom: sp('Trick Room', 'psychic', 18, 'For 15s slower Pokémon move and recharge faster'),
   counter: sp('Counter', 'fighting', 6, 'For 1.2s: returns a physical hit at double damage', { at: 0.02, end: 0.25 }),
@@ -3254,7 +3259,7 @@ const EXTRA_MOVES = {
   detect: util('Detect', 'fighting', 6, 'Blocks every attack for 0.9s', { kind: 'guard', dur: 0.9, mult: 0, color: '#ffb070', label: 'DETECT', at: 0.02, end: 0.25 }),
   obstruct: util('Obstruct', 'dark', 6, 'Blocks every attack for 0.9s · contact: Defense −2', { kind: 'guard', dur: 0.9, mult: 0, drop: { def: -2 }, color: '#8a7a9a', label: 'OBSTRUCT', at: 0.02, end: 0.25 }),
   silkTrap: util('Silk Trap', 'bug', 6, 'Blocks every attack for 0.9s · contact: Speed −1', { kind: 'guard', dur: 0.9, mult: 0, drop: { spe: -1 }, color: '#e8e0c8', label: 'SILK TRAP', at: 0.02, end: 0.25 }),
-  hail: util('Hail', 'ice', 14, 'Snow for 20s · Ice types toughen', { kind: 'weather', weather: 'snow', dur: 20, anim: 'Pose', color: '#d8f0ff' }),
+  hail: util('Hail', 'ice', 14, 'Hail for 20s · chips everything but Ice types', { kind: 'weather', weather: 'hail', dur: 20, anim: 'Pose', color: '#d8f0ff' }),
   confuseRay: foeSp('Confuse Ray', 'ghost', 8, 'Confuses the foe: its moves sometimes hurt itself instead'),
   supersonic: foeSp('Supersonic', 'normal', 8, 'Confuses the foe: its moves sometimes hurt itself instead'),
   sweetKiss: foeSp('Sweet Kiss', 'fairy', 8, 'Confuses the foe: its moves sometimes hurt itself instead'),
@@ -3334,8 +3339,8 @@ const EXTRA_MOVES = {
   fairyLock: sp('Fairy Lock', 'fairy', 12, "For a moment no one can switch out"),
   dive: twoTurn('Dive', 'water', 80, 2.4, 'Dives out of reach, then surges up under the foe', { mode: 'dig', hold: 0.55 }),
   skullBash: twoTurn('Skull Bash', 'normal', 130, 3.4, 'Tucks in (Defense +1), then rams the foe', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#e8e0c8', '#a8a878'], knockback: 260 }),
-  solarBlade: twoTurn('Solar Blade', 'grass', 125, 3.2, 'Gathers sunlight, then slashes', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#fff2a0', '#7ac850'], knockback: 240 }),
-  electroShot: twoTurn('Electro Shot', 'electric', 130, 3.2, 'Charges (Sp. Atk +1), then strikes', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#fff27a', '#3a8ae8'], knockback: 240 }),
+  solarBlade: twoTurn('Solar Blade', 'grass', 125, 3.2, 'Gathers sunlight, then slashes · instant in harsh sunlight', { mode: 'charge', hold: 0.7, instantIn: 'sun', colors: ['#ffffff', '#fff2a0', '#7ac850'], knockback: 240 }),
+  electroShot: twoTurn('Electro Shot', 'electric', 130, 3.2, 'Charges (Sp. Atk +1), then strikes · instant in rain', { mode: 'charge', hold: 0.7, instantIn: 'rain', colors: ['#ffffff', '#fff27a', '#3a8ae8'], knockback: 240 }),
   shadowForce: twoTurn('Shadow Force', 'ghost', 120, 2.8, 'Vanishes, then strikes · goes through Protect', { mode: 'phantom', hold: 0.5, knockback: 220 }),
 };
 Object.assign(EXTRA_MOVES.skullBash, { chargeBoost: { def: 1 } });
@@ -3348,6 +3353,13 @@ Object.assign(POOL_MOVES.doomDesire, { power: 140 });
 for (const [id, d] of Object.entries(MOVEDEX)) {
   if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], mechanicsOf(d));
   else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d), generated: true };
+}
+// Single projectiles turned into split volleys of three (two for the blades and gusts): the shots fan out, follow the
+// foe and share the hit (targeting.js FAN).
+for (const [id, n] of Object.entries({ ember: 3, rockThrow: 3, smackDown: 3, mudSlap: 3, sludge: 3, hex: 3, leafage: 3, fairyWind: 2, waterGun: 3, poisonSting: 3,
+  dragonBreath: 3, magnetBomb: 3, frostBreath: 3, silverWind: 3, ominousWind: 3, mudBomb: 3, gust: 2 })) {
+  const m = MOVES[id];
+  if (m?.shot) m.shot = { ...m.shot, spread: Array(n).fill(0), stagger: 0.06, part: true };
 }
 // Moves with their own staged animation (data/move-anims.js, move-sequence.js).
 class Sequence extends MoveAction {
@@ -3441,7 +3453,7 @@ for (const [tag, ids] of Object.entries(FAMILY)) for (const id of ids) if (MOVES
 // Weather rules (adaptMove): Solar Beam's charge; Hurricane's accuracy in rain and sun.
 MOVES.solarBeam.solar = true;
 for (const id of ['hurricane', 'hurricaneAtk', 'thunderAtk']) if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], { acc: 70, weatherAcc: { rain: 'sure', sun: 50 } });
-for (const id of ['blizzardAtk']) if (MOVES[id]) Object.assign(MOVES[id], { acc: 70, weatherAcc: { snow: 'sure' } });
+for (const id of ['blizzardAtk']) if (MOVES[id]) Object.assign(MOVES[id], { acc: 70, weatherAcc: { snow: 'sure', hail: 'sure' } });
 // Slicing moves (Gallade's Sharpness).
 for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw', 'crossPoison', 'slash', 'smartStrike', 'wingAttack']) MOVES[id].slice = true;
 // Moves that drag the foe toward the user instead of pushing it away.
@@ -3480,7 +3492,7 @@ export function adaptMove(game, user, m) {
   }
   // Weather accuracy: Thunder and Hurricane can't miss in rain and drop to 50% in sun; Blizzard can't miss in snow.
   if (m.weatherAcc?.[w] != null) set(m.weatherAcc[w] === 'sure' ? { acc: 100, sure: true } : { acc: m.weatherAcc[w] });
-  if (m.weatherBall && w) set({ type: { sun: 'fire', rain: 'water', sand: 'rock', snow: 'ice' }[w], power: m.power * 2 });
+  if (m.weatherBall && w) set({ type: { sun: 'fire', rain: 'water', sand: 'rock', snow: 'ice', hail: 'ice' }[w], power: m.power * 2 });
   if (m.facade && Object.values(user.status).some(v => v > 0)) set({ power: m.power * 2 });
   if (m.acrobatics && !user.item) set({ power: m.power * 2 });
   if (m.util?.weatherHeal) set({ util: { ...m.util, pct: w === 'sun' ? 2 / 3 : w ? 1 / 4 : 1 / 2 } });

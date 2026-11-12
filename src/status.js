@@ -37,6 +37,11 @@ export function applyStatus(game, mon, name, { dur, source, toxic } = {}) {
     else text(game, mon, 'IMMUNE', '#c9d2de', 6);
     return false;
   }
+  // Uproar: nobody falls asleep while it lasts.
+  if (name === 'sleep' && (game.player?.uproar > 0 || game.opponent?.uproar > 0)) {
+    text(game, mon, 'THE UPROAR KEEPS IT AWAKE', '#ffe680', 6);
+    return false;
+  }
   // Safeguard keeps the foe's statuses off its side.
   if (source && source.side !== mon.side && game.sides?.[mon.side]?.safeguard > 0) {
     text(game, mon, 'SAFEGUARD!', '#9fe8ff', 6);

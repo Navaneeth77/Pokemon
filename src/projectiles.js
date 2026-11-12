@@ -28,7 +28,8 @@ class Projectile {
   }
 
   hitOpts(extra) {
-    return { dirX: Math.cos(this.angle), dirY: Math.sin(this.angle), stack: this.stack, ...extra };
+    // One shot of a split volley carries its part of the move's power.
+    return { dirX: Math.cos(this.angle), dirY: Math.sin(this.angle), stack: this.stack, ...(this.part && { power: Math.max(1, Math.round(this.move.power * this.part)) }), ...extra };
   }
 
   update(dt) {

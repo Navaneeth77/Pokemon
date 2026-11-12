@@ -714,3 +714,13 @@ Object.assign(MOVE_ANIMS, {
   ancientPower: volley('rock', 3, { style: 'boulder', rgb: [220, 190, 140], gap: 0.08, scale: 1.3, charge: 0.35, orbit: true, glow: true, part: true }),
   sludgeBomb: volley('poison', 3, { style: 'bomb', rgb: [170, 90, 210], gap: 0.07, scale: 1.25, part: true }),
 });
+// More split volleys (three shots sharing the hit).
+Object.assign(MOVE_ANIMS, {
+  airCutter: volley('flying', 2, { style: 'crystal', rgb: [235, 248, 255], gap: 0.06, dur: 0.2, scale: 1.3, part: true, sound: 'airSlash' }),
+  mysticalFire: volley('fire', 3, { style: 'flame', rgb: [255, 140, 200], gap: 0.06, scale: 1.1, part: true }),
+  storedPower: volley('psychic', 3, { style: 'orb', rgb: [255, 140, 220], gap: 0.06, scale: 1.1, charge: 0.3, orbit: true, part: true }),
+  extrasensory: volley('psychic', 3, { style: 'orb', rgb: [255, 170, 230], gap: 0.06, scale: 1.1, part: true }),
+  psychoCut: volley('psychic', 2, { style: 'crystal', rgb: [255, 150, 220], gap: 0.06, dur: 0.2, scale: 1.3, part: true }),
+  clearSmog: volley('poison', 3, { style: 'bomb', rgb: [210, 210, 220], gap: 0.06, scale: 1.1, part: true }),
+  vacuumWave: volley('fighting', 2, { style: 'orb', rgb: [200, 220, 255], gap: 0.05, charge: 0.06, dur: 0.18, scale: 1.1, part: true }),
+});

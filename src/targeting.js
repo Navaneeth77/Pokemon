@@ -53,6 +53,10 @@ Object.assign(TARGETING_TUNING, {
   // Older single projectiles fired in a spread (Shot): the same fan.
   magicalLeaf: { ...FAN, fan: 0.9 }, razorLeaf: { ...FAN, fan: 0.75 }, acidSpray: { ...FAN, fan: 0.7 }, dragonDarts: { ...FAN, fan: 0.7 },
   boneRush: { ...FAN, fan: 1.1 }, bonemerang: { ...FAN, fan: 0.8 }, twineedle: { ...FAN, fan: 0.6 }, waterShuriken: { ...FAN, fan: 1.1 },
+  // Single shots made split volleys (moves.js, move-anims.js).
+  ...Object.fromEntries(['ember', 'rockThrow', 'smackDown', 'mudSlap', 'sludge', 'hex', 'leafage', 'waterGun', 'poisonSting', 'dragonBreath', 'magnetBomb',
+    'frostBreath', 'silverWind', 'ominousWind', 'mudBomb', 'mysticalFire', 'storedPower', 'extrasensory', 'clearSmog'].map(id => [id, { ...FAN, fan: 0.9 }])),
+  ...Object.fromEntries(['fairyWind', 'gust', 'airCutter', 'psychoCut', 'vacuumWave'].map(id => [id, { ...FAN, fan: 0.7 }])),
 });
 // Never-miss moves the move database doesn't cover home in like the rest.
 for (const id of ['swift', 'magicalLeaf', 'shockWave', 'aerialAce', 'magnetBomb', 'disarmingVoice']) TARGETING_TUNING[id] = { ...TARGETING_TUNING[id], kind: 'homing', ...SURE_HOMING };

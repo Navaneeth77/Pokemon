@@ -17,7 +17,7 @@ export const MORE_MEGAS = [
   ["glalie","glalieMega","Mega Glalie",{"sprite":"glalie-mega","ability":"refrigerate","aura":["#ffffff","#62c9d3","#2b8794"]}],
   ["lopunny","lopunnyMega","Mega Lopunny",{"sprite":"lopunny-mega","ability":"scrappy","aura":["#ffffff","#a8a878","#802414"]}],
   ["gallade","galladeMega","Mega Gallade",{"sprite":"gallade-mega","ability":"innerFocus","aura":["#ffffff","#f2588a","#802414"]}],
-  ["excadrill","excadrillMega","Mega Excadrill",{"sprite":"excadrill-mega","ability":"moldBreaker","aura":["#ffffff","#c9a05a","#5f6d84"]}],
+  ["excadrill","excadrillMega","Mega Excadrill",{"sprite":"excadrill-mega","ability":"piercingDrill","aura":["#ffffff","#c9a05a","#5f6d84"]}],
   ["scrafty","scraftyMega","Mega Scrafty",{"sprite":"scrafty-mega","ability":"intimidate","aura":["#ffffff","#6a5848","#802414"]}],
   ["eelektross","eelektrossMega","Mega Eelektross",{"sprite":"eelektross-mega","ability":"levitate","aura":["#ffffff","#f2c21c","#a8820a"]}],
   ["dragalge","dragalgeMega","Mega Dragalge",{"sprite":"dragalge-mega","ability":"regenerator","aura":["#ffffff","#a848a8","#4322ad"]}],
@@ -386,7 +386,7 @@ export const MORE_MEGA_STATS = {
    "spd": 65,
    "spe": 103
   },
-  "ability": "moldBreaker",
+  "ability": "Piercing Drill",
   "types": [
    "ground",
    "steel"

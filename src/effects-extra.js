@@ -54,6 +54,7 @@ export const RULED = new Set([
 
 // The move's own accuracy against the foe, for status moves (Lock-On and Gravity count).
 function lands(g, user, foe, move) {
+  if (move.sound && abilityOf(foe).soundproof) { g.abilityPop(foe, "Soundproof: it can't hear it!"); return false; }
   if (move.sure || move.acc == null || user.lockOn > 0) { user.lockOn = 0; return true; }
   const ok = Math.random() * 100 < move.acc * accuracyMult(user, foe) * (g.gravity > 0 ? 5 / 3 : 1);
   if (!ok) { g.floatText(foe, 'MISSED!', '#c9d2de'); log(g, user, `${user.species.name}'s ${move.name} missed!`); }
@@ -63,6 +64,7 @@ function lands(g, user, foe, move) {
 export function confuse(g, mon, by) {
   if (!onField(mon) || bossy(mon)) return false;
   if (mon.confused > 0) return fail(g, mon, 'ALREADY CONFUSED');
+  if (abilityOf(mon).noConfusion) { g.abilityPop(mon, "It doesn't get confused!"); return false; }
   if (by && by.side !== mon.side && g.sides?.[mon.side]?.safeguard > 0) return fail(g, mon, 'SAFEGUARD!');
   mon.confused = 3 + Math.random() * 3;
   g.floatText(mon, 'CONFUSED!', '#e0a0ff');
@@ -75,6 +77,9 @@ export function confuse(g, mon, by) {
 export function moveBlocked(g, user, id, base) {
   if (base.ultimate) return false;
   const foe = user.foe, no = text => { g.floatText(user, text, '#c9d2de'); return true; };
+  // Rollout / Ice Ball keep rolling and Thrash / Raging Fury keep raging; Bide holds still while it stores damage.
+  if (user.rampage && user.rampage.id !== id) return no(`LOCKED INTO ${(MOVES[user.rampage.id]?.name ?? 'IT').toUpperCase()}`);
+  if (user.bide && id !== 'bide') return no('BIDING!');
   if (user.disabled?.t > 0 && user.disabled.id === id) return no('DISABLED!');
   if (user.tormented > 0 && g.lastUsed[user.side] === id) return no('TORMENTED!');
   if (onField(foe) && foe.imprison > 0 && foe.moves.includes(id)) return no('IMPRISONED!');
@@ -129,6 +134,12 @@ export function extraFixed(g, user, target, move) {
       g.floatText(target, "IT'S A ONE-HIT KO!", '#ff7a5a');
       return Math.ceil(target.hp);
     case 'finalGambit': return Math.max(1, Math.ceil(user.hp));
+    // Present: one time in five it's a gift that heals the foe instead.
+    case 'present':
+      if (Math.random() >= 0.2) return undefined;
+      g.heal(target, target.maxHp / 4);
+      g.floatText(target, 'A PRESENT: HEALED!', '#9fffc8');
+      return 0;
     // Comeuppance: the last hit it took (within a turn), back at 1.5×.
     case 'comeuppance': return user.lastHit && g.time - user.lastHit.t < 3 ? Math.round(user.lastHit.dmg * 1.5) : 0;
     default: return undefined;
@@ -144,7 +155,18 @@ export function extraAfterUse(g, user, move) {
     user.chainUse = { id, n: same ? Math.min(4, user.chainUse.n + 1) : 1, t: g.time };
   }
   if (['mistyExplosion', 'finalGambit'].includes(id) && user.alive) g.dotDamage(user, 1, '#ff9a5a');
-  if (['thrash', 'ragingFury', 'uproar'].includes(id) && user.alive && id !== 'uproar') confuse(g, user, null);
+  // Rollout / Ice Ball: locked in for five rolls (or until it stops for a moment).
+  if ((id === 'rollout' || id === 'iceBall') && user.alive) user.rampage = user.chainUse.n < 5 ? { id, t: 2.5 } : null;
+  // Thrash / Raging Fury: locked in for a second use, then it's confused from fatigue.
+  if ((id === 'thrash' || id === 'ragingFury') && user.alive) {
+    if (user.rampage?.id !== id) user.rampage = { id, t: 3, left: 1, tire: true };
+    else if (--user.rampage.left <= 0) { user.rampage = null; confuse(g, user, null); }
+  }
+  // Uproar: for 3s nobody can sleep, and anyone asleep wakes up.
+  if (id === 'uproar' && user.alive) {
+    user.uproar = 3;
+    for (const mon of [g.player, g.opponent]) if (mon?.status?.sleep > 0) { mon.status.sleep = 0; g.floatText(mon, 'WOKE UP!', '#ffe680'); }
+  }
   if (id === 'burnUp' && user.alive) {
     const t = typesOf(user).filter(x => x !== 'fire');
     user.typeOverride = t.length ? t : ['normal'];
@@ -192,6 +214,7 @@ export const EXTRA_STATUS = {
   attract(g, user, move) {
     const f = user.foe;
     if (!onField(f) || bossy(f) || f.infatuated > 0) return fail(g, user);
+    if (abilityOf(f).noInfatuation) { g.abilityPop(f, "It doesn't fall in love!"); return; }
     if (!lands(g, user, f, move)) return;
     f.infatuated = 6;
     g.floatText(f, 'FELL IN LOVE!', '#ff9fd0');
@@ -274,7 +297,7 @@ export const EXTRA_STATUS = {
     g.dotDamage(user, 1, '#8a6ab8');
   },
   perishSong(g, user) {
-    for (const mon of [g.player, g.opponent]) if (onField(mon) && !(mon.perish > 0) && !bossy(mon)) mon.perish = 9.4;
+    for (const mon of [g.player, g.opponent]) if (onField(mon) && !(mon.perish > 0) && !bossy(mon) && !abilityOf(mon).soundproof) mon.perish = 9.4;
     g.hud.showBanner('PERISH SONG', { color: '#d8c8ff', y: 300, life: 1.2, size: 15 });
     log(g, user, 'All Pokémon that hear the song will faint in three turns! Switch out to escape it.');
   },
@@ -434,7 +457,12 @@ function learnFromFoe(g, user, slot, keep) {
 
 // Every frame for the Pokémon on the field (effects-resolver.js tickVolatiles).
 export function tickExtra(g, mon, dt) {
-  for (const k of ['confused', 'infatuated', 'tormented', 'imprison', 'endure', 'laserFocus', 'lockOn', 'grudge', 'magicRoomT', 'wonderRoomT', 'magicCoat', 'electrified', 'telekinesis']) {
+  if (mon.rampage && (mon.rampage.t -= dt) <= 0) {
+    const r = mon.rampage;
+    mon.rampage = null;
+    if (r.tire) confuse(g, mon, null);
+  }
+  for (const k of ['confused', 'infatuated', 'tormented', 'imprison', 'endure', 'laserFocus', 'lockOn', 'grudge', 'magicRoomT', 'wonderRoomT', 'magicCoat', 'electrified', 'telekinesis', 'uproar']) {
     if (!(mon[k] > 0)) continue;
     mon[k] = Math.max(0, mon[k] - dt);
     if (mon[k] === 0 && ['confused', 'infatuated', 'tormented'].includes(k)) log(g, mon, `${mon.species.name} ${k === 'confused' ? 'snapped out of its confusion' : k === 'infatuated' ? 'got over its infatuation' : 'is no longer tormented'}!`);

@@ -88,7 +88,7 @@ export class Pokemon {
       // effects-extra.js
       confused: 0, infatuated: 0, disabled: null, tormented: 0, imprison: 0, perish: 0, ingrained: false, ingrainT: 0, laserFocus: 0, lockOn: 0,
       endure: 0, charged: false, stockpile: 0, grudge: 0, identified: false, octolocked: null, wonderRoomT: 0, chainUse: null,
-      magicCoat: 0, electrified: 0, telekinesis: 0, bide: null, lastHit: null,
+      magicCoat: 0, electrified: 0, telekinesis: 0, bide: null, lastHit: null, rampage: null, uproar: 0,
     });
     this.input.x = this.input.y = 0;
     this.sprite.play(this.idleAnim(), { force: true });

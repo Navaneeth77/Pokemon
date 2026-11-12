@@ -89,7 +89,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
 
   // King's Shield / Quick Guard: most of the hit is blocked; contact against King's Shield saps attack.
   const guard = !o.unblockable && !(A.unseenFist && isContact(move)) && target.guard;
-  if (guard && guard.mult === 0) {
+  // Piercing Drill: its contact moves drill through Protect and the like for a part of their damage.
+  const pierce = guard && guard.mult === 0 && A.piercing && isContact(move);
+  if (guard && guard.mult === 0 && !pierce) {
     if (!stack.blocked) {
       stack.blocked = true;
       // Spiky Shield hurts and Baneful Bunker poisons whatever touches it.
@@ -231,7 +233,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const shielded = J.takeMult?.(game, target, attacker, move, info) ?? 1;
   dmg *= shielded;
   if (shielded < 0.999) game.itemTouch?.(target, 'Damage reduced!');
-  if (guard) dmg *= guard.mult;
+  if (guard) dmg *= pierce ? A.piercing : guard.mult;
   // Reflect, Light Screen and Aurora Veil on the target's side (field.js); Glaive Rush leaves its user open.
   dmg *= screenMult(game, attacker, target, cat, crit);
   if (attacker.charged && type === 'electric') { dmg *= 2; attacker.charged = false; } // Charge
@@ -240,6 +242,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   if (target.glaiveT > 0) dmg *= 2;
   // Fixed-damage moves (Seismic Toss, Super Fang, Endeavor) ignore the formula.
   const fixed = fixedDamage(game, attacker, target, move);
+  if (fixed === 0) return false; // no damage at all (Present's heal, an OHKO move on a raid boss)
   if (fixed != null) dmg = fixed;
   dmg = Math.max(1, Math.round(dmg));
   if (target.shield > 0 && !A.infiltrator) {
