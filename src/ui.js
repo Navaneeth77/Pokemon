@@ -37,7 +37,7 @@ const esc = str => str.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>'
 function moveLine(id) {
   const m = MOVES[id], [c1] = TYPE_COLORS[m.type];
   return `<li><b style="color:${c1}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}`
-    + `<span>${m.ultimate ? 'ULT' : powerOf(m)} · ${esc(m.tag)}</span></li>`;
+    + `<span>${m.ultimate ? (m.cat === 'physical' ? 'PHYSICAL' : 'SPECIAL') : powerOf(m)} · ${esc(m.tag)}</span></li>`;
 }
 
 export class UI {
@@ -355,7 +355,7 @@ export class UI {
     const s = SPECIES[id], ab = ABILITIES[s.ability];
     const mv = mid => {
       const m = MOVES[mid];
-      return `<li><b style="color:${TYPE_COLORS[m.type][0]}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}<small>${m.ultimate ? 'ULT' : powerOf(m)}</small></li>`;
+      return `<li><b style="color:${TYPE_COLORS[m.type][0]}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}<small>${m.ultimate ? (m.cat === 'physical' ? 'PHYS ULT' : 'SPEC ULT') : powerOf(m)}</small></li>`;
     };
     const megas = (s.mega ?? []).map(m => SPECIES[m].name).join(' / ');
     return `

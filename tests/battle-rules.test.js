@@ -127,6 +127,35 @@ test('Dragon Dance raises Attack and Speed one stage each, and the boosts are us
   assert.ok(Math.abs(after / before - 1.5) < 0.06, `+1 Attack ≈ ×1.5 damage: ${before} → ${after}`);
 });
 
+test('physical and special ultimates use the matching stat stages at impact', () => {
+  const damage = (attacker, attackStages = {}, defenseStages = {}) => fixedRandom(() => {
+    const g = battle([attacker, 'snorlax', 'lapras'], ['blissey', 'lapras', 'snorlax']);
+    const { player, opponent } = g;
+    g.stage(player, attackStages);
+    g.stage(opponent, defenseStages);
+    player.ult = 100;
+    const hp = opponent.hp;
+    assert.ok(g.useMove(player, player.species.ultimate));
+    run(g, 7);
+    assert.ok(opponent.hp < hp && opponent.alive);
+    return hp - opponent.hp;
+  });
+  for (const [attacker, offense, defense, otherOffense, otherDefense] of [
+    ['rayquaza', 'atk', 'def', 'spa', 'spd'],
+    ['blastoise', 'spa', 'spd', 'atk', 'def'],
+  ]) {
+    const base = damage(attacker);
+    const boosted = damage(attacker, { [offense]: 2 });
+    const lowered = damage(attacker, { [offense]: -2 });
+    const defended = damage(attacker, {}, { [defense]: 2 });
+    assert.ok(Math.abs(boosted - 2 * base) <= 10, `${attacker}: ${offense} +2 doubles damage (${base} → ${boosted})`);
+    assert.ok(Math.abs(lowered - base / 2) <= 10, `${attacker}: ${offense} −2 halves damage (${base} → ${lowered})`);
+    assert.equal(defended, lowered, `${attacker}: ${defense} +2 halves damage`);
+    assert.equal(damage(attacker, { [otherOffense]: 2 }), base);
+    assert.equal(damage(attacker, {}, { [otherDefense]: 2 }), base);
+  }
+});
+
 test('Recover restores half of max HP', () => {
   const g = battle(['starmie', 'snorlax', 'lapras'], ['snorlax', 'lapras', 'dragonite']), s = g.player;
   s.hp = Math.round(s.maxHp * 0.3);

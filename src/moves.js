@@ -3424,9 +3424,18 @@ for (const id of STATUS_TAIL) {
 // Faster pace: every regular move recovers 30% sooner (ultimates charge a meter instead).
 for (const m of Object.values(MOVES)) if (!m.ultimate && m.cooldown) m.cooldown = Math.max(0.6, Math.round(m.cooldown * 7) / 10);
 
-// Physical moves hit up close and knock harder; special moves work at range; status moves don't attack.
+// Physical ultimates use Attack and Defense even when their choreography covers the whole arena.
+const PHYSICAL_ULTIMATES = new Set([
+  'petalBlizzard', 'infernoOverdrive', 'outrage', 'bulletBarrage', 'calamityStrike', 'illusionAmbush', 'kingsJudgment',
+  'sacredFire', 'precipiceBlades', 'shadowForce', 'boltStrike', 'sunsteelStrike', 'behemothBlade', 'behemothBash',
+  'collisionCourse', 'voltFangStorm', 'regiRockfall', 'ironFortress', 'vCreate', 'diamondStorm', 'hyperspaceFury',
+  'soulStealing', 'plasmaFists', 'razorwindExecution', 'psychicBladeDance', 'tidalEarthquake', 'frozenShadowBarrage',
+  'infernoSkyDive', 'dragonAxeCataclysm', 'gigaImpact', 'dynamicPunch', 'gunkShot', 'fissure', 'skyAttack',
+  'dragonAscent', 'blazeKickOverdrive', 'meteorMash', 'stoneEdge', 'gmaxSlam',
+]);
 for (const m of Object.values(MOVES)) {
-  m.cat = m.officialCat ?? (m.util || m.copy ? 'status' : m.shot || m.beam || m.stream || m.shockwave || m.ultimate || ['thunderbolt', 'psychic'].includes(m.id) ? 'special' : 'physical');
+  if (m.ultimate) m.cat = PHYSICAL_ULTIMATES.has(m.id) ? 'physical' : 'special';
+  else m.cat = m.officialCat ?? (m.util || m.copy ? 'status' : m.shot || m.beam || m.stream || m.shockwave || ['thunderbolt', 'psychic'].includes(m.id) ? 'special' : 'physical');
 }
 // Moves that send the foe flying upward (start of an aerial combo), with launch speed.
 const LAUNCH = {
