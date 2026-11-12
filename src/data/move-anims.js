@@ -426,9 +426,8 @@ function volley(type, n, o = {}) {
 }
 
 Object.assign(MOVE_ANIMS, {
-  signalBeam: volley('bug', 1, { style: 'orb', rgb: [210, 255, 120], glow: true, scale: 1.3 }),
-  pinMissile: volley('bug', 5, { style: 'crystal', rgb: [220, 240, 140], gap: 0.05, dur: 0.2, scale: 0.8 }),
-  scaleShot: volley('dragon', 4, { style: 'crystal', rgb: [170, 140, 255], gap: 0.06, dur: 0.22, scale: 0.9 }),
+  pinMissile: volley('bug', 5, { style: 'needle', rgb: [220, 240, 140], gap: 0.05, dur: 0.2, scale: 0.8 }),
+  scaleShot: volley('dragon', 4, { style: 'scale', rgb: [170, 140, 255], gap: 0.06, dur: 0.22, scale: 0.9 }),
   auraSphere: volley('fighting', 1, { style: 'orb', rgb: [90, 150, 255], scale: 1.7, charge: 0.35, orbit: true, glow: true, shake: [6, 0.25], sound: 'pulse', kb: 200 }),
   fireBlast: volley('fire', 1, { style: 'flame', rgb: [255, 120, 40], scale: 2.2, charge: 0.4, orbit: true, shake: [9, 0.35], sound: 'explosion', markSize: 30, kb: 220, r: 50 }),
   moonblastShot: volley('fairy', 1, { style: 'orb', rgb: [255, 180, 220], scale: 1.6, charge: 0.35, glow: true, dome: 36 }),
@@ -440,7 +439,7 @@ Object.assign(MOVE_ANIMS, {
     { at: 0.25, anim: 'Shoot', missile: { style: 'seed', dur: 0.25, rgb: [140, 220, 90], scale: 1.2 } },
     { at: 0.5, fx: 'leaves', rings: { colors: EL.grass.colors, r: 30 }, tether: { rgb: [140, 230, 110], life: 0.5 }, hit: { r: 26, knockback: 120 } },
   ] } },
-  energyBall: volley('grass', 1, { style: 'orb', rgb: [140, 230, 90], scale: 1.5, charge: 0.3, glow: true }),
+  energyBall: volley('grass', 1, { style: 'energy', rgb: [140, 230, 90], scale: 1.5, charge: 0.3, glow: true }),
   seedBomb: volley('grass', 1, { style: 'seed', rgb: [140, 200, 80], scale: 1.6, shake: [5, 0.2], sound: 'explosion' }),
   ivyCudgel: volley('grass', 1, { style: 'boulder', rgb: [90, 180, 70], scale: 1.5, shake: [6, 0.25], kb: 200 }),
   mudShot: volley('ground', 1, { style: 'bomb', rgb: [150, 110, 60], scale: 1.2 }),

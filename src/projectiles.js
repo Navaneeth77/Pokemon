@@ -2,6 +2,7 @@ import { applyHit } from './combat.js';
 import { rand, Ring, Glow, iceShatter, leafBurst } from './effects.js';
 import { BOUNDS } from './arena.js';
 import { skyLegend, PressureWave } from './legendary-effects.js';
+import { showShotTrail } from './move-presentation.js';
 
 class Projectile {
   constructor(game, user, move, x, y, z, angle, speed, maxDist, radius) {
@@ -29,7 +30,10 @@ class Projectile {
 
   hitOpts(extra) {
     // One shot of a split volley carries its part of the move's power.
-    return { dirX: Math.cos(this.angle), dirY: Math.sin(this.angle), stack: this.stack, ...(this.part && { power: Math.max(1, Math.round(this.move.power * this.part)) }), ...extra };
+    return {
+      dirX: Math.cos(this.angle), dirY: Math.sin(this.angle), stack: this.stack, afterStack: this.afterStack,
+      ...(this.part && { power: Math.max(1, Math.round(this.move.power * this.part)) }), ...extra,
+    };
   }
 
   update(dt) {
@@ -53,6 +57,7 @@ export class AirBlade extends Projectile {
   constructor(game, user, move, x, y, z, angle) {
     super(game, user, move, x, y, z, angle, 330, move.range, 8);
     this.elem = 'flying';
+    showShotTrail(game, this, move);
   }
 
   trail() {
@@ -197,6 +202,7 @@ export class Orb extends Projectile {
     this.s = k > 1 ? { ...s, scale: (s.scale ?? 1) * k, knockback: s.knockback * k } : s;
     this.power = move.power;
     this.elem = STYLE_ELEM[style] ?? move.type;
+    showShotTrail(game, this, move, s.trail[1] ?? s.trail[0]);
   }
 
   update(dt) {
@@ -215,7 +221,8 @@ export class Orb extends Projectile {
 
   trail() {
     const s = this.s, back = this.angle + Math.PI;
-    for (let i = 0; i < (s.shard ? 1 : 2); i++) {
+    const count = s.shard || (s.leaves && this.move.id !== 'leafStorm') ? 1 : 2;
+    for (let i = 0; i < count; i++) {
       this.game.particles.spawn({
         x: this.x + rand(-3, 3), y: this.y + rand(-3, 3), z: this.z + rand(-3, 3),
         vx: Math.cos(back) * 30 + rand(-12, 12), vy: Math.sin(back) * 30 + rand(-12, 12),
@@ -246,6 +253,10 @@ export class Orb extends Projectile {
 
   draw(ctx) {
     const s = this.s, cy = this.y - this.z;
+    if (s.leaves && this.move.id !== 'leafStorm' && (s.homing || this.move.presentation === 'volley')) {
+      this.drawLeaf(ctx, cy);
+      return;
+    }
     if (s.shape) {
       this.drawShape(ctx, cy);
       return;
@@ -279,6 +290,29 @@ export class Orb extends Projectile {
     ctx.beginPath();
     ctx.arc(this.x, cy, 4.5 * (s.scale ?? 1), 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  drawLeaf(ctx, cy) {
+    const { s } = this, scale = (s.scale ?? 1) * 1.4;
+    ctx.save();
+    ctx.translate(this.x, cy);
+    ctx.rotate(this.angle + Math.sin(this.age * 20) * 0.5);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = s.trail[1];
+    ctx.strokeStyle = s.trail[2];
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(9, 0);
+    ctx.quadraticCurveTo(-1, -7, -8, 1);
+    ctx.quadraticCurveTo(1, 6, 9, 0);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = s.trail[0];
+    ctx.beginPath();
+    ctx.moveTo(-8, 1);
+    ctx.quadraticCurveTo(0, -1, 7, 0);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // Spinning water shuriken or Swift star.

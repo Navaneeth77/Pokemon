@@ -9,6 +9,7 @@ import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
 import { prepareReaction, resolveReaction } from './elemental.js';
 import { sfx } from './audio.js';
+import { showMoveImpact } from './move-presentation.js';
 
 // Type matchups use the games' multipliers: 2× and 4× super effective, ½× and ¼× resisted; a type the games make
 // immune takes ¼× (data/types.js IMMUNE_MULT) instead of nothing. Only Magnet Rise still makes a Pokémon immune.
@@ -320,6 +321,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
     const color = crit ? '#ffe14d' : eff > 1 ? '#ffb347' : eff < 1 ? '#d7dee8' : '#ffffff';
     stack.popup = game.spawn(new DamageNumber(target.x + rand(-6, 6), head - 2, dmg, { color, crit, size: eff > 1 ? 19 : 16 }));
   }
+  if (dmg > 0) {
+    showMoveImpact(game, move, target, Math.atan2(dirY, dirX));
+  }
   sparkBurst(game, target.x, target.y, target.bodyZ, eff > 1 || (o.knockback ?? 0) > 150);
   sfx.hit((o.knockback ?? 0) > 150);
 
@@ -385,7 +389,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
     game.dotDamage(attacker, (dmg * move.recoil) / attacker.maxHp, '#ffb070');
   }
   onHit(game, attacker, target, move, dmg, stack);
-  afterUse(game, attacker, move, stack);
+  afterUse(game, attacker, move, o.afterStack ?? stack);
   if (target.substitute && !(target.shield > 0)) target.substitute = false;
   if (reaction) resolveReaction(game, attacker, target, reaction, dmg, applyHit);
   game.recordCombat?.('hit', attacker, target, { damage: actualDamage + barrier, move: move.id, ultimate:!!move.ultimate });

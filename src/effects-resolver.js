@@ -16,6 +16,7 @@ import { applyHit } from './combat.js';
 import { setSide, toggleTrickRoom, breakScreens, swapCourts } from './field.js';
 import { Ring, Glow, Pillar, FloatText, BeamLine, ItemFly, rand } from './effects.js';
 import { sfx } from './audio.js';
+import { showStrikeRelease, WeatherArrival } from './move-presentation.js';
 import { EXTRA_STATUS, extraPower, extraFixed, extraAfterUse, extraOnHit, tickExtra, setExtraTable } from './effects-extra.js';
 
 // The game's move table, set by moves.js once it is built (this module can't import it: moves.js imports this one).
@@ -355,6 +356,7 @@ export function statusMove(game, user, move) {
     case 'chillyReception':
       say(`${user.species.name} is preparing to tell a chillingly bad joke!`);
       game.setWeather('snow', ITEMS[user.item]?.rock === 'snow' ? 40 : 25);
+      if (!game.headless) game.spawn(new WeatherArrival(user, 'snow', '#b9eaff'));
       pivotReady(game, user, move);
       return;
     case 'focusEnergy':
@@ -434,6 +436,7 @@ export function statusMove(game, user, move) {
         p.future = false;
         const t = side === 'player' ? game.player : game.opponent;
         if (!onField(t) || game.state !== 'fighting') return;
+        showStrikeRelease(game, move, t.x, t.y, 5, 0, 52, true);
         game.spawn(new Pillar(t.x, t.y, 0.45, rgb, 240));
         game.spawn(new Ring(t.x, t.y, { r0: 6, r1: 56, life: 0.4, color, width: 4 }));
         game.spawn(new Glow(t.x, t.y, t.bodyZ, 34, rgb, 0.4));

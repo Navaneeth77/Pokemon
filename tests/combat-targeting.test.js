@@ -101,8 +101,9 @@ test("Flamethrower can't hit a foe outside its effective range", () => {
   assert.ok(shoot('charizard', 'snorlax', 'flamethrower', 120).hit);
 });
 
-test('a straight projectile (Fire Blast) is dodged by moving out of its line, and lands on a foe that stays put', () => {
-  assert.equal(MOVES.fireBlast.targeting.kind, 'straight');
+test('Fire Blast still misses a sidestepping foe with its limited steering', () => {
+  assert.equal(MOVES.fireBlast.targeting.kind, 'homing');
+  assert.ok(MOVES.fireBlast.targeting.maxTurn <= 0.15);
   assert.ok(shoot('charizard', 'jolteon', 'fireBlast', 280).hit, 'a still foe is hit');
   assert.equal(shoot('charizard', 'jolteon', 'fireBlast', 280, walkSideways).hit, false, 'a foe running out of the line is not');
 });
@@ -147,4 +148,28 @@ test('no damage without a valid hit event: out-of-range projectiles fall short; 
   assert.equal(shoot('gengar', 'snorlax', 'shadowBall', 400).hit, false);
   assert.equal(shoot('charizard', 'snorlax', 'fireBlast', 400).hit, false);
   assert.equal(shoot('zapdos', 'snorlax', 'thunderAtk', 420).hit, false);
+});
+
+test('Leaf Storm sends six separate leaves that spread out and reconnect with a stationary foe', () => {
+  for (const distance of [120, 220]) {
+    const g = duel('sceptile', 'snorlax');
+    const { player, opponent } = g;
+    Object.assign(player, { x: 180, y: 540 });
+    Object.assign(opponent, { x: 180, y: 540 - distance });
+    const leaves = new Map(), hits = [];
+    g.recordCombat = (kind, attacker, target, details) => {
+      if (kind === 'hit' && details.move === 'leafStorm') hits.push(details.damage);
+    };
+    assert.ok(g.useMove(player, 'leafStorm'));
+    for (let frame = 0; frame < 150; frame++) {
+      g.update(1 / 60);
+      for (const e of g.effects) {
+        if (e.isProjectile && e.move?.id === 'leafStorm' && !leaves.has(e)) leaves.set(e, e.angle);
+      }
+    }
+    assert.equal(leaves.size, 6);
+    assert.equal(new Set(leaves.values()).size, 6, 'the shots fan out');
+    assert.equal(hits.length, 6, `all six leaves connect at ${distance}px`);
+    assert.equal(player.stages.spa, -2, 'the stat drop only happens once');
+  }
 });

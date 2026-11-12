@@ -1,3 +1,5 @@
+import { showStatusRelease } from './move-presentation.js';
+import { ClashImpact } from './clash-animation.js';
 import { drawCosmeticAura, CosmeticStarburst } from './economy-art.js';
 import { newSummary, recordCombat, cosmeticLoadout } from './mastery.js';
 import { quality, observeFrame } from './quality.js';
@@ -41,7 +43,7 @@ export const SWITCH_COOLDOWN = 15;
 const PANEL_W = 318;
 export const HOME = { player: { x: 180, y: 500, dir: 4 }, opponent: { x: 180, y: 215, dir: 0 } };
 const ease = t => 1 - (1 - t) * (1 - t);
-const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent','ChargeOrb','ItemFly']);
+const DECORATIVE_EFFECTS=new Set(['Ring','Glow','DamageNumber','FloatText','Afterimage','ScreenDim','UltimateImpact','MegaAura','RainbowStreak','MegaEmblem','BeamLine','Lightning','Pillar','LegendaryBeam','PsychicBeam','AeroblastBeam','RaidBurst','RaidAreaBurst','NovaGather','CosmeticStarburst','ClockFace','SpaceRift','Crescent','ChargeOrb','ItemFly','MoveCastCue','ShotRibbon','DashStreak','PulseTrain','MoveImpactCue','WeatherArrival','HazardLanding','BeamWake','StatusRelease','StrikeRelease','ClashImpact']);
 const ULT_CUT = 1.3; // length of the cutscene that opens every ultimate
 // Shadow Tag traps every foe; Magnet Pull and Arena Trap only some.
 // Shadow Tag-style abilities, and Block (the foe can't switch out while it lasts).
@@ -201,12 +203,11 @@ export class Game {
     this.ui.hideBattleOverlays();
   }
 
-  // Tutorial practice: the player's team against a passive Snorlax that never attacks and can't
-  // faint; nothing here touches the real battle (teams are rebuilt when a battle starts).
-  startPractice(team) {
+  // Practice defaults to a passive Snorlax. The move demo can supply its own sparring partner.
+  startPractice(team, opponent = 'snorlax') {
     this.practice = true;
     this.selection = team;
-    this.opponentSelection = ['snorlax'];
+    this.opponentSelection = [opponent];
     this.lead = 0;
     this.start(true);
   }
@@ -601,6 +602,7 @@ export class Game {
     }
     this.startCooldown(user, key, Math.max(3, src.cooldown * 1.25));
     user.copied = id;
+    showStatusRelease(this, MOVES[key], user);
     user.action = new src.Action(src, user, this);
     this.spawn(new FloatText(user.x, user.y - user.headZ - 18, `COPIED ${src.name.toUpperCase()}!`, '#ff9fd0', 8));
     this.hud.callout(user.side, `Copy → ${src.name}!`);
@@ -632,6 +634,7 @@ export class Game {
     if (!src) return false;
     this.startCooldown(user, 'sleepTalk', MOVES.sleepTalk.cooldown);
     const move = adaptMove(this, user, src);
+    showStatusRelease(this, MOVES.sleepTalk, user);
     this.muteShake = true;
     try { user.action = new move.Action(move, user, this); } finally { this.muteShake = false; }
     this.spawn(new FloatText(user.x, user.y - user.headZ - 18, `SLEEP TALK → ${src.name.toUpperCase()}!`, '#c8b0ff', 7));
@@ -1742,10 +1745,24 @@ export class Game {
       const diff = Math.abs(Math.atan2(Math.sin(A.aim - B.aim), Math.cos(A.aim - B.aim)));
       if (diff > Math.PI - 0.6) {
         A.clashed = B.clashed = true;
-        const p = this.player, o = this.opponent, r = reactionBetween(A.move.type, B.move.type);
+        const r = reactionBetween(A.move.type, B.move.type);
         const pa = A.move.power * (r?.win === A.move.type ? 1.6 : 1), pb = B.move.power * (r?.win === B.move.type ? 1.6 : 1);
         const win = pa / pb > 1.25 ? A : pb / pa > 1.25 ? B : null;
-        this.clashFx((p.x + o.x) / 2, (p.y + o.y) / 2, 14, win ? win.user : null, true, r?.label);
+        const from = A.mouth(), to = B.mouth();
+        const x = (from.x + to.x) / 2, y = (from.y + to.y) / 2, z = (from.z + to.z) / 2;
+        const reaction = win && r?.win === win.move.type ? r : null;
+        if (!this.headless) {
+          A.showClashAt(x, y - z, win === A);
+          B.showClashAt(x, y - z, win === B);
+        }
+        this.clashFx(x, y, z, {
+          a: A.move.type, b: B.move.type, winner: win === A ? 'a' : win === B ? 'b' : null,
+          kind: 'beam',
+          angle: Math.atan2(to.y - to.z - (from.y - from.z), to.x - from.x),
+          span: Math.hypot(to.x - from.x, to.y - to.z - (from.y - from.z)) / 2,
+          colors: [A.move.beam.colors[1], B.move.beam.colors[1]],
+          label: reaction?.label, color: reaction?.color,
+        });
         for (const act of [A, B]) {
           if (act === win) continue;
           act.hitDone = true;
@@ -1760,24 +1777,25 @@ export class Game {
   // Two projectiles meet.
   resolveMeeting(a, b, x, y, z) {
     const r = reactionBetween(a.elem, b.elem);
+    const clash = { a: a.elem, b: b.elem, kind: 'shot', angle: a.angle };
     if (r) {
       let W = r.win === a.elem ? a : b, L = W === a ? b : a;
       // A much stronger attack still bulldozes through a type disadvantage.
       if (L.move.power > W.move.power * 2.2) {
         [W, L] = [L, W];
-        this.clashFx(x, y, z, W.user, false, 'OVERPOWERED!');
+        this.clashFx(x, y, z, { ...clash, winner: W === a ? 'a' : 'b' });
         L.impact(false);
         setPower(W, W.move.power * 0.7);
         return;
       }
-      this.reactFx(x, y, z, r);
+      this.reactFx(x, y, z, r, { ...clash, winner: W === a ? 'a' : 'b' });
       L.impact(false);
       setPower(W, r.combine ? (W.move.power + L.move.power) * 0.75 : W.move.power * r.keep, r.status && { status: r.status });
       if (r.combine) W.s = { ...W.s, scale: (W.s?.scale ?? 1) * 1.4 };
       return;
     }
     const pa = a.move.power, pb = b.move.power;
-    this.clashFx(x, y, z, pa / pb > 1.3 ? a : pb / pa > 1.3 ? b : null);
+    this.clashFx(x, y, z, { ...clash, winner: pa / pb > 1.3 ? 'a' : pb / pa > 1.3 ? 'b' : null });
     if (pa / pb > 1.3) {
       b.impact(false);
       setPower(a, pa * 0.6);
@@ -1794,9 +1812,10 @@ export class Game {
   resolveAgainstAttack(act, mon, p) {
     const elem = act.move.type, r = reactionBetween(elem, p.elem);
     const x = p.x, y = p.y, z = p.z;
+    const clash = { a: elem, b: p.elem, kind: 'block', angle: p.angle + Math.PI };
     if (r && r.win === p.elem) {
       // The projectile's element wins: it douses a stream or punches through the spin.
-      this.reactFx(x, y, z, r);
+      this.reactFx(x, y, z, r, { ...clash, winner: 'b' });
       if (act.move.stream) act.finish(0.2);
       setPower(p, p.move.power * (r.combine ? 1.3 : r.keep), r.status && { status: r.status });
       return;
@@ -1807,16 +1826,18 @@ export class Game {
       p.user = mon;
       p.target = mon.foe;
       p.traveled = 0;
+      this.showClashImpact(x, y, z, { ...clash, kind: 'spin', angle: p.angle, winner: 'a', label: 'DEFLECTED!', color: '#bfe6ff' });
       this.spawn(new FloatText(x, y - z - 10, 'DEFLECTED!', '#bfe6ff', 8));
       waterSplash(this, x, y);
       return;
     }
-    if (r) this.reactFx(x, y, z, r);
-    else this.clashFx(x, y, z, mon, false, 'BLOCKED!');
+    const block = { ...clash, winner: 'a' };
+    if (r) this.reactFx(x, y, z, r, block);
+    else this.clashFx(x, y, z, { ...block, label: 'BLOCKED!' });
     p.impact(false);
   }
 
-  reactFx(x, y, z, r) {
+  reactFx(x, y, z, r, clash = null) {
     const FX = {
       steam: () => {
         for (let i = 0; i < 18; i++) this.particles.spawn({ x, y, z, vx: rand(-60, 60), vy: rand(-40, 40), vz: rand(30, 90), drag: 2, life: 0.8, size: rand(4, 7), sizeEnd: 10, colors: ['#ffffff', '#e8eef5'] });
@@ -1838,23 +1859,24 @@ export class Game {
       spark: () => this.spawn(new Glow(x, y, z, 30, [255, 255, 255], 0.3)),
     };
     (FX[r.fx] ?? FX.spark)();
-    this.spawn(new Ring(x, y, { z, r0: 4, r1: 46, life: 0.4, color: r.color, width: 4, layer: 'air' }));
+    if (clash) this.showClashImpact(x, y, z, { ...clash, color: r.color, label: r.label });
+    else this.spawn(new Ring(x, y, { z, r0: 4, r1: 46, life: 0.4, color: r.color, width: 4, layer: 'air' }));
     this.spawn(new FloatText(x, y - z - 12, r.label, r.color, 8));
     this.hitstopT = Math.max(this.hitstopT, 0.04);
     if (r.combine) this.slowT = 0.25;
     sfx.reaction(r.id);
   }
 
-  clashFx(x, y, z, winner, big = false, label = null) {
-    const r = big ? 1.6 : 1;
-    this.spawn(new Ring(x, y, { z, r0: 4, r1: 60 * r, life: 0.4, color: '#ffffff', width: 5, layer: 'air' }));
-    this.spawn(new Ring(x, y, { r0: 4, r1: 110 * r, life: 0.5, color: '#ffd84a', width: 3 }));
-    this.spawn(new Glow(x, y, z, 50 * r, [255, 240, 200], 0.4));
-    for (let i = 0; i < 30; i++) {
-      const a = rand(0, Math.PI * 2), sp = rand(120, 260) * r;
-      this.particles.spawn({ x, y, z, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, vz: rand(0, 90), drag: 3, life: 0.5, size: rand(2, 3), colors: ['#ffffff', '#ffe680', '#ff9a3a'] });
-    }
-    this.spawn(new FloatText(x, y - z - 14, label ?? (winner ? 'OVERPOWERED!' : 'CLASH!'), '#ffffff', big ? 10 : 8));
+  showClashImpact(x, y, z, clash) {
+    if (!this.headless) this.spawn(new ClashImpact(x, y, z, clash));
+    this.emit('clash', clash);
+  }
+
+  clashFx(x, y, z, clash) {
+    const big = clash.kind === 'beam';
+    const label = clash.label ?? (clash.winner ? 'OVERPOWERED!' : 'CLASH!');
+    this.showClashImpact(x, y, z, { ...clash, label });
+    this.spawn(new FloatText(x, y - z - 19, label, clash.color ?? '#fff6df', big ? 10 : 8));
     this.marks.fracture(x, y, big ? 30 : 16, 5);
     this.hitstopT = Math.max(this.hitstopT, 0.06);
     this.slowT = big ? 0.45 : 0.25;

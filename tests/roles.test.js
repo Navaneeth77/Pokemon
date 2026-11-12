@@ -9,6 +9,7 @@ import { MOVES } from '../src/moves.js';
 import { SPECIES, ROSTER } from '../src/data/species.js';
 import { roleOf, moveStyle, fitsRole, roleDamage, ROLES } from '../src/roles.js';
 import { movePool } from '../src/data/movepool.js';
+import { MOVE_PRESENTATIONS } from '../src/move-presentation.js';
 
 const sprites = loadSpriteSets(), noop = () => {};
 
@@ -46,4 +47,18 @@ test('suited moves: 20% more damage and 15% faster recharge; others unchanged', 
   g.player.action = null;
   g.useMove(g.player, 'dragonPulse', 0, true);
   assert.ok(Math.abs(g.player.cooldowns.dragonPulse - MOVES.dragonPulse.cooldown) < 1e-6, 'a beam is not its style');
+});
+
+test('regular moves use the requested animation styles across the entire move picker', () => {
+  const examples = {
+    extremeSpeed: 'dash', dragonClaw: 'knockback', shadowBall: 'energy', energyBall: 'energy',
+    darkPulse: 'beam', dragonPulse: 'beam', waterPulse: 'beam', signalBeam: 'beam',
+    dragonDance: 'status', rainDance: 'weather', stealthRock: 'hazard', leafStorm: 'volley',
+    pinMissile: 'volley', rockBlast: 'volley', scaleShot: 'volley',
+  };
+  for (const [id, presentation] of Object.entries(examples)) assert.equal(MOVES[id].presentation, presentation, id);
+  for (const m of Object.values(MOVES)) {
+    if (m.ultimate) assert.equal(m.presentation, null, m.id);
+    else assert.ok(MOVE_PRESENTATIONS[m.presentation], m.id);
+  }
 });

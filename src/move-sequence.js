@@ -41,6 +41,7 @@ import { rand, Glow, Ring, FloatText, Lightning, Pillar, Falling, Spike, Missile
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
 import { sfx } from './audio.js';
 import { WEATHER_TINT } from './data/move-anims.js';
+import { showShotTrail, showStrikeRelease } from './move-presentation.js';
 
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
@@ -130,8 +131,10 @@ class SeqShot {
     this.angle = Math.atan2(t.y - m.y, t.x - m.x) + (P.fan && n > 1 ? (k / (n - 1) - 0.5) * P.fan * near : 0);
     this.span = Math.max(30, Math.hypot(t.x - m.x, t.y - m.y));
     this.reach = reachOf(action.move);
-    this.visual = action.game.spawn(new Missile(m.x, m.y, m.x, m.y, m.z, 99, ms.style ?? 'orb', () => {}, ms.rgb ?? [255, 255, 255], ms.scale ?? 1));
+    const rgb = (gp.missile.weatherTint && WEATHER_TINT[action.game.weather]) || ms.rgb || [255, 255, 255];
+    this.visual = action.game.spawn(new Missile(m.x, m.y, m.x, m.y, m.z, 99, ms.style ?? 'orb', () => {}, rgb, ms.scale ?? 1));
     this.visual.live = this;
+    showShotTrail(action.game, this, action.move, `rgb(${rgb.join(',')})`);
   }
 
   get z() {
@@ -307,7 +310,11 @@ export function scheduleSteps(action, steps, spot) {
       if (step.sound) sfx[step.sound]?.();
       if (step.hit) {
         for (const m of marks) m.dead = true;
-        const h = step.hit, near = t.alive && !t.hidden && Math.hypot(t.x - spot.x, t.y - spot.y) <= (h.r ?? 30) + t.radius;
+        const h = step.hit;
+        if (move.seq && move.presentation === 'knockback') {
+          showStrikeRelease(g, move, spot.x, spot.y, 5, action.aim, h.r ?? 30, true);
+        }
+        const near = t.alive && !t.hidden && Math.hypot(t.x - spot.x, t.y - spot.y) <= (h.r ?? 30) + t.radius;
         if (near) {
           const a = Math.atan2(t.y - spot.y, t.x - spot.x) || action.aim;
           const landed = applyHit(g, user, t, move, { stack: action.stack, knockback: h.knockback ?? 180, stagger: h.stagger ?? 0.35, hitstop: h.hitstop ?? 0.05, shake: h.shake, dirX: Math.cos(a), dirY: Math.sin(a),

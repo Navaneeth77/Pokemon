@@ -10,7 +10,8 @@ import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
 import { competitivePreset, movePool, isCompetitive, learnGen } from './data/movepool.js';
-import { ROLES, STYLES, roleOf, moveStyle, fitsRole } from './roles.js';
+import { ROLES, roleOf, fitsRole } from './roles.js';
+import { MOVE_PRESENTATIONS } from './move-presentation.js';
 
 // Role badge (roles.js) and a move's style tag, with "+20%" when it suits the Pokémon's role.
 // Moves whose power depends on the battle (Gyro Ball, Low Kick, Reversal, Seismic Toss…) show VAR instead of a number.
@@ -20,8 +21,8 @@ const VARIES = new Set(['gyroBall', 'lowKick', 'grassKnot', 'heavySlam', 'heatCr
   'comeuppance', 'fissure', 'sheerCold', 'guillotine', 'hornDrill']);
 const powerOf = m => (m.power > 0 && !VARIES.has(m.id) ? m.power : 'VAR');
 const roleBadge = s => { const R = ROLES[roleOf(s)]; return `<b class="role-badge" style="--rc:${R.color}" title="${R.name}: ${R.blurb}">${R.short}</b>`; };
-const styleTag = (s, m) => { const st = STYLES[moveStyle(m)]; return st ? `<i class="style-tag" style="--sc:${st.color}">${st.short}</i>${fitsRole(s, m) ? '<i class="fit-tag" title="Suits its role: 20% stronger, recharges 15% faster">+20%</i>' : ''}` : ''; };
-const roleLine = s => { const r = roleOf(s), R = ROLES[r]; return `<div class="role-line">${roleBadge(s)} ${R.blurb}. ${R.fits.map(k => STYLES[k].name).join(' and ')} moves are 20% stronger${r === 'support' ? ' (status moves recharge faster)' : ''} and recharge 15% faster.</div>`; };
+const styleTag = (s, m) => { const st = MOVE_PRESENTATIONS[m.presentation]; return st ? `<i class="style-tag" style="--sc:${st.color}">${st.short}</i>${fitsRole(s, m) ? '<i class="fit-tag" title="Suits its role: 20% stronger, recharges 15% faster">+20%</i>' : ''}` : ''; };
+const roleLine = s => { const R = ROLES[roleOf(s)]; return `<div class="role-line">${roleBadge(s)} ${R.blurb}. Matching attacks deal 20% more damage and matching moves recharge 15% faster.</div>`; };
 import { ownsShiny, itemById } from './economy.js';
 import { SHINY } from './data/national-dims.js';
 
@@ -456,7 +457,7 @@ export class UI {
     const saveMoves = () => this.setKit(id, { moves: draft.filter(Boolean) });
     const poolBtn = mid => {
       const m = MOVES[mid], on = draft.includes(mid), full = draft.filter(Boolean).length >= 4;
-      return `<button data-mv="${mid}" data-q="${esc(`${m.name} ${m.type} ${m.cat}`.toLowerCase())}" class="${on ? 'on' : full ? 'full' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
+      return `<button data-mv="${mid}" data-q="${esc(`${m.name} ${m.type} ${m.cat} ${MOVE_PRESENTATIONS[m.presentation]?.short ?? ''}`.toLowerCase())}" class="${on ? 'on' : full ? 'full' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
         + `<span class="kp-text"><b>${m.name}${isCompetitive(s, mid) ? '<i class="kp-star" title="Used in competitive sets">★</i>' : ''}</b><small>${styleTag(s, m)} ${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></span>`
         + `<em class="kp-act">${on ? '✓' : '+'}</em></button>`;
     };
@@ -482,7 +483,7 @@ export class UI {
           </div>
         </div>
         <h4 class="kit-sub">ALL ${pool.length} MOVES IT CAN LEARN <small>${gen === 9 ? 'Scarlet/Violet' : `Gen ${gen} games`} · ★ = used in competitive sets</small></h4>
-        <input class="kp-search" type="search" placeholder="Search moves: name, type or physical/special/status" value="${esc(query)}" aria-label="Search moves">
+        <input class="kp-search" type="search" placeholder="Search by move, type or style" value="${esc(query)}" aria-label="Search moves">
         <h4 class="kit-sub" data-group-head="atk">ATTACKS · <span>${attacks.length}</span></h4>
         <div class="kit-pool" data-group="atk">${attacks.map(poolBtn).join('')}</div>
         ${status.length ? `<h4 class="kit-sub" data-group-head="st">STATUS MOVES · <span>${status.length}</span></h4><div class="kit-pool" data-group="st">${status.map(poolBtn).join('')}</div>` : ''}

@@ -5,6 +5,10 @@ determine whether a hit lands. Accuracy-only moves, one-hit KO moves and Bright 
 Damage stats reach ×1.25 at +1, ×1.5 at +2 and ×2 at +6. Setup moves have an interruptible windup
 of at least 0.6 seconds and spend their cooldown when started.
 
+Regular moves use eight animation styles shown in the move picker: dash, homing energy, beam, status,
+weather, hazard, knockback and multi-shot. Each style adds cues to the existing type and move effects.
+Projectiles have bounded steering, and Leaf Storm's six leaves take separate paths before converging.
+
 ## Audit (10 Nov 2026)
 
 How it works today:

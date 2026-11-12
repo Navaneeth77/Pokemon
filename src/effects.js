@@ -270,9 +270,9 @@ export class FangBite extends Effect {
 }
 
 export class Beam extends Effect {
-  constructor(x0, y0, x1, y1, life, { width = 22, colors = ['#ff7b2e', '#ffd36b', '#fffbe8'] } = {}) {
+  constructor(x0, y0, x1, y1, life, { width = 22, colors = ['#ff7b2e', '#ffd36b', '#fffbe8'], tapered = false } = {}) {
     super('air', life);
-    Object.assign(this, { x0, y0, x1, y1, width, colors });
+    Object.assign(this, { x0, y0, x1, y1, width, colors, tapered });
   }
 
   set(x0, y0, x1, y1) {
@@ -288,6 +288,19 @@ export class Beam extends Effect {
     ctx.save();
     ctx.translate(this.x0, this.y0);
     ctx.rotate(Math.atan2(this.y1 - this.y0, this.x1 - this.x0));
+    if (this.tapered) {
+      for (const [color, width, alpha] of [[outer, w, 0.54], [mid, w * 0.64, 0.85], [core, w * 0.22, 1]]) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(0, -width * 0.48);
+        ctx.quadraticCurveTo(len * 0.64, -width * 0.68, len, 0);
+        ctx.quadraticCurveTo(len * 0.64, width * 0.68, 0, width * 0.48);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
     ctx.globalAlpha = 0.55;
     ctx.fillStyle = outer;
     ctx.fillRect(0, -w / 2, len, w);
@@ -1094,6 +1107,23 @@ const MISSILE_SHAPES = {
     ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(0, 4); ctx.lineTo(-8, 0); ctx.lineTo(0, -4); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -1, 6, 2);
   },
+  needle(ctx, R, G, B) {
+    ctx.fillStyle = '#586424';
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-7, -3); ctx.lineTo(-10, 0); ctx.lineTo(-7, 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-6, -1.5); ctx.lineTo(-8, 1.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fcffdc'; ctx.fillRect(-3, -0.9, 10, 1);
+  },
+  scale(ctx, R, G, B, t) {
+    ctx.scale(1, 0.73 + 0.24 * Math.cos(t * 21));
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.strokeStyle = '#503477';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(10, 0); ctx.quadraticCurveTo(1, -9, -7, -5); ctx.lineTo(-10, 0);
+    ctx.lineTo(-7, 5); ctx.quadraticCurveTo(1, 9, 10, 0); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#eee1ff';
+    ctx.beginPath(); ctx.moveTo(-6, -2); ctx.quadraticCurveTo(2, -4, 7, 0); ctx.stroke();
+  },
   boulder(ctx, R, G, B, t) {
     ctx.rotate(t * 8);
     ctx.fillStyle = `rgb(${R},${G},${B})`; ctx.strokeStyle = '#3a2a18'; ctx.lineWidth = 1.5;
@@ -1127,6 +1157,24 @@ const MISSILE_SHAPES = {
     ctx.fillStyle = '#ffffff';
     ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
   },
+  // Energy Ball: a bright green core wrapped in orbiting wisps.
+  energy(ctx, R, G, B, t) {
+    ctx.fillStyle = `rgba(${R},${G},${B},0.3)`;
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6cbf36';
+    ctx.beginPath(); ctx.arc(0, 0, 7.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#d2ff93'; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.fillStyle = '#a4ef66';
+    ctx.beginPath(); ctx.arc(1, -1, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#efffd1';
+    ctx.beginPath(); ctx.arc(1, -1, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#c4ff82';
+    ctx.lineWidth = 1.3;
+    for (let i = 0; i < 2; i++) {
+      const a = t * 13 + i * Math.PI;
+      ctx.beginPath(); ctx.ellipse(0, 0, 10, 6, a, 0, 2.2); ctx.stroke();
+    }
+  },
   // A ball of shadow: a flickering, ragged violet aura around a dark core with a pale rim.
   shadow(ctx, R, G, B, t) {
     ctx.fillStyle = 'rgba(122,72,184,0.6)';
@@ -1142,8 +1190,11 @@ const MISSILE_SHAPES = {
     ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#c8a0ff'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#7a48b8';
-    ctx.beginPath(); ctx.arc(-2 + Math.sin(t * 9), -2, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ead2ff';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(0, 0, 8.5, t * -12, t * -12 + 1.45); ctx.stroke();
+    ctx.strokeStyle = '#a96de8';
+    ctx.beginPath(); ctx.arc(-1, 0, 3.2, t * 10, t * 10 + 2.1); ctx.stroke();
   },
   flame(ctx, R, G, B, t) {
     const f = 1 + Math.sin(t * 40) * 0.15;

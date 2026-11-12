@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10161c">
+  <title>Chaos Arena · Move demo</title>
+  <link rel="stylesheet" href="./move-demo.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="wordmark">Chaos Arena</div>
+    <h1>Move demo</h1>
+  </header>
+  <main>
+    <section class="examples-panel" aria-labelledby="examples-heading">
+      <h2 id="examples-heading">Examples</h2>
+      <div class="examples" id="examples"></div>
+    </section>
+    <section class="viewer" aria-label="Battle preview">
+      <div class="arena-heading">
+        <div class="move-title">
+          <div class="move-name-row">
+            <h2 id="move-name">Leaf Storm</h2>
+            <span id="move-style">MULTI-SHOT</span>
+          </div>
+          <p id="description">Six homing leaves · lowers its Sp. Atk</p>
+        </div>
+        <button id="play" type="button" disabled>Replay move</button>
+      </div>
+      <div id="stage"><canvas id="game" aria-label="Pokémon battle animation"></canvas></div>
+      <div class="playback">
+        <output id="result" aria-live="polite">Loading battle sprites…</output>
+        <div class="options">
+          <label class="target-label">Target
+            <select id="target">
+              <option value="still">Still</option>
+              <option value="strafe">Strafe</option>
+              <option value="interrupt">Interrupt with Tackle</option>
+              <optgroup label="Clash examples">
+                <option value="beam">Beam deadlock</option>
+                <option value="beam-win">Beam breakthrough</option>
+                <option value="shots">Projectile collision</option>
+                <option value="elements">Water vs. fire volley</option>
+                <option value="block">Stream block</option>
+                <option value="spin">Rapid Spin deflection</option>
+              </optgroup>
+            </select>
+          </label>
+          <div class="toggles">
+            <label><input type="checkbox" id="slow"> Slow motion</label>
+            <label><input type="checkbox" id="loop" checked> Auto replay</label>
+            <label><input type="checkbox" id="sound"> Sound effects</label>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="catalog" aria-labelledby="catalog-heading">
+      <div class="catalog-heading">
+        <h2 id="catalog-heading">All regular moves</h2>
+        <span id="move-count"></span>
+      </div>
+      <input id="search" type="search" aria-label="Search regular moves" placeholder="Search move, type or style">
+      <select id="moves" aria-label="Choose a regular move"></select>
+    </section>
+  </main>
+  <script type="module" src="./move-demo.js"></script>
+</body>
+</html>

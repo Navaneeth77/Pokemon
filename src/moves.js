@@ -13,6 +13,8 @@ import { statusMove, setMoveTable } from './effects-resolver.js';
 import { MOVE_ANIMS, TAIL_MOVES, TAIL_TYPES, TAIL_EXTRA } from './data/move-anims.js';
 import { runSequence, tickGather, tickSpot, scheduleSteps, recipeKind } from './move-sequence.js';
 import { profileOf } from './targeting.js';
+import { BEAM_CLASH_HOLD } from './clash-animation.js';
+import { DashStreak, HazardLanding, ORIGINAL_PULSES, PulseTrain, WeatherArrival, presentationOf, showBeamWake, showMoveCast, showStatusRelease, showStrikeRelease } from './move-presentation.js';
 import { RETIRED_MOVES } from './data/movepool.js';
 import { ORBS } from './projectiles.js';
 import { TYPE_ULTS } from './ult-choreo.js';
@@ -65,6 +67,7 @@ class MoveAction {
     this.aim = user.aimAt(this.target);
     user.face(this.target.x, this.target.y);
     this.start();
+    showMoveCast(game, move, user, this.aim);
     // A move's wind-up flourish (data/move-anims.js `windup` steps) around the user.
     if (move.windup) scheduleSteps(this, move.windup, { x: user.x, y: user.y });
   }
@@ -205,6 +208,11 @@ class Stream extends MoveAction {
         const m = this.mouth(), p = this.front(c.reach);
         this.core = this.game.spawn(new Beam(m.x, m.y - m.z, p.x, p.y - 8, c.duration, { width: 7, colors: c.core }));
       }
+      if (!this.game.headless) {
+        const m = this.mouth(), end = this.front(c.reach);
+        this.wakeLine = { x0: m.x, y0: m.y - m.z, x1: end.x, y1: end.y - 8 };
+        this.beamWake = showBeamWake(this.game, this.move, this.wakeLine, c.duration, c.width);
+      }
       if(skyLegend(this.user)) {
         const u=this.user,p=this.front(c.reach);
         this.jet=this.game.spawn(new LegendaryBeam(u,p.x,p.y-8,'#85d6f6',c.width*1.4,c.duration,true));
@@ -236,9 +244,10 @@ class Stream extends MoveAction {
         life, size: rand(3, 4), sizeEnd: rand(c.sizeEnd[0], c.sizeEnd[1]), colors,
       });
     }
-    if (this.core) {
+    if (this.core || this.wakeLine) {
       const p = this.front(c.reach);
-      this.core.set(m.x, m.y - m.z, p.x, p.y - 8);
+      this.core?.set(m.x, m.y - m.z, p.x, p.y - 8);
+      if (this.wakeLine) Object.assign(this.wakeLine, { x0: m.x, y0: m.y - m.z, x1: p.x, y1: p.y - 8 });
     }
     if(this.jet){const p=this.front(c.reach);this.jet.x=p.x;this.jet.y=p.y-8;}
     this.markT -= dt;
@@ -266,6 +275,7 @@ class Stream extends MoveAction {
     this.user.sprite.pauseAt = null;
     this.sound?.stop();
     if (this.core) this.core.dead = true;
+    if (this.beamWake) this.beamWake.dead = true;
     if(this.jet)this.jet.dead=true;
   }
 }
@@ -391,7 +401,9 @@ class Melee extends MoveAction {
   strike(h, i) {
     const c = this.move.melee;
     this.retarget(0.6);
-    SWING_FX[c.fx](this.game, this.user, this.aim, i, this.move);
+    const u = this.user;
+    showStrikeRelease(this.game, this.move, u.x, u.y, u.bodyZ, this.aim, u.radius + 13);
+    SWING_FX[c.fx](this.game, u, this.aim, i, this.move);
     if(skyLegend(this.user)) {
       const p=this.front(this.user.radius+18);
       for(let j=0;j<3;j++) this.game.spawn(new SlashArc(p.x,p.y,this.user.bodyZ,this.aim+(i%2?-.6:.6),{radius:25+j*5,spread:1.6,colors:['#50ae8b','#d6ffdf','#ffffff'],width:5-j,life:.24,mirror:i%2===1}));
@@ -441,14 +453,13 @@ class Dash extends MoveAction {
     const len = c.through ? Math.min(c.dist, d + contact + 12) : Math.max(0, Math.min(c.dist, d - contact));
     this.from = { x: u.x, y: u.y };
     this.to = { x: clampX(u.x + Math.cos(this.aim) * len), y: clampY(u.y + Math.sin(this.aim) * len) };
+    if (!this.game.headless) this.dashStreak = this.game.spawn(new DashStreak(u, this.move, c.dur));
     this.dashT = 0;
     this.dashing = true;
     this.struck = false;
     u.phasing = true;
     this.anim('Attack', 2);
     sfx.dash();
-    this.game.spawn(new BeamLine(this.from.x, this.from.y - u.bodyZ, this.to.x, this.to.y - u.bodyZ, 0.3, c.color, c.width ?? 3));
-    if (c.core) this.game.spawn(new BeamLine(this.from.x, this.from.y - u.bodyZ, this.to.x, this.to.y - u.bodyZ, 0.2, c.core, 1));
     if(skyLegend(u))this.game.spawn(new Slipstream(u,c.dur+.2,'#bcffe5',u.radius*1.6));
   }
 
@@ -459,6 +470,7 @@ class Dash extends MoveAction {
     const k = Math.min(1, this.dashT / c.dur);
     u.x = this.from.x + (this.to.x - this.from.x) * k;
     u.y = this.from.y + (this.to.y - this.from.y) * k;
+    this.dashStreak?.follow(u);
     this.ghostT -= dt;
     if (this.ghostT <= 0) {
       this.ghostT = 0.025;
@@ -496,6 +508,7 @@ class Dash extends MoveAction {
 
   cleanup() {
     this.user.phasing = false;
+    if (this.cancelled && this.dashStreak) this.dashStreak.dead = true;
   }
 }
 
@@ -549,6 +562,8 @@ class Shot extends MoveAction {
       : new AirBlade(this.game, this.user, this.move, m.x, m.y, m.z, ang));
     // A split volley: the shots share one hit (one added effect) and each carries a part of it.
     if (c.part) Object.assign(projectile, { part: 1 / (c.spread?.length ?? 1), stack: (this.volleyStack ??= {}) });
+    // A full-power volley still pays its own stat changes once per cast.
+    else if (c.spread?.length > 1 && this.move.dex?.selfBoosts) projectile.afterStack = this.stack;
     if(skyLegend(this.user))this.game.spawn(new Slipstream(projectile,this.move.range/(projectile.speed||300)+.15,style?'#dab8ff':'#b8f0ff',style?14:20));
     sfx[c.sound]();
     this.allowMove = true;
@@ -570,6 +585,7 @@ class BeamAttack extends MoveAction {
 
   tick(dt) {
     const c = this.move.beam;
+    if (this.clashVisual) this.updateClashTip();
     if (this.charging) {
       if (this.t < (this.move.targeting?.trackTime ?? c.lock)) this.retarget((this.move.targeting?.track ?? 2.2) * dt);
       this.tele.set(this.user.x, this.user.y, this.aim);
@@ -599,15 +615,17 @@ class BeamAttack extends MoveAction {
     const a = this.anim('Shoot', 1);
     u.sprite.pauseAt = a.hitFrame ?? 2;
     const m = this.mouth(), end = this.front(this.move.range);
-    if(skyLegend(u))g.spawn(new LegendaryBeam(u,end.x,end.y-10,u.species.id.startsWith('rayquaza')?'#75f5b1':'#a5dcff',c.visualWidth*1.5,c.duration,true));
-    else g.spawn(new Beam(m.x, m.y - m.z, end.x, end.y - 10, c.duration, { width: c.visualWidth, colors: c.colors }));
+    this.beamEnd = { x: end.x, y: end.y - 10 };
+    this.beamTip = { ...this.beamEnd };
+    this.beamLine = { x0: m.x, y0: m.y - m.z, x1: this.beamEnd.x, y1: this.beamEnd.y };
+    const originalPulse = ORIGINAL_PULSES.has(this.move.id);
+    this.beamVisual = skyLegend(u)
+      ? g.spawn(new LegendaryBeam(u, end.x, end.y - 10, u.species.id.startsWith('rayquaza') ? '#75f5b1' : '#a5dcff', c.visualWidth * 1.5, c.duration, true))
+      : g.spawn(new Beam(m.x, m.y - m.z, end.x, end.y - 10, c.duration, { width: c.visualWidth, colors: c.colors, tapered: !originalPulse }));
+    this.beamWake = showBeamWake(g, this.move, this.beamLine, c.duration, c.visualWidth);
     sfx[c.sound]();
-    if (c.rings && !skyLegend(u)) {
-      // Pulse rings travelling down the beam.
-      for (let i = 1; i <= 4; i++) {
-        const d = (this.move.range * i) / 5, p = this.front(d), z = m.z + (10 - m.z) * (d / this.move.range);
-        g.spawn(new Ring(p.x, p.y, { z, r0: 3, r1: 15, life: 0.3 + i * 0.06, color: c.rings, width: 2.5, layer: 'air' }));
-      }
+    if ((c.rings || this.move.id === 'bubbleBeam' || this.move.id === 'twinBeam') && !g.headless) {
+      this.pulseFx = g.spawn(new PulseTrain({ x: m.x, y: m.y - m.z }, this.beamTip, this.move));
     }
     g.shake(c.shake, 0.4);
     if (c.big) {
@@ -631,8 +649,35 @@ class BeamAttack extends MoveAction {
     });
   }
 
+  showClashAt(x, y, won) {
+    this.clashVisual = { x, y, won, start: this.t };
+    this.updateClashTip();
+  }
+
+  updateClashTip() {
+    const { x, y, won, start } = this.clashVisual;
+    const line = this.beamLine, tip = this.beamTip;
+    const destination = won ? this.beamEnd : { x: line.x0, y: line.y0 };
+    const progress = Math.min(1, Math.max(0, (this.t - start - BEAM_CLASH_HOLD) / (won ? 0.085 : 0.15)));
+    const k = 1 - (1 - progress) ** 2;
+    tip.x = line.x1 = x + (destination.x - x) * k;
+    tip.y = line.y1 = y + (destination.y - y) * k;
+    if (this.beamVisual.set) this.beamVisual.set(line.x0, line.y0, tip.x, tip.y);
+    else Object.assign(this.beamVisual, tip);
+    if (progress < 1) return;
+    if (!won) {
+      this.beamVisual.dead = true;
+      if (this.pulseFx) this.pulseFx.dead = true;
+      if (this.beamWake) this.beamWake.dead = true;
+    }
+    this.clashVisual = null;
+  }
+
   cleanup() {
     if (this.tele) this.tele.dead = true;
+    if (this.pulseFx) this.pulseFx.dead = true;
+    if (this.beamWake) this.beamWake.dead = true;
+    if (this.cancelled && this.beamVisual && !ORIGINAL_PULSES.has(this.move.id)) this.beamVisual.dead = true;
     this.user.sprite.pauseAt = null;
     this.chargeSound?.stop();
   }
@@ -653,6 +698,7 @@ class Shockwave extends MoveAction {
     const c = this.move.shockwave, u = this.user, g = this.game, t = this.target, R = c.radius;
     this.burst_ = true;
     this.anim(c.anim ?? 'Shoot', 1);
+    showStrikeRelease(g, this.move, u.x, u.y, 5, this.aim, R, true);
     c.colors.forEach((col, i) => g.spawn(new Ring(u.x, u.y, { r0: 6, r1: R * (1 - i * 0.22), life: 0.32 + 0.08 * (2 - i), color: col, width: 5 - i })));
     g.spawn(new Glow(u.x, u.y, u.bodyZ, R * 0.55, c.rgb, 0.35));
     for (let i = 0; i < 26; i++) {
@@ -703,8 +749,10 @@ class Utility extends MoveAction {
       if ((c.kind === 'ray' || c.aim) && foe?.magicCoat > 0 && foe.alive && !foe.hidden && this.move.id !== 'magicCoat') {
         foe.magicCoat = 0;
         this.game.floatText(foe, 'BOUNCED BACK!', '#9fe8ff');
+        if (c.kind !== 'ray') showStatusRelease(this.game, this.move, foe, this.user);
         return UTIL_FX[c.kind](this, this.game, foe, c);
       }
+      if (c.kind !== 'ray') showStatusRelease(this.game, this.move, this.user, foe);
       UTIL_FX[c.kind](this, this.game, this.user, c);
     });
     this.at(end, () => this.finish(0.08));
@@ -760,6 +808,7 @@ const UTIL_FX = {
     }
     if (f.guard?.mult === 0 || (f.substitute && f.shield > 0)) return g.floatText(f, 'BLOCKED!', f.guard?.color ?? '#ff9fd0');
     g.spawn(new Ring(f.x, f.y, { z: f.bodyZ, r0: 4, r1: f.radius + 14, life: 0.3, color: c.color, width: 3, layer: 'air' }));
+    showStatusRelease(g, a.move, u, f);
     if (c.seed) return g.seed(f, u);
     if (c.boosts) return g.stage(f, c.boosts, u);
     g.applyStatus(f, c.status, { source: u, dur: c.dur, toxic: c.toxic });
@@ -770,6 +819,7 @@ const UTIL_FX = {
   },
   weather(a, g, u, c) {
     g.setWeather(c.weather, ITEMS[u.item]?.rock === c.weather ? 40 : 25);
+    if (!g.headless) g.spawn(new WeatherArrival(u, c.weather, c.color));
     fieldBurst(g, u, c.color);
   },
   terrain(a, g, u, c) {
@@ -781,6 +831,7 @@ const UTIL_FX = {
     if (!g.setHazard(side, c.hazard, u)) return g.floatText(u, 'IT FAILED!', '#c9d2de');
     // The hazard is flung toward the foe's side of the arena.
     const home = HOME_OF[side];
+    if (!g.headless) g.spawn(new HazardLanding(home, c.hazard, c.color));
     g.spawn(new Ring(home.x, home.y, { r0: 6, r1: 46, life: 0.5, color: c.color, width: 3 }));
     for (let i = 0; i < 8; i++) g.particles.spawn({ x: u.x, y: u.y, z: u.bodyZ, vx: (home.x - u.x) * rand(0.9, 1.3), vy: (home.y - u.y) * rand(0.9, 1.3), vz: 140, gz: 300, life: 1, size: rand(2, 4), colors: ['#ffffff', c.color] });
     sfx.shard();
@@ -911,6 +962,7 @@ class Thunderbolt extends MoveAction {
     const p = reach ? t : this.front(this.move.range);
     const z = reach ? t.bodyZ : 6;
     g.spawn(new Lightning(m.x, m.y - m.z, p.x, p.y - z, 0.3, { width: 2.5, branches: 4 }));
+    showBeamWake(g, this.move, { x0: m.x, y0: m.y - m.z, x1: p.x, y1: p.y - z }, 0.3, 10);
     // Two thinner forks off the main bolt, and a crackle ring where it lands.
     for (const s of [-1, 1]) {
       const mx = (m.x + p.x) / 2, my = (m.y - m.z + p.y - z) / 2;
@@ -1422,6 +1474,7 @@ class TwoTurn extends MoveAction {
     u.x = a.from.x + (a.to.x - a.from.x) * k;
     u.y = a.from.y + (a.to.y - a.from.y) * k;
     if (a.z0 != null) u.zOverride = a.z0 * (1 - k * k);
+    this.dashStreak?.follow(u);
     this.ghostT = (this.ghostT ?? 0) - dt;
     if (this.ghostT <= 0) {
       this.ghostT = 0.03;
@@ -1470,6 +1523,7 @@ class TwoTurn extends MoveAction {
         for (let i = 0; i < 10; i++) g.particles.spawn({ x: u.x + rand(-10, 10), y: u.y + rand(-4, 4), z: rand(6, u.headZ), vx: rand(-30, 30), vz: rand(10, 40), life: 0.5, size: rand(2.5, 4), sizeEnd: 1, colors: ['#e0d0ff', '#7a5ab8'] });
       }
       this.anim('Attack', 1.4);
+      showMoveCast(g, this.move, u, this.aim);
       return this.land();
     }
     // Fly, Bounce, Sky Attack, Focus Punch: a fast approach onto the foe.
@@ -1478,6 +1532,7 @@ class TwoTurn extends MoveAction {
       from: { x: u.x, y: u.y }, to: { x: clampX(u.x + Math.cos(this.aim) * len), y: clampY(u.y + Math.sin(this.aim) * len) },
       t: 0, dur: this.mode === 'fly' ? 0.2 : 0.14, z0: this.mode === 'fly' ? u.zOverride : null,
     };
+    if (!g.headless) this.dashStreak = g.spawn(new DashStreak(u, this.move, this.approach.dur));
     u.phasing = true;
     this.anim('Attack', 1.6);
     sfx.dash();
@@ -1501,6 +1556,7 @@ class TwoTurn extends MoveAction {
   }
 
   cleanup() {
+    if (this.cancelled && this.dashStreak) this.dashStreak.dead = true;
     Object.assign(this.user, { zOverride: null, invuln: false, phasing: false, vanished: false, focusing: false });
   }
 }
@@ -2739,7 +2795,14 @@ const NEW_MOVES = {
   poisonFang: melee('Poison Fang', 'poison', 60, 1.3, 'Bite · often poisons', { fx: 'bite', lunge: 38 }, { status: ['poison', 0.5] }),
   acidSpray: shot('Acid Spray', 'poison', 40, 1.4, 'Acid · lowers defense', { style: 'poison', spread: [-0.08, 0.08], stagger: 0.05, sound: 'splash' }, { debuff: ['def', 0.8, 5] }),
   leechLife: melee('Leech Life', 'bug', 80, 1.6, 'Bite · drains HP', { fx: 'bite', lunge: 40 }, { drain: 0.5 }),
-  signalBeam: shot('Signal Beam', 'bug', 75, 1.6, 'Flickering orb · may stun', { style: 'bug' }, { status: ['stun', 0.1] }),
+  signalBeam: {
+    name: 'Signal Beam', type: 'bug', power: 75, cooldown: 1.6, range: 290, minRange: 40, ai: 'ranged', tag: 'Flickering beam', Action: BeamAttack,
+    beam: beam({
+      charge: 0.24, width: 10, visualWidth: 12, duration: 0.42, sound: 'pulse', rings: '#e7ff91',
+      colors: ['#58762b', '#b5dc56', '#f2ffd2'], chargeColors: ['#ffffff', '#d2f36a', '#80a32e'],
+      teleColor: '167,195,66', flash: [195, 232, 95], mark: 'scorch', knockback: 140,
+    }),
+  },
   pinMissile: shot('Pin Missile', 'bug', 22, 1.4, '5 needles', { style: 'needle', spread: [-0.16, -0.08, 0, 0.08, 0.16], stagger: 0.04, sound: 'shard' }),
   firstImpression: dash('First Impression', 'bug', 90, 2.2, 'Lightning ambush', { windup: 0.04, dist: 150, dur: 0.09, color: '#d8f080', ghost: '#88c040', knockback: 180 }),
   metalClaw: melee('Metal Claw', 'steel', 60, 1, 'Fast claw · raises attack', { fx: 'claw', lunge: 44 }, { selfBuff: ['atk', 1.1, 3] }),
@@ -2836,7 +2899,7 @@ Object.assign(NEW_MOVES, {
   rapidSpin: { name: 'Rapid Spin', type: 'water', power: 30, cooldown: 3, range: 70, ai: 'area', tag: 'Spinning water spray · up to 4 hits', Action: Spin,
     spin: { dur: 0.9, drive: 70, tick: 0.2, maxHits: 4, radius: 36, knockback: 150 } },
   mudShot: shot('Mud Shot', 'ground', 60, 1.6, 'Mud ball · may slow', { style: 'mud', sound: 'splash' }, { status: ['slow', 0.5] }),
-  leafStorm: shot('Leaf Storm', 'grass', 26, 5, '6 homing leaves · lowers own attack', {
+  leafStorm: shot('Leaf Storm', 'grass', 26, 5, 'Six homing leaves · lowers its Sp. Atk', {
     style: 'stormLeaf', spread: [-0.3, -0.18, -0.06, 0.06, 0.18, 0.3], stagger: 0.03, sound: 'shard', charge: 0.3, chargeColors: ['#ffffff', '#c8ff8a', '#3f9a3a'], glow: [140, 240, 100],
   }, { selfBuff: ['atk', 0.8, 4] }),
   triAttack: shot('Tri Attack', 'normal', 30, 2, 'Fire · ice · electric orbs', { styles: ['fire', 'ice', 'electric'], spread: [-0.12, 0, 0.12], stagger: 0.05 },
@@ -3500,11 +3563,17 @@ for (const [id, m] of Object.entries(MOVES)) {
   if (!p) continue;
   if (m.shot) {
     const o = ORBS[m.shot.style] ?? {};
-    Object.assign(p, { hitbox: o.radius ?? p.hitbox, speed: o.speed ?? p.speed, ...(o.homing && { kind: 'homing', track: o.homing, trackTime: 1.2, maxTurn: 1.6 }) });
+    Object.assign(p, { hitbox: o.radius ?? p.hitbox, speed: o.speed ?? p.speed, ...(!p.fan && o.homing && { kind: 'homing', track: o.homing, trackTime: 1.2, maxTurn: 1.6 }) });
+  }
+  if (p.kind === 'straight') {
+    // Straight-shot recipes have a small steering budget. A sidestep can still escape their line.
+    p.kind = 'homing';
+    if (!p.track) Object.assign(p, { track: 0.4, trackTime: 0.55, maxTurn: 0.14 });
   }
   m.targeting = p;
   if (m.seq && p.kind !== 'area') m.range = p.range;
 }
+for (const m of Object.values(MOVES)) m.presentation = presentationOf(m);
 
 // Moves that change with the battle state, as in the games: Solar Beam fires at once in harsh sunlight and
 // at half power in other weather; Weather Ball takes the weather's type at double power; Synthesis-style
