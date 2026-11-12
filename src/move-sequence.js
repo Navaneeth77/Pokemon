@@ -34,7 +34,7 @@
 //   where: 'user' puts rings, burst, glow, fx and pillar on the user instead of the spot
 //   hit       the damage, at that exact moment: the foe takes the move if it is within `r` of the spot
 //             (dodging at the right time avoids it); knockback and stagger as given
-// The move's mechanics (accuracy, secondary effects, stat changes…) all resolve inside `hit` (combat.js),
+// The move's mechanics (secondary effects, stat changes…) all resolve inside `hit` (combat.js),
 // so what the player sees and what happens can never drift apart.
 import { applyHit } from './combat.js';
 import { rand, Glow, Ring, FloatText, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
@@ -163,7 +163,7 @@ class SeqShot {
     this.dead = true;
     this.visual.dead = true;
     const a = this.action, g = a.game, t = this.target, spot = { x: this.x, y: this.y };
-    // A physical miss is not an accuracy miss: say so when it flew past close by.
+    // Show a near miss when the shot flew past the target.
     if (!hit && t.alive && !t.hidden && Math.hypot(t.x - this.x, t.y - this.y) < 3 * (this.P.hitbox + t.radius) && !a.stack.dodgeShown) {
       a.stack.dodgeShown = true;
       g.spawn(new FloatText(t.x, t.y - t.headZ - 10, 'DODGED!', '#bff3ff'));

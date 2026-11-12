@@ -36,10 +36,9 @@ for (const id of ROSTER) {
 const fromDex = [...used].filter(m => MOVES[m].dex).length, recipes = [...used].filter(m => MOVE_ANIMS[m]).length;
 // The competitive pools (move picker): every move a player can choose must exist and be playable, and every
 // attacking move needs its targeting profile (range, hitbox, tracking: targeting.js).
-const { SMOGON_POOLS } = await import('../src/data/smogon.js');
 const { movePool } = await import('../src/data/movepool.js');
 // Everything the move picker offers: the competitive pools and the full learnsets.
-const pooled = new Set([...Object.values(SMOGON_POOLS).flat(), ...ROSTER.flatMap(id => movePool(SPECIES[id]))]);
+const pooled = new Set(ROSTER.flatMap(id => movePool(SPECIES[id])));
 for (const m of pooled) {
   const mv = MOVES[m];
   if (!mv) { problems.push(`pool move ${m} does not exist`); continue; }

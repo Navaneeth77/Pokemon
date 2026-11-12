@@ -9,7 +9,7 @@ import { loadSpriteSets } from '../server/sprites.js';
 import { SPECIES, ROSTER } from '../src/data/species.js';
 import { MOVES } from '../src/moves.js';
 import { cleanKit } from '../src/data/items.js';
-import { movePool, cleanMoves } from '../src/data/movepool.js';
+import { competitivePreset, movePool, cleanMoves } from '../src/data/movepool.js';
 
 const sprites = loadSpriteSets(), noop = () => {};
 
@@ -80,4 +80,36 @@ test('the picker offers every move it learns in its latest games that the game c
   assert.ok(!pool.includes('blastBurn') && !pool.includes('blastBurnAtk'), 'its own ultimate is not a regular move');
   assert.deepEqual(cleanMoves(SPECIES.charizard, ['ember', 'heatWave', 'thunderPunch', 'roost']), ['ember', 'heatWave', 'thunderPunch', 'roost']);
   assert.ok(MOVES.reversal.power > 0 && MOVES.eruption, 'the variable-power moves it brings in are playable');
+});
+
+test('saved kits replace retired accuracy moves and clear Bright Powder', () => {
+  const c = SPECIES.charizard;
+  for (const id of ['doubleTeam', 'smokescreen']) {
+    assert.ok(!movePool(c).includes(id));
+    assert.ok(!MOVES[id]);
+  }
+  const kit = cleanKit(c, { item: 'brightPowder', moves: ['smokescreen', 'doubleTeam', 'roost', 'fireBlast'] });
+  assert.equal(kit.item, null);
+  assert.deepEqual(kit.moves, ['roost', 'fireBlast', ...c.moves.filter(id => id !== 'roost' && id !== 'fireBlast').slice(0, 2)]);
+});
+
+test('one-hit KO moves are absent from battle and saved kits fall back to legal moves', () => {
+  const retired = ['fissureAtk', 'guillotine', 'hornDrill', 'sheerColdAtk'];
+  for (const id of retired) assert.ok(!MOVES[id], id);
+  for (const id of ROSTER) {
+    const species = SPECIES[id];
+    assert.ok(retired.every(move => !movePool(species).includes(move)), id);
+    assert.equal(cleanKit(species, { moves: retired }).moves, null, id);
+  }
+});
+
+test('competitive presets preserve Smogon slot order and fill out legal movesets', () => {
+  assert.deepEqual(competitivePreset(SPECIES.charizard), ['flareBlitz', 'outrageAtk', 'earthquake', 'dragonDance']);
+  assert.notDeepEqual(competitivePreset(SPECIES.lugia), SPECIES.lugia.moves);
+  for (const id of ROSTER) {
+    const species = SPECIES[id], preset = competitivePreset(species);
+    if (!preset) continue;
+    assert.equal(new Set(preset).size, 4, id);
+    assert.ok(preset.every(move => movePool(species).includes(move)), id);
+  }
 });

@@ -70,13 +70,6 @@ function whileOn(test, text, label, color, extra = {}) {
 const inWeather = w => (g, me) => g.weather === w || (w === 'snow' && g.weather === 'hail'); // snow abilities work in hail too
 // Chlorophyll, Swift Swim, Sand Rush, Slush Rush: Speed doubles in their weather (stats.js effective Speed).
 const weatherSpeed = (w, label, color, text) => whileOn(inWeather(w), text, label, color, { speedMult: me => (me.ab.on ? 2 : 1) });
-const weatherDodge = (w, label, color) => whileOn(inWeather(w), 'Hidden by the weather!', label, color, {
-  evade(g, me) {
-    if (!me.ab.on || Math.random() > 0.2) return false;
-    g.abilityPop(me, 'It slipped out of sight!');
-    return true;
-  },
-});
 const weatherHeal = (w, label, color) => whileOn(inWeather(w), 'Restoring health!', label, color, {
   tickOn(g, me, dt) {
     if (!me.ab.on || (me.ab.ht = (me.ab.ht ?? 0) + dt) < 1.5) return;
@@ -433,7 +426,7 @@ export const OFFICIAL = {
   toxicChain: { name: 'Toxic Chain', desc: 'Its attacks may badly poison the foe (25%).', ...inflicts(() => true, 'poison', 0.25, 'A toxic chain!') },
   corrosion: { name: 'Corrosion', desc: 'Can poison even Steel and Poison types.', corrosion: true, ...inflicts((m, i) => i.type === 'poison', 'poison', 0.2, 'It corroded the foe!') },
   stench: { name: 'Stench', weak: true, desc: 'Its attacks may make the foe flinch (10%).', ...inflicts(() => true, 'stun', 0.1, 'The stench made the foe flinch!') },
-  compoundEyes: { name: 'Compound Eyes', desc: 'Its moves are 30% more accurate.', compoundEyes: true },
+  compoundEyes: { name: 'Compound Eyes', weak: true, desc: 'No arena effect.' },
   keenEye: { name: 'Keen Eye', weak: true, desc: "Evasion abilities don't fool it.", keenEye: true },
   victoryStar: { name: 'Victory Star', desc: '+10% damage and +10% critical-hit chance.', dealMult: () => 1.1, crit: () => 0.1 },
   defeatist: {
@@ -687,8 +680,8 @@ export const OFFICIAL = {
   chlorophyll: { ...weatherSpeed('sun', 'CHLOROPHYLL', '#62b947', 'The sunlight sped it up!'), name: 'Chlorophyll', desc: 'Its Speed doubles in harsh sunlight.' },
   sandRush: { ...weatherSpeed('sand', 'SAND RUSH', '#c8a060', 'It rushes through the sand!'), name: 'Sand Rush', desc: 'Its Speed doubles in a sandstorm; sandstorms don\'t hurt it.', sandProof: true },
   slushRush: { ...weatherSpeed('snow', 'SLUSH RUSH', '#7ab8e8', 'It rushes through the snow!'), name: 'Slush Rush', desc: 'Its Speed doubles in snow.' },
-  sandVeil: { ...weatherDodge('sand', 'SAND VEIL', '#c8a060'), name: 'Sand Veil', weak: true, sandProof: true, desc: 'In a sandstorm, it sometimes slips out of sight (20%) and takes no sandstorm damage.' },
-  snowCloak: { ...weatherDodge('snow', 'SNOW CLOAK', '#7ab8e8'), name: 'Snow Cloak', weak: true, desc: 'In snow, it sometimes slips out of sight (20%).' },
+  sandVeil: { name: 'Sand Veil', weak: true, sandProof: true, desc: 'Takes no sandstorm damage.' },
+  snowCloak: { name: 'Snow Cloak', weak: true, desc: 'No arena effect.' },
   rainDish: { ...weatherHeal('rain', 'RAIN DISH', '#5a8ef0'), name: 'Rain Dish', weak: true, desc: 'Heals 2% max HP every 1.5s in the rain.' },
   iceBody: { ...weatherHeal('snow', 'ICE BODY', '#7ab8e8'), name: 'Ice Body', weak: true, desc: 'Heals 2% max HP every 1.5s in snow.' },
   flowerGift: { ...whileOn(inWeather('sun'), 'It bloomed in the sun!', 'FLOWER GIFT', '#ff9ad5', { dealMult: (g, me) => (me.ab.on ? 1.25 : 1), takeMult: (g, me) => (me.ab.on ? 0.85 : 1) }), name: 'Flower Gift', desc: 'In harsh sunlight it hits 25% harder and takes 15% less.' },

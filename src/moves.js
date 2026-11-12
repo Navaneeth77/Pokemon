@@ -12,6 +12,7 @@ import { statusMove, setMoveTable } from './effects-resolver.js';
 import { MOVE_ANIMS, TAIL_MOVES, TAIL_TYPES, TAIL_EXTRA } from './data/move-anims.js';
 import { runSequence, tickGather, tickSpot, scheduleSteps, recipeKind } from './move-sequence.js';
 import { profileOf } from './targeting.js';
+import { RETIRED_MOVES } from './data/movepool.js';
 import { ORBS } from './projectiles.js';
 import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
@@ -421,13 +422,12 @@ const DASH_BURST = {
 };
 
 // Fast dashes (Quick Attack, Extreme Speed, Aerial Ace) with afterimages; can pass through the
-// target, repeat, or home in for a guaranteed hit.
+// target or repeat.
 class Dash extends MoveAction {
   start() {
     const c = this.move.dash;
     this.passes = 0;
     this.ghostT = 0;
-    this.sure = !!c.sure && this.user.distTo(this.target) <= this.move.range;
     this.user.sprite.play('Charge', { loop: true, force: true });
     if(skyLegend(this.user))this.game.spawn(new CastEnergy(this.user,c.windup));
     this.at(c.windup, () => this.pass());
@@ -464,7 +464,7 @@ class Dash extends MoveAction {
       if(!skyLegend(u))this.game.spawn(new Afterimage(u, 0.22, c.ghost));
       if (c.specks) this.game.particles.spawn({ x: u.x + rand(-6, 6), y: u.y + rand(-3, 3), z: u.bodyZ + rand(-6, 6), vx: rand(-15, 15), vz: rand(5, 25), gz: 60, life: 0.4, size: rand(1.5, 2.5), colors: c.specks });
     }
-    if (!this.struck && this.canReachAir() && (u.distTo(t) <= u.radius + t.radius + 8 || (this.sure && k >= 1))) {
+    if (!this.struck && this.canReachAir() && u.distTo(t) <= u.radius + t.radius + 8) {
       this.struck = true;
       this.impact();
     }
@@ -546,7 +546,7 @@ class Shot extends MoveAction {
     const projectile=this.game.spawn(style
       ? new Orb(this.game, this.user, this.move, m.x, m.y, m.z, ang, style, i)
       : new AirBlade(this.game, this.user, this.move, m.x, m.y, m.z, ang));
-    // A split volley: the shots share one hit (one accuracy roll, one added effect) and each carries a part of it.
+    // A split volley: the shots share one hit (one added effect) and each carries a part of it.
     if (c.part) Object.assign(projectile, { part: 1 / (c.spread?.length ?? 1), stack: (this.volleyStack ??= {}) });
     if(skyLegend(this.user))this.game.spawn(new Slipstream(projectile,this.move.range/(projectile.speed||300)+.15,style?'#dab8ff':'#b8f0ff',style?14:20));
     sfx[c.sound]();
@@ -731,7 +731,6 @@ const UTIL_FX = {
     g.spawn(new BeamLine(u.x, u.y - u.bodyZ, f.x, f.y - f.bodyZ, 0.25, c.color, 3));
     const types = f.typeOverride ?? (f.tera ? [f.tera] : f.species.types);
     if (f.untouchable || u.distTo(f) > 300) return g.floatText(f, 'MISSED!', '#c9d2de');
-    if (c.acc < 100 && !(c.sureFor && u.species.types.includes(c.sureFor)) && Math.random() * 100 >= c.acc) return g.floatText(f, 'MISSED!', '#c9d2de');
     if (c.immune?.some(t => types.includes(t)) || (c.powder && (types.includes('grass') || ITEMS[f.item]?.powderProof))) {
       g.floatText(f, 'NO EFFECT', '#c9d2de');
       return g.ui.log(`It doesn't affect ${f.species.name}…`);
@@ -2781,15 +2780,13 @@ Object.assign(NEW_MOVES, {
   synthesis: util('Synthesis', 'grass', 10, 'Heals 50% HP · 67% in sun, 25% in other weather', { kind: 'heal', pct: 0.5, weatherHeal: true }),
   moonlight: util('Moonlight', 'fairy', 10, 'Heals 50% HP · 67% in sun, 25% in other weather', { kind: 'heal', pct: 0.5, weatherHeal: true }),
   morningSun: util('Morning Sun', 'normal', 10, 'Heals 50% HP · 67% in sun, 25% in other weather', { kind: 'heal', pct: 0.5, weatherHeal: true }),
-  // Status moves aimed at the foe: a ray of the move's colour; it can be dodged, misses on a failed
-  // accuracy roll, and respects type immunities (Electric types can't be paralysed, Grass types aren't
-  // seeded or put to sleep by powders, Fire types aren't burned…).
-  thunderWave: util('Thunder Wave', 'electric', 8, 'Paralyses the foe (Speed halved, sometimes can\'t move)', { kind: 'ray', status: 'para', acc: 90, color: '#ffe066', immune: ['ground', 'electric'] }),
-  toxic: util('Toxic', 'poison', 8, 'Badly poisons the foe: damage grows every tick', { kind: 'ray', status: 'poison', toxic: true, acc: 90, color: '#a848a8', sureFor: 'poison' }),
-  willOWisp: util('Will-O-Wisp', 'fire', 8, 'Burns the foe', { kind: 'ray', status: 'burn', acc: 85, color: '#7a6aff' }),
-  spore: util('Spore', 'grass', 12, 'Puts the foe to sleep', { kind: 'ray', status: 'sleep', dur: 3, acc: 100, color: '#d8c890', powder: true }),
-  sleepPowder: util('Sleep Powder', 'grass', 12, 'Puts the foe to sleep', { kind: 'ray', status: 'sleep', dur: 3, acc: 75, color: '#c8b0e8', powder: true }),
-  leechSeed: util('Leech Seed', 'grass', 9, 'Seeds the foe: drains 1/8 of its HP every 3s to heal you', { kind: 'ray', seed: true, acc: 90, color: '#62b947', immune: ['grass'] }),
+  // Aimed status rays respect dodge timing, range and status immunities.
+  thunderWave: util('Thunder Wave', 'electric', 8, 'Paralyses the foe (Speed halved, sometimes can\'t move)', { kind: 'ray', status: 'para', color: '#ffe066', immune: ['ground', 'electric'] }),
+  toxic: util('Toxic', 'poison', 8, 'Badly poisons the foe: damage grows every tick', { kind: 'ray', status: 'poison', toxic: true, color: '#a848a8' }),
+  willOWisp: util('Will-O-Wisp', 'fire', 8, 'Burns the foe', { kind: 'ray', status: 'burn', color: '#7a6aff' }),
+  spore: util('Spore', 'grass', 12, 'Puts the foe to sleep', { kind: 'ray', status: 'sleep', dur: 3, color: '#d8c890', powder: true }),
+  sleepPowder: util('Sleep Powder', 'grass', 12, 'Puts the foe to sleep', { kind: 'ray', status: 'sleep', dur: 3, color: '#c8b0e8', powder: true }),
+  leechSeed: util('Leech Seed', 'grass', 9, 'Seeds the foe: drains 1/8 of its HP every 3s to heal you', { kind: 'ray', seed: true, color: '#62b947', immune: ['grass'] }),
   // Protection: blocks every attack that would hit it for a moment (not ultimates).
   protect: util('Protect', 'normal', 6, 'Blocks every attack for 0.9s', { kind: 'guard', dur: 0.9, mult: 0, color: '#9fe8ff', label: 'PROTECT', at: 0.02, end: 0.25 }),
 
@@ -3082,8 +3079,8 @@ export const MOVES = {
     dash: { windup: 0.12, dist: 170, dur: 0.1, through: true, passes: 2, gap: 0.1, color: '#d8fff0', ghost: '#9fffd6', width: 4, knockback: 140 },
   },
   aerialAce: {
-    name: 'Aerial Ace', type: 'flying', power: 75, cooldown: 2, range: 170, minRange: 20, ai: 'dash', tag: 'Homing slash · never misses', Action: Dash,
-    dash: { windup: 0.15, dist: 180, dur: 0.18, sure: true, slash: true, color: '#e8f6ff', ghost: '#cfeaff', knockback: 120 },
+    name: 'Aerial Ace', type: 'flying', power: 75, cooldown: 2, range: 170, minRange: 20, ai: 'dash', tag: 'Dashing slash', Action: Dash,
+    dash: { windup: 0.15, dist: 180, dur: 0.18, slash: true, color: '#e8f6ff', ghost: '#cfeaff', knockback: 120 },
   },
   braveBird: {
     name: 'Brave Bird', type: 'flying', power: 105, cooldown: 2.6, range: 170, minRange: 30, ai: 'dash', tag: 'Flaming dive', Action: Dash,
@@ -3140,7 +3137,7 @@ export const MOVES = {
 };
 // ── The move database (data/movedex.js, from the games' data) ──
 // Every move a playable Pokémon uses. Hand-made moves keep their animation but take the official mechanics
-// (category, accuracy, priority, secondary effects, stat changes, drain, recoil, multi-hit); the rest are built
+// (category, priority, secondary effects, stat changes, drain, recoil, multi-hit); the rest are built
 // here from their data: delivery from what the move is (contact strikes, rushing tackles, spread shockwaves,
 // beams, projectiles, status moves), colours from its type, size and timing from its power.
 const ORB_OF = { normal: 'star', fire: 'fire', water: 'water', electric: 'electric', grass: 'grass', ice: 'ice', fighting: 'aura', poison: 'poison', ground: 'mud', flying: 'wind', psychic: 'psy', bug: 'bug', rock: 'rock', ghost: 'ghost', dragon: 'dragon', dark: 'dark', steel: 'steel', fairy: 'fairy' };
@@ -3154,8 +3151,8 @@ const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 function mechanicsOf(d) {
   const flags = Object.fromEntries((d.flags ?? []).map(f => [f, true]));
   return {
-    officialCat: d.cat, acc: d.acc, pri: d.pri, dex: d, multihit: d.multihit, critRatio: d.critRatio,
-    drain: d.drain, recoil: d.recoil, selfSwitch: d.selfSwitch, contact: !!flags.contact, sure: !!d.sure,
+    officialCat: d.cat, pri: d.pri, dex: d, multihit: d.multihit, critRatio: d.critRatio,
+    drain: d.drain, recoil: d.recoil, selfSwitch: d.selfSwitch, contact: !!flags.contact,
     ...(flags.punch && { punch: true }), ...(flags.bite && { bite: true }), ...(flags.sound && { sound: true }), ...(flags.bullet && { bullet: true }),
     ...(flags.pulse && { pulse: true }), ...(flags.slicing && { slice: true }), ...(flags.wind && { wind: true }), ...(flags.powder && { powder: true }),
   };
@@ -3168,8 +3165,8 @@ function fromDex(id, d) {
   if (d.cat === 'status') {
     const boosts = d.boosts && (d.target === 'self' || d.target === 'adjacentAllyOrSelf' || d.target === 'allies');
     const u = boosts ? { kind: 'stages', self: d.boosts, look: d.type }
-      : d.status ? { kind: 'ray', status: STATUS_OF[d.status], toxic: d.status === 'tox', acc: d.acc, color: c1, powder: (d.flags ?? []).includes('powder'), dur: d.status === 'slp' ? 3 : undefined }
-      : d.boosts ? { kind: 'ray', boosts: d.boosts, acc: d.acc, color: c1 }
+      : d.status ? { kind: 'ray', status: STATUS_OF[d.status], toxic: d.status === 'tox', color: c1, powder: (d.flags ?? []).includes('powder'), dur: d.status === 'slp' ? 3 : undefined }
+      : d.boosts ? { kind: 'ray', boosts: d.boosts, color: c1 }
       : d.heal ? { kind: 'heal', pct: d.heal }
       : { kind: 'special', id };
     return util(d.name, d.type, Math.max(5, 4 + (d.heal ? 6 : 2)), tag, u);
@@ -3283,10 +3280,7 @@ const EXTRA_MOVES = {
   acupressure: sp('Acupressure', 'normal', 8, 'A random stat +2'),
   charge: sp('Charge', 'electric', 7, 'Its next Electric move hits twice as hard · Sp. Def +1'),
   defenseCurl: sp('Defense Curl', 'normal', 5, 'Defense +1'),
-  minimize: sp('Minimize', 'normal', 8, 'Evasion +2'),
   laserFocus: sp('Laser Focus', 'normal', 8, 'Its next hit within 6s is a critical hit'),
-  lockOn: foeSp('Lock-On', 'normal', 7, 'Its next move within 6s cannot miss'),
-  mindReader: foeSp('Mind Reader', 'normal', 7, 'Its next move within 6s cannot miss'),
   stockpile: sp('Stockpile', 'normal', 6, 'Stores power, up to 3 times: Defense and Sp. Def +1 each'),
   swallow: sp('Swallow', 'normal', 8, 'Heals ¼, ½ or all HP for 1–3 stockpiles'),
   venomDrench: foeSp('Venom Drench', 'poison', 8, "A poisoned foe's Attack, Sp. Atk and Speed −1"),
@@ -3294,7 +3288,7 @@ const EXTRA_MOVES = {
   safeguard: sp('Safeguard', 'normal', 16, 'Keeps statuses off your side for 15s'),
   mist: sp('Mist', 'ice', 16, "Keeps your side's stats from being lowered for 15s"),
   luckyChant: sp('Lucky Chant', 'normal', 16, 'No critical hits against your side for 15s'),
-  gravity: sp('Gravity', 'psychic', 18, 'For 15s: moves are more accurate, Ground hits everything, Fly and the like fail'),
+  gravity: sp('Gravity', 'psychic', 18, 'Ground hits Flying types and Fly is disabled for 15s'),
   magicRoom: sp('Magic Room', 'psychic', 18, "For 15s held items don't work"),
   wonderRoom: sp('Wonder Room', 'psychic', 18, 'For 15s Defense and Sp. Def are swapped'),
   batonPass: sp('Baton Pass', 'normal', 8, 'Switch ready · the next Pokémon keeps its stat changes'),
@@ -3316,8 +3310,8 @@ const EXTRA_MOVES = {
   forestsCurse: foeSp("Forest's Curse", 'grass', 9, "Adds Grass to the foe's types"),
   trickOrTreat: foeSp('Trick-or-Treat', 'ghost', 9, "Adds Ghost to the foe's types"),
   reflectType: foeSp('Reflect Type', 'normal', 9, "Becomes the foe's type"),
-  odorSleuth: foeSp('Odor Sleuth', 'normal', 6, 'Normal and Fighting moves hit the foe even if it is a Ghost · ignores its evasion'),
-  foresight: foeSp('Foresight', 'normal', 6, 'Normal and Fighting moves hit the foe even if it is a Ghost · ignores its evasion'),
+  odorSleuth: foeSp('Odor Sleuth', 'normal', 6, 'Normal and Fighting moves deal full type damage against Ghost'),
+  foresight: foeSp('Foresight', 'normal', 6, 'Normal and Fighting moves deal full type damage against Ghost'),
   corrosiveGas: foeSp('Corrosive Gas', 'poison', 10, "Corrodes away the foe's held item"),
   stuffCheeks: sp('Stuff Cheeks', 'normal', 8, 'Eats its Berry · Defense +2'),
   octolock: foeSp('Octolock', 'fighting', 10, "The foe can't escape; its Defense and Sp. Def drop every 3s"),
@@ -3338,7 +3332,7 @@ const EXTRA_MOVES = {
   camouflage: sp('Camouflage', 'normal', 8, 'Becomes the type of the terrain (Normal without one)'),
   conversion2: foeSp('Conversion 2', 'normal', 8, "Becomes a type that resists the foe's last move"),
   waterSport: sp('Water Sport', 'water', 16, 'For 15s Fire moves are much weaker'),
-  telekinesis: foeSp('Telekinesis', 'psychic', 10, "Lifts the foe for 9s: every move hits it, but Ground moves can't"),
+  telekinesis: foeSp('Telekinesis', 'psychic', 10, 'Lifts the foe for 9s, protecting it from most Ground moves'),
   fairyLock: sp('Fairy Lock', 'fairy', 12, "For a moment no one can switch out"),
   dive: twoTurn('Dive', 'water', 80, 2.4, 'Dives out of reach, then surges up under the foe', { mode: 'dig', hold: 0.55 }),
   skullBash: twoTurn('Skull Bash', 'normal', 130, 3.4, 'Tucks in (Defense +1), then rams the foe', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#e8e0c8', '#a8a878'], knockback: 260 }),
@@ -3354,6 +3348,7 @@ Object.assign(POOL_MOVES.futureSightAtk, { power: 120 });
 Object.assign(POOL_MOVES.doomDesire, { power: 140 });
 
 for (const [id, d] of Object.entries(MOVEDEX)) {
+  if (RETIRED_MOVES.has(id)) continue;
   if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], mechanicsOf(d));
   else if (!MOVES[id]) MOVES[id] = { ...fromDex(id, d), ...mechanicsOf(d), generated: true };
 }
@@ -3453,10 +3448,8 @@ const FAMILY = {
   wind: ['hurricane', 'heatWave', 'airSlash'],
 };
 for (const [tag, ids] of Object.entries(FAMILY)) for (const id of ids) if (MOVES[id]) MOVES[id][tag] = true;
-// Weather rules (adaptMove): Solar Beam's charge; Hurricane's accuracy in rain and sun.
+// Solar Beam's charge changes with weather (adaptMove).
 MOVES.solarBeam.solar = true;
-for (const id of ['hurricane', 'hurricaneAtk', 'thunderAtk']) if (MOVES[id] && !MOVES[id].ultimate) Object.assign(MOVES[id], { acc: 70, weatherAcc: { rain: 'sure', sun: 50 } });
-for (const id of ['blizzardAtk']) if (MOVES[id]) Object.assign(MOVES[id], { acc: 70, weatherAcc: { snow: 'sure', hail: 'sure' } });
 // Slicing moves (Gallade's Sharpness).
 for (const id of ['psychoCut', 'sacredSword', 'leafBlade', 'nightSlash', 'xScissor', 'aerialAce', 'shadowClaw', 'airSlash', 'dragonClaw', 'crossPoison', 'slash', 'smartStrike', 'wingAttack']) MOVES[id].slice = true;
 // Moves that drag the foe toward the user instead of pushing it away.
@@ -3482,8 +3475,7 @@ for (const [id, m] of Object.entries(MOVES)) {
 }
 
 // Moves that change with the battle state, as in the games: Solar Beam fires at once in harsh sunlight and
-// at half power in other weather; Thunder and Hurricane never miss in rain and are inaccurate in sun;
-// Blizzard never misses in snow; Weather Ball takes the weather's type at double power; Synthesis-style
+// at half power in other weather; Weather Ball takes the weather's type at double power; Synthesis-style
 // healing depends on the weather; Facade doubles when statused; Acrobatics doubles without an item.
 export function adaptMove(game, user, m) {
   const w = game.weather && game.weather !== 'delta' ? game.weather : null;
@@ -3493,8 +3485,6 @@ export function adaptMove(game, user, m) {
     if (w === 'sun') set({ sunCharged: true, beam: m.beam && { ...m.beam, charge: 0.06 } });
     else if (w) set({ power: Math.round(m.power / 2) });
   }
-  // Weather accuracy: Thunder and Hurricane can't miss in rain and drop to 50% in sun; Blizzard can't miss in snow.
-  if (m.weatherAcc?.[w] != null) set(m.weatherAcc[w] === 'sure' ? { acc: 100, sure: true } : { acc: m.weatherAcc[w] });
   if (m.weatherBall && w) set({ type: { sun: 'fire', rain: 'water', sand: 'rock', snow: 'ice', hail: 'ice' }[w], power: m.power * 2 });
   if (m.facade && Object.values(user.status).some(v => v > 0)) set({ power: m.power * 2 });
   if (m.acrobatics && !user.item) set({ power: m.power * 2 });

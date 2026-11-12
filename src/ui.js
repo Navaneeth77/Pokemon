@@ -9,7 +9,7 @@ import { ABILITIES } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
-import { movePool, isCompetitive, learnGen } from './data/movepool.js';
+import { competitivePreset, movePool, isCompetitive, learnGen } from './data/movepool.js';
 import { ROLES, STYLES, roleOf, moveStyle, fitsRole } from './roles.js';
 
 // Role badge (roles.js) and a move's style tag, with "+20%" when it suits the Pokémon's role.
@@ -449,8 +449,9 @@ export class UI {
     // first empty slot (tap it again to take it out). Keys 1–4 follow the slots.
     const byName = (a, b) => MOVES[a].name.localeCompare(MOVES[b].name), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
     const pool = [...movePool(s)].sort((a, b) => fitsRole(s, MOVES[b]) - fitsRole(s, MOVES[a]) || byName(a, b)), gen = learnGen(id);
-    let query = '';
-    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${powerOf(m)}`} · ${m.sure || m.acc == null ? '—' : `${m.acc}%`}`;
+    const preset = competitivePreset(s), presetIsDefault = preset?.every((mid, i) => mid === s.moves[i]);
+    let query = '', presetApplied = false;
+    const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${powerOf(m)}`}`;
     let draft = [...(this.kitOf(id).moves ?? s.moves)], msg = '';
     const saveMoves = () => this.setKit(id, { moves: draft.filter(Boolean) });
     const poolBtn = mid => {
@@ -474,7 +475,11 @@ export class UI {
           <h3>MOVES <b class="km-count${n < 4 ? ' short' : ''}">${n}/4</b><small>Tap ✕ to remove a move. Tap a move in the list to add it.</small></h3>
           <div class="km-slots">${draft.map(slotHtml).join('')}</div>
           ${msg ? `<p class="km-msg">${msg}</p>` : n < 4 ? '<p class="km-msg soft">Any slot left empty gets one of its default moves in battle.</p>' : ''}
-          ${changed ? '<button class="kit-reset" data-reset>↺ Back to its default moves</button>' : ''}
+          <div class="km-actions">
+            ${preset ? '<button class="kit-preset" data-preset>Use competitive preset</button>' : ''}
+            ${changed && !presetIsDefault ? '<button class="kit-reset" data-reset>↺ Back to its default moves</button>' : ''}
+            <span class="km-preset-status" role="status">${presetApplied ? 'Preset applied' : ''}</span>
+          </div>
         </div>
         <h4 class="kit-sub">ALL ${pool.length} MOVES IT CAN LEARN <small>${gen === 9 ? 'Scarlet/Violet' : `Gen ${gen} games`} · ★ = used in competitive sets</small></h4>
         <input class="kp-search" type="search" placeholder="Search moves: name, type or physical/special/status" value="${esc(query)}" aria-label="Search moves">
@@ -512,17 +517,25 @@ export class UI {
       filter();
       if (focusSearch) { search.focus(); search.setSelectionRange(query.length, query.length); }
       overlay.querySelector('.kit-x').onclick = () => overlay.remove();
-      overlay.querySelectorAll('[data-rm]').forEach(b => (b.onclick = () => { draft[+b.dataset.rm] = null; msg = ''; saveMoves(); draw(); }));
+      overlay.querySelectorAll('[data-rm]').forEach(b => (b.onclick = () => { draft[+b.dataset.rm] = null; msg = ''; presetApplied = false; saveMoves(); draw(); }));
       overlay.querySelectorAll('[data-mv]').forEach(b => (b.onclick = () => {
         const mid = b.dataset.mv, at = draft.indexOf(mid), free = draft.indexOf(null);
         msg = '';
         if (at >= 0) draft[at] = null;
         else if (free >= 0) draft[free] = mid;
         else msg = `Already 4 moves. Tap ✕ on one to make room for ${MOVES[mid].name}.`;
-        if (!msg) saveMoves();
+        if (!msg) { presetApplied = false; saveMoves(); }
         draw();
       }));
-      overlay.querySelector('[data-reset]')?.addEventListener('click', () => { draft = [...s.moves]; msg = ''; this.setKit(id, { moves: null }); draw(); });
+      overlay.querySelector('[data-preset]')?.addEventListener('click', () => {
+        draft = [...preset];
+        msg = '';
+        presetApplied = true;
+        saveMoves();
+        draw();
+        overlay.querySelector('[data-preset]').focus();
+      });
+      overlay.querySelector('[data-reset]')?.addEventListener('click', () => { draft = [...s.moves]; msg = ''; presetApplied = false; this.setKit(id, { moves: null }); draw(); });
       overlay.querySelectorAll('[data-item]').forEach(b => (b.onclick = () => { this.setKit(id, { item: b.dataset.item || null }); draw(); }));
       overlay.querySelectorAll('[data-tera]').forEach(b => (b.onclick = () => { this.setKit(id, { tera: b.dataset.tera }); draw(); }));
       overlay.querySelector('[data-shiny]')?.addEventListener('click', () => { this.setKit(id, { shiny: !k.shiny }); draw(); });

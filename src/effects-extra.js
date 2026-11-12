@@ -1,14 +1,13 @@
 // Rules for the moves from the full learnsets that need more than the official data (effects-resolver.js calls in):
 //   confusion and infatuation (Confuse Ray, Supersonic, Swagger, Attract…), move locks (Disable, Torment, Imprison,
-//   Spite), stat tools (Psych Up, the Swaps, Topsy-Turvy, Acupressure, Stockpile, Charge, Laser Focus, Lock-On…),
+//   Spite), stat tools (Psych Up, the Swaps, Topsy-Turvy, Acupressure, Stockpile, Charge, Laser Focus…),
 //   side and field effects (Safeguard, Mist, Lucky Chant, Gravity, Magic Room, Wonder Room), sacrifices and switches
 //   (Memento, Perish Song, Final Gambit, Baton Pass, Grudge), ability and type changes (Skill Swap, Worry Seed,
 //   Magic Powder…), moves that use other moves (Metronome, Mirror Move, Assist, Nature Power), Mimic, Sketch and
-//   Transform, Endure, and attacks with power rules of their own (Echoed Voice, Fury Cutter, Rollout, Fling, Present,
-//   the one-hit KO moves…). A "turn" is about 3s, as elsewhere.
+//   Transform, Endure, and attacks with power rules of their own (Echoed Voice, Fury Cutter, Rollout, Fling, Present…). A "turn" is about 3s, as elsewhere.
 import { abilityOf, typesOf } from './data/abilities.js';
 import { ITEMS, itemOf } from './data/items.js';
-import { accuracyMult } from './stats.js';
+import { STATS } from './stats.js';
 import { typeMultiplier, TYPE_COLORS } from './data/types.js';
 import { applyHit } from './combat.js';
 import { setSide } from './field.js';
@@ -23,7 +22,6 @@ const hasStatus = mon => Object.values(mon.status ?? {}).some(v => v > 0) || mon
 const asleep = mon => mon?.status?.sleep > 0;
 const log = (g, mon, text) => g.ui.log(text, mon.side);
 const fail = (g, mon, text = 'IT FAILED!') => { g.floatText(mon, text, '#c9d2de'); return false; };
-const STATS = ['atk', 'def', 'spa', 'spd', 'spe', 'accuracy', 'evasion'];
 const bossy = mon => mon.boss || mon.remote;
 
 // Moves Gravity keeps on the ground.
@@ -40,26 +38,17 @@ export const CALLERS = new Set(['metronome', 'mirrorMove', 'assist', 'naturePowe
 export const RULED = new Set([
   'endure', 'detect', 'obstruct', 'silkTrap', 'confuseRay', 'supersonic', 'sweetKiss', 'teeterDance', 'swagger', 'flatter', 'attract', 'disable',
   'torment', 'imprison', 'spite', 'meanLook', 'psychUp', 'powerSwap', 'guardSwap', 'heartSwap', 'topsyTurvy', 'acupressure', 'charge',
-  'defenseCurl', 'minimize', 'laserFocus', 'lockOn', 'mindReader', 'stockpile', 'swallow', 'spitUp', 'venomDrench', 'spicyExtract',
+  'defenseCurl', 'laserFocus', 'stockpile', 'swallow', 'spitUp', 'venomDrench', 'spicyExtract',
   'safeguard', 'mist', 'luckyChant', 'gravity', 'magicRoom', 'wonderRoom', 'hail', 'batonPass', 'memento', 'perishSong', 'ingrain', 'refresh',
   'lunarBlessing', 'purify', 'psychoShift', 'grudge', 'skillSwap', 'rolePlay', 'entrainment', 'worrySeed', 'simpleBeam', 'gastroAcid',
   'magicPowder', 'forestsCurse', 'trickOrTreat', 'reflectType', 'odorSleuth', 'foresight', 'corrosiveGas', 'stuffCheeks', 'octolock',
   'metronome', 'mirrorMove', 'assist', 'naturePower', 'mimic', 'sketch', 'transform',
   'round', 'echoedVoice', 'furyCutter', 'rollout', 'iceBall', 'tripleKick', 'waterShuriken', 'grassPledge', 'firePledge', 'waterPledge', 'lastResort',
   'synchronoise', 'present', 'fling', 'snore', 'dreamEater', 'burnUp', 'thrash', 'ragingFury', 'uproar', 'jawlock', 'mistyExplosion',
-  'finalGambit', 'fissure', 'sheerCold', 'guillotine', 'hornDrill', 'dive', 'skullBash', 'solarBlade', 'electroShot', 'shadowForce', 'selfDestruct',
+  'finalGambit', 'dive', 'skullBash', 'solarBlade', 'electroShot', 'shadowForce', 'selfDestruct',
   'guardSplit', 'powerSplit', 'powerTrick', 'speedSwap', 'magicCoat', 'comeuppance', 'bide', 'electrify', 'camouflage', 'conversion2', 'waterSport',
   'telekinesis', 'fairyLock',
 ]);
-
-// The move's own accuracy against the foe, for status moves (Lock-On and Gravity count).
-function lands(g, user, foe, move) {
-  if (move.sound && abilityOf(foe).soundproof) { g.abilityPop(foe, "Soundproof: it can't hear it!"); return false; }
-  if (move.sure || move.acc == null || user.lockOn > 0) { user.lockOn = 0; return true; }
-  const ok = Math.random() * 100 < move.acc * accuracyMult(user, foe) * (g.gravity > 0 ? 5 / 3 : 1);
-  if (!ok) { g.floatText(foe, 'MISSED!', '#c9d2de'); log(g, user, `${user.species.name}'s ${move.name} missed!`); }
-  return ok;
-}
 
 export function confuse(g, mon, by) {
   if (!onField(mon) || bossy(mon)) return false;
@@ -89,7 +78,6 @@ export function moveBlocked(g, user, id, base) {
   if (id === 'fling' && !itemOf(user)) return no('NOTHING TO FLING');
   if (id === 'synchronoise' && !(onField(foe) && typesOf(foe).some(t => typesOf(user).includes(t)))) return no('IT FAILED!');
   if (id === 'spitUp' && !(user.stockpile > 0)) return no('NOTHING STOCKPILED');
-  if (id === 'sheerCold' && onField(foe) && typesOf(foe).includes('ice')) return no('IT FAILED!');
   if (id === 'lastResort' && user.moves.filter(m => m !== 'lastResort').some(m => !user.usedMoves?.has(m))) return no('NOT YET!');
   if (id === 'comeuppance' && !(user.lastHit && g.time - user.lastHit.t < 3)) return no('NOTHING TO RETURN');
   if (user.infatuated > 0 && Math.random() < 0.5) {
@@ -128,11 +116,6 @@ export function extraPower(g, user, target, move) {
 // Fixed damage (effects-resolver.js fixedDamage); undefined = the usual formula.
 export function extraFixed(g, user, target, move) {
   switch (move.id) {
-    // One-hit KO moves: if they land, the foe faints (a raid boss shrugs it off).
-    case 'fissure': case 'sheerCold': case 'guillotine': case 'hornDrill':
-      if (target.boss || g.raid) { g.floatText(target, 'UNAFFECTED', '#c9d2de'); return 0; }
-      g.floatText(target, "IT'S A ONE-HIT KO!", '#ff7a5a');
-      return Math.ceil(target.hp);
     case 'finalGambit': return Math.max(1, Math.ceil(user.hp));
     // Present: one time in five it's a gift that heals the foe instead.
     case 'present':
@@ -208,23 +191,26 @@ const shuffle = list => list[Math.floor(Math.random() * list.length)];
 // Status moves (effects-resolver.js statusMove). Return value is ignored.
 export const EXTRA_STATUS = {
   endure(g, user) { user.endure = 0.9; g.floatText(user, 'ENDURE!', '#ffd84a'); log(g, user, `${user.species.name} braced itself!`); },
-  confuseRay(g, user, move) { if (lands(g, user, user.foe, move)) confuse(g, user.foe, user); },
-  swagger(g, user, move) { const f = user.foe; if (onField(f) && lands(g, user, f, move)) { g.stage(f, { atk: 2 }, user); confuse(g, f, user); } },
-  flatter(g, user, move) { const f = user.foe; if (onField(f) && lands(g, user, f, move)) { g.stage(f, { spa: 1 }, user); confuse(g, f, user); } },
-  attract(g, user, move) {
+  confuseRay(g, user, move) {
+    const foe = user.foe;
+    if (!onField(foe)) return;
+    if (move.sound && abilityOf(foe).soundproof) return g.abilityPop(foe, "Soundproof: it can't hear it!");
+    confuse(g, foe, user);
+  },
+  swagger(g, user) { const f = user.foe; if (onField(f)) { g.stage(f, { atk: 2 }, user); confuse(g, f, user); } },
+  flatter(g, user) { const f = user.foe; if (onField(f)) { g.stage(f, { spa: 1 }, user); confuse(g, f, user); } },
+  attract(g, user) {
     const f = user.foe;
     if (!onField(f) || bossy(f) || f.infatuated > 0) return fail(g, user);
     if (abilityOf(f).noInfatuation) { g.abilityPop(f, "It doesn't fall in love!"); return; }
-    if (!lands(g, user, f, move)) return;
     f.infatuated = 6;
     g.floatText(f, 'FELL IN LOVE!', '#ff9fd0');
     for (let i = 0; i < 6; i++) g.particles.spawn({ x: f.x + rand(-12, 12), y: f.y, z: f.headZ + rand(0, 8), vz: rand(15, 35), life: 0.8, size: rand(2, 3), sizeEnd: 1, colors: ['#ffd0e8', '#ff70b0'] });
     log(g, f, `${f.species.name} fell in love!`);
   },
-  disable(g, user, move) {
+  disable(g, user) {
     const f = user.foe, id = g.lastUsed[f?.side];
     if (!onField(f) || !id || MOVES[id]?.ultimate || f.disabled?.t > 0) return fail(g, user);
-    if (!lands(g, user, f, move)) return;
     f.disabled = { id, t: 9 };
     g.floatText(f, `${MOVES[id].name.toUpperCase()} DISABLED!`, '#ffb070');
     log(g, f, `${f.species.name}'s ${MOVES[id].name} was disabled!`);
@@ -252,9 +238,7 @@ export const EXTRA_STATUS = {
   acupressure(g, user) { const open = STATS.filter(k => (user.stages[k] ?? 0) < 6); if (!open.length) return fail(g, user); g.stage(user, { [shuffle(open)]: 2 }); },
   charge(g, user) { user.charged = true; g.floatText(user, 'CHARGED!', '#ffe066'); g.stage(user, { spd: 1 }); },
   defenseCurl(g, user) { g.stage(user, { def: 1 }); },
-  minimize(g, user) { g.stage(user, { evasion: 2 }); },
   laserFocus(g, user) { user.laserFocus = 6; g.floatText(user, 'LASER FOCUS!', '#ff7a5a'); },
-  lockOn(g, user) { if (!onField(user.foe)) return fail(g, user); user.lockOn = 6; g.floatText(user.foe, 'LOCKED ON!', '#ffd84a'); },
   stockpile(g, user) {
     if ((user.stockpile ?? 0) >= 3) return fail(g, user);
     user.stockpile = (user.stockpile ?? 0) + 1;
@@ -328,7 +312,7 @@ export const EXTRA_STATUS = {
   forestsCurse: (g, user) => user.foe && setTypes(g, user.foe, [...typesOf(user.foe).filter(t => t !== 'grass'), 'grass'], 'GRASS ADDED!'),
   trickOrTreat: (g, user) => user.foe && setTypes(g, user.foe, [...typesOf(user.foe).filter(t => t !== 'ghost'), 'ghost'], 'GHOST ADDED!'),
   reflectType(g, user) { const f = user.foe; if (!onField(f)) return fail(g, user); user.typeOverride = [...typesOf(f)]; g.floatText(user, 'COPIED ITS TYPE', '#c8a0ff'); },
-  odorSleuth(g, user) { const f = user.foe; if (!onField(f)) return fail(g, user); f.identified = true; if ((f.stages.evasion ?? 0) > 0) f.stages.evasion = 0; g.floatText(f, 'IDENTIFIED!', '#ffd84a'); },
+  odorSleuth(g, user) { const f = user.foe; if (!onField(f)) return fail(g, user); f.identified = true; g.floatText(f, 'IDENTIFIED!', '#ffd84a'); },
   corrosiveGas(g, user) { const f = user.foe; if (!onField(f) || !f.item || bossy(f)) return fail(g, user); log(g, f, `${f.species.name}'s ${ITEMS[f.item]?.name ?? 'item'} corroded away!`); f.item = null; g.floatText(f, 'ITEM CORRODED!', '#b060d0'); },
   stuffCheeks(g, user) {
     const it = ITEMS[user.item];
@@ -387,7 +371,7 @@ export const EXTRA_STATUS = {
     if (!onField(f) || bossy(f) || g.gravity > 0 || f.telekinesis > 0) return fail(g, user);
     f.telekinesis = 9;
     g.floatText(f, 'HURLED INTO THE AIR!', '#c8a0ff');
-    log(g, f, `${f.species.name} was hurled into the air! Every move hits it, but Ground moves can't.`);
+    log(g, f, `${f.species.name} was hurled into the air! Ground moves can't hit it.`);
   },
   fairyLock(g, user) {
     for (const mon of [g.player, g.opponent]) if (onField(mon)) mon.blocked = Math.max(mon.blocked ?? 0, 3.5);
@@ -413,7 +397,7 @@ export const EXTRA_STATUS = {
 // The same rules under other names.
 Object.assign(EXTRA_STATUS, {
   supersonic: EXTRA_STATUS.confuseRay, sweetKiss: EXTRA_STATUS.confuseRay, teeterDance: EXTRA_STATUS.confuseRay,
-  mindReader: EXTRA_STATUS.lockOn, foresight: EXTRA_STATUS.odorSleuth,
+  foresight: EXTRA_STATUS.odorSleuth,
 });
 
 // A copy of its species' stats it can change for as long as it stays in (Pokémon.enter puts the real one back).
@@ -462,7 +446,7 @@ export function tickExtra(g, mon, dt) {
     mon.rampage = null;
     if (r.tire) confuse(g, mon, null);
   }
-  for (const k of ['confused', 'infatuated', 'tormented', 'imprison', 'endure', 'laserFocus', 'lockOn', 'grudge', 'magicRoomT', 'wonderRoomT', 'magicCoat', 'electrified', 'telekinesis', 'uproar']) {
+  for (const k of ['confused', 'infatuated', 'tormented', 'imprison', 'endure', 'laserFocus', 'grudge', 'magicRoomT', 'wonderRoomT', 'magicCoat', 'electrified', 'telekinesis', 'uproar']) {
     if (!(mon[k] > 0)) continue;
     mon[k] = Math.max(0, mon[k] - dt);
     if (mon[k] === 0 && ['confused', 'infatuated', 'tormented'].includes(k)) log(g, mon, `${mon.species.name} ${k === 'confused' ? 'snapped out of its confusion' : k === 'infatuated' ? 'got over its infatuation' : 'is no longer tormented'}!`);
@@ -485,7 +469,7 @@ export function tickExtra(g, mon, dt) {
     g.floatText(mon, 'BIDE UNLEASHED!', '#ffd84a');
     g.spawn(new Ring(mon.x, mon.y, { z: mon.bodyZ, r0: 6, r1: 40, life: 0.4, color: '#ffd84a', width: 3, layer: 'air' }));
     const a = Math.atan2(foe.y - mon.y, foe.x - mon.x);
-    applyHit(g, mon, foe, { ...MOVES.bide, cat: 'physical', util: null, fixedDmg: Math.round(b.dmg * 2), acc: 100, sure: true }, { knockback: 220, stagger: 0.4, dirX: Math.cos(a), dirY: Math.sin(a), unblockable: false });
+    applyHit(g, mon, foe, { ...MOVES.bide, cat: 'physical', util: null, fixedDmg: Math.round(b.dmg * 2) }, { knockback: 220, stagger: 0.4, dirX: Math.cos(a), dirY: Math.sin(a), unblockable: false });
   }
   // Ingrain: a little HP back every turn.
   if (mon.ingrained && (mon.ingrainT = (mon.ingrainT ?? 0) + dt) >= 3) { mon.ingrainT = 0; g.heal(mon, mon.maxHp / 16); }

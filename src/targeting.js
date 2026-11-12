@@ -19,13 +19,10 @@
 //   maxTurn    the most it may turn in total while tracking (rad)
 //   acquire    'release': aims at the foe as it is thrown; 'cast': locks the foe's position when the move starts
 //   fan        volleys: the shots deploy across this angle (rad), fly straight for spreadT seconds, then home back in
-//
-// Accuracy is separate (combat.js): the move's official accuracy, the accuracy/evasion stages and abilities are
-// rolled only once the move has physically reached the foe. A projectile that is dodged or falls short never rolls.
 
 const SHARDS = /shard|blast$|spear|missile|cutter|scale|seed|cut$|slash|pin|rock|bomb$/i;
-// Moves the games say never miss (accuracy: —) home in hard: Swift, Aura Sphere, Magical Leaf, Shock Wave…
-const SURE_HOMING = { track: 4.5, trackTime: 1.4, maxTurn: 2.4 };
+// Swift, Aura Sphere and similar moves have stronger homing.
+const STRONG_HOMING = { track: 4.5, trackTime: 1.4, maxTurn: 2.4 };
 // Most special orbs bend gently toward a foe that moves.
 const SOFT_HOMING = { track: 1.4, trackTime: 0.7, maxTurn: 0.6 };
 
@@ -58,8 +55,8 @@ Object.assign(TARGETING_TUNING, {
     'frostBreath', 'silverWind', 'ominousWind', 'mudBomb', 'mysticalFire', 'storedPower', 'extrasensory', 'clearSmog'].map(id => [id, { ...FAN, fan: 0.9 }])),
   ...Object.fromEntries(['fairyWind', 'gust', 'airCutter', 'psychoCut', 'vacuumWave'].map(id => [id, { ...FAN, fan: 0.7 }])),
 });
-// Never-miss moves the move database doesn't cover home in like the rest.
-for (const id of ['swift', 'magicalLeaf', 'shockWave', 'aerialAce', 'magnetBomb', 'disarmingVoice']) TARGETING_TUNING[id] = { ...TARGETING_TUNING[id], kind: 'homing', ...SURE_HOMING };
+// Explicit homing profiles for hand-tuned moves.
+for (const id of ['swift', 'magicalLeaf', 'shockWave', 'magnetBomb', 'disarmingVoice']) TARGETING_TUNING[id] = { ...TARGETING_TUNING[id], kind: 'homing', ...STRONG_HOMING };
 
 const r0 = v => Math.round(v);
 
@@ -72,7 +69,7 @@ export function profileOf(id, m, recipeKind) {
     const kind = recipeKind ?? 'strike', hit = m.seq.steps.find(s => s.hit)?.hit;
     if (kind === 'missile') {
       const first = m.seq.steps.find(s => s.missile), dur = first?.missile.dur ?? 0.35;
-      const homing = m.sure ? SURE_HOMING : SHARDS.test(m.name) || m.cat === 'physical' ? null : SOFT_HOMING;
+      const homing = m.dex?.sure ? STRONG_HOMING : SHARDS.test(m.name) || m.cat === 'physical' ? null : SOFT_HOMING;
       p = { kind: homing ? 'homing' : 'straight', range: 290, hitbox: 10 * (first?.missile.scale ?? 1), speed: r0(Math.max(360, Math.min(820, 200 / dur))), track: 0, trackTime: 0, maxTurn: 0, acquire: 'release', ...homing };
     } else if (kind === 'self') {
       p = { kind: 'area', range: hit?.r ?? 80, hitbox: hit?.r ?? 80, speed: Infinity, track: 0, trackTime: 0, maxTurn: 0, acquire: 'cast' };

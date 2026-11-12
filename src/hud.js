@@ -4,7 +4,7 @@ import { WORLD_W } from './arena.js';
 
 // The top bar: both panels, and under them a row for each side's stat changes.
 const HUD_H = 58;
-const STAGE_LABEL = { atk: 'ATK', def: 'DEF', spa: 'SP.ATK', spd: 'SP.DEF', spe: 'SPE', accuracy: 'ACC', evasion: 'EVA' };
+const STAGE_LABEL = { atk: 'ATK', def: 'DEF', spa: 'SP.ATK', spd: 'SP.DEF', spe: 'SPE' };
 const BUFF_LABEL = { atk: 'ATK', def: 'DEF', spd: 'SPE' };
 import { abilityOf, typesOf } from './data/abilities.js';
 import { statusPills, buffPills, stagePills } from './status.js';

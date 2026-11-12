@@ -196,6 +196,7 @@ export function changeStage(game, mon, changes, source = null) {
   const ab = abilityOf(mon), item = itemOf(mon), byFoe = source && source !== mon;
   let any = false, dropped = false;
   for (let [stat, n] of Object.entries(changes)) {
+    if (!Object.hasOwn(STAT_NAME, stat)) continue;
     if (ab.contrary) n = -n;
     if (ab.simple) n *= 2;
     if (n < 0 && byFoe) {

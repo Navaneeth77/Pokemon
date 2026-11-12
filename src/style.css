@@ -1635,7 +1635,12 @@ body.builder .online-bar { display: flex; justify-content: center; margin: 6px 0
 .km-x:hover{background:#e0403a;}
 .km-msg{margin:8px 0 0;padding:6px 8px;font-size:12px;font-weight:700;color:#1a1205;background:#ffb070;border-radius:5px;}
 .km-msg.soft{font-weight:400;color:#c9cfe0;background:#232b44;}
-.kit-reset{margin-top:8px;min-height:32px;padding:4px 12px;font:600 12px 'Pixelify Sans',monospace;color:#dfe6f4;background:#22293a;border:1px solid #4b5671;border-radius:5px;cursor:pointer;}
+.km-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;}
+.km-actions:not(:empty){margin-top:8px;}
+.kit-reset,.kit-preset{min-height:36px;padding:4px 12px;font:600 12px 'Pixelify Sans',monospace;color:#dfe6f4;background:#22293a;border:1px solid #4b5671;border-radius:5px;cursor:pointer;}
+.kit-preset{color:#191505;background:#ffd84a;border-color:#fff2b0;}
+.kit-preset:hover{background:#ffe680;}
+.km-preset-status{font-size:12px;color:#9fffc8;}
 .kit-pool{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:6px;}
 .kit-pool button{display:flex;align-items:center;gap:6px;min-height:50px;padding:4px 6px 4px 8px;text-align:left;font:600 12px 'Pixelify Sans',monospace;color:#dfe6f4;background:#22293a;border:1px solid #3a4560;border-left:4px solid var(--tc);border-radius:5px;cursor:pointer;}
 .kit-pool .kp-text{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}

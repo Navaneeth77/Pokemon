@@ -65,7 +65,6 @@ const POOL_AI = {
   acupressure: (me, foe, d) => (d > 110 && boosted(me) < 4 ? 1.1 : 0),
   charge: (me, foe, d) => (!me.charged && d > 100 ? 1.1 : 0),
   laserFocus: me => (!(me.laserFocus > 0) ? 1 : 0),
-  lockOn: me => (!(me.lockOn > 0) ? 0.9 : 0),
   stockpile: (me, foe, d) => ((me.stockpile ?? 0) < 3 && d > 100 ? 1.2 : 0),
   swallow: me => (me.stockpile > 0 && me.hp < me.maxHp * 0.6 ? 2 : 0),
   safeguard: screen('safeguard'), mist: screen('mist'), luckyChant: screen('luckyChant'),

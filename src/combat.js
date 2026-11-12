@@ -2,7 +2,7 @@ import { typeMultiplier } from './data/types.js';
 import { roleDamage } from './roles.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
-import { stageOf, stageMult, accuracyMult } from './stats.js';
+import { stageOf, stageMult } from './stats.js';
 import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse, beforeHit, moveCategory, counterHit, crashOnMiss } from './effects-resolver.js';
 import { screenMult } from './field.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
@@ -61,28 +61,6 @@ export function applyHit(game, attacker, target, move, o = {}) {
       game.spawn(new FloatText(target.x, head - 10, 'DODGED!', '#bff3ff'));
       target.gainUlt(game, 3);
       Dfull.onDodged?.(game, target, attacker);
-    }
-    return false;
-  }
-
-  // Accuracy (moves below 100): rolled once per move use. No Guard always hits; Compound Eyes +30%.
-  // Accuracy and evasion stages count against every move, even 100% ones; sure-hit moves (Swift, Thunder in
-  // rain…) skip the roll. A physical miss (the projectile was dodged, the foe was out of reach) never gets here.
-  // Lock-On / Mind Reader make its next move a sure hit; nothing misses a Pokémon held up by Telekinesis; Gravity raises
-  // every accuracy by 5/3.
-  if (attacker.lockOn > 0 && !stack.accRolled) { attacker.lockOn = 0; stack.accRolled = true; }
-  if (target.telekinesis > 0 && !stack.accRolled) stack.accRolled = true;
-  if (move.acc != null && !move.sure && (move.acc < 100 || accuracyMult(attacker, target) !== 1) && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
-    stack.accRolled = true;
-    stack.missed = Math.random() * 100 >= move.acc * (game.gravity > 0 ? 5 / 3 : 1) * (A.compoundEyes ? 1.3 : 1) * (A.keenEye ? Math.max(1, accuracyMult(attacker, target)) : accuracyMult(attacker, target));
-  }
-  if (stack.missed) {
-    if (!stack.missShown) {
-      stack.missShown = true;
-      game.spawn(new FloatText(target.x, head - 10, 'MISSED!', '#c9d2de'));
-      game.ui.log(`${attacker.species.name}'s attack missed!`, attacker.side);
-      game.emit?.('miss', { attacker, target, move });
-      crashOnMiss(game, attacker, move);
     }
     return false;
   }
@@ -212,7 +190,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Aerial combos: each hit on a juggled foe scales down; flyers fight better in the air.
   if (target.air) dmg *= 0.9 ** target.air.juggle * (attacker.species.fly ? 1.15 : 1);
 
-  if (!o.unblockable && !A.keenEye && (D.evade?.(game, target, attacker, move, dmg) || J.evade?.(game, target, attacker, move, dmg))) {
+  if (!o.unblockable && !A.keenEye && D.evade?.(game, target, attacker, move, dmg)) {
     game.spawn(new FloatText(target.x, head - 10, 'EVADED!', '#d8c8ff'));
     return false;
   }

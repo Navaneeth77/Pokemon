@@ -86,7 +86,7 @@ export class Pokemon {
       encore: null, yawn: 0, cursed: null, destinyBond: 0, blocked: 0, magnetRise: 0, glaiveT: 0, counter: null, focusEnergy: false,
       hurtAt: -9, focusing: false, lostFocus: false, vanished: false,
       // effects-extra.js
-      confused: 0, infatuated: 0, disabled: null, tormented: 0, imprison: 0, perish: 0, ingrained: false, ingrainT: 0, laserFocus: 0, lockOn: 0,
+      confused: 0, infatuated: 0, disabled: null, tormented: 0, imprison: 0, perish: 0, ingrained: false, ingrainT: 0, laserFocus: 0,
       endure: 0, charged: false, stockpile: 0, grudge: 0, identified: false, octolocked: null, wonderRoomT: 0, chainUse: null,
       magicCoat: 0, electrified: 0, telekinesis: 0, bide: null, lastHit: null, rampage: null, uproar: 0,
     });

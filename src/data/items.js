@@ -1,5 +1,5 @@
 // Held items: one per Pokémon, chosen in the team builder (its kit). Hooks work like abilities
-// (data/abilities.js): dealMult / takeMult / crit / evade / absorb / endure / onDeal / onTake / onEnter / tick /
+// (data/abilities.js): dealMult / takeMult / crit / absorb / endure / onDeal / onTake / onEnter / tick /
 // speedMult / onUse / onStatus / onDebuffed, plus flags. One-use items call g.useUpItem(mon) and are gone
 // for the rest of the battle (Harvest and Cud Chew can bring a berry back). Every item shows itself when
 // it acts: the item banner (g.itemPop) names it.
@@ -94,14 +94,6 @@ export const ITEMS = {
   expertBelt: { name: 'Expert Belt', desc: 'Super-effective hits deal 20% more.', color: '#3a3a3a', dealMult: (g, me, f, m, i) => (i.eff > 1 ? 1.2 : 1) },
   scopeLens: { name: 'Scope Lens', desc: 'Critical-hit chance +12%.', color: '#4ad8a0', crit: () => 0.12 },
   quickClaw: { name: 'Quick Claw', desc: 'Its moves recharge 10% faster.', color: '#d8c84a', cdRate: 1.1 },
-  brightPowder: {
-    name: 'Bright Powder', desc: 'Sometimes (8%) dazzles an attack so it misses.', color: '#f8f0c0',
-    evade(g, me) {
-      if (Math.random() > 0.08) return false;
-      g.itemPop(me, 'The attack missed in the glare!', true);
-      return true;
-    },
-  },
   shellBell: { name: 'Shell Bell', desc: 'Heals 1/8 of the damage it deals.', color: '#f0d8b0', onDeal: (g, me, foe, move, dmg) => dmg > 0 && g.heal(me, dmg / 8) },
   kingsRock: {
     name: "King's Rock", desc: 'Its attacks may make the foe flinch (8%).', color: '#d8b030',

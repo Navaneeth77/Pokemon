@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
 import { loadSpriteSets } from '../server/sprites.js';
-import { MOVES, adaptMove } from '../src/moves.js';
+import { MOVES } from '../src/moves.js';
 import { applyHit } from '../src/combat.js';
 import { typeMultiplier } from '../src/data/types.js';
 
@@ -53,14 +53,24 @@ test('Disable locks the foe out of the move it used last', () => {
   assert.equal(g.useMove(o, 'flamethrower'), false);
 });
 
-test('Endure hangs on with 1 HP; a one-hit KO move KOs without it', () => {
+test('Endure hangs on with 1 HP through a lethal regular attack', () => {
   const g = battle(['garchomp', 'snorlax', 'lapras'], ['blissey', 'snorlax', 'lapras']), o = g.opponent;
+  o.hp = 10;
   o.endure = 0.9;
-  rolls(0.01, () => applyHit(g, g.player, o, MOVES.fissure, { stack: {} }));
+  rolls(0.99, () => applyHit(g, g.player, o, MOVES.earthquake));
   assert.equal(Math.ceil(o.hp), 1, 'Endure left it at 1 HP');
   o.endure = 0;
-  rolls(0.01, () => applyHit(g, g.player, o, MOVES.fissure, { stack: {} }));
-  assert.equal(o.alive, false, 'Fissure knocked it out');
+  rolls(0.99, () => applyHit(g, g.player, o, MOVES.earthquake));
+  assert.equal(o.alive, false);
+});
+
+test('Fissure and Sheer Cold ultimates deal normal damage to a healthy target', () => {
+  for (const [species, id] of [['dugtrio', 'fissure'], ['lapras', 'sheerCold']]) {
+    const g = battle([species, 'snorlax', 'charizard'], ['blissey', 'snorlax', 'charizard']);
+    const { player, opponent } = g;
+    rolls(0.99, () => applyHit(g, player, opponent, MOVES[id]));
+    assert.ok(opponent.hp > 0 && opponent.hp < opponent.maxHp, id);
+  }
 });
 
 test('Perish Song: everything on the field faints after three turns', () => {
@@ -160,16 +170,12 @@ test('Gravity: Ground moves hit Flying types normally and Fly fails', () => {
   assert.equal(g.useMove(o, 'fly'), false);
 });
 
-test('Synchronoise needs a shared type; Skill Swap trades Abilities; Lock-On makes the next move sure', () => {
+test('Synchronoise needs a shared type; Skill Swap trades Abilities', () => {
   const g = battle(['alakazam', 'snorlax', 'lapras'], ['charizard', 'snorlax', 'lapras']), p = g.player, o = g.opponent;
   assert.equal(g.useMove(p, 'synchronoise'), false);
   const [a, b] = [p.species.ability, o.species.ability];
   use(g, p, 'skillSwap');
   assert.deepEqual([p.abilityOverride, o.abilityOverride], [b, a]);
-  p.lockOn = 6;
-  const stack = {};
-  rolls(0.999, () => applyHit(g, p, o, { ...MOVES.focusBlast }, { stack }));
-  assert.equal(stack.missed ?? false, false, 'Focus Blast (70%) could not miss');
 });
 
 test("online: another screen replays the move the server's Metronome picked, not a new random one", () => {
@@ -228,7 +234,7 @@ test('Power Split and Speed Swap change stats until it switches out; Electrify, 
   assert.ok(o.electrified > 0);
 });
 
-test('Hail chips everything but Ice types and brings out Castform\'s Snowy Form; Blizzard is sure in hail', () => {
+test('Hail chips everything but Ice types and brings out Castform\'s Snowy Form', () => {
   const g = battle(['castform', 'snorlax', 'lapras'], ['charizard', 'snorlax', 'lapras']), p = g.player, o = g.opponent;
   use(g, p, 'hail', 0.6);
   assert.equal(g.weather, 'hail');
@@ -237,7 +243,6 @@ test('Hail chips everything but Ice types and brings out Castform\'s Snowy Form;
   const hp = o.hp;
   run(g, 3.2);
   assert.ok(o.hp < hp, 'Charizard was chipped by the hail');
-  assert.equal(adaptMove(g, p, MOVES.blizzardAtk).sure, true);
 });
 
 test('Solar Blade strikes at once in sun; Present can heal; Rollout and Thrash lock it in; Uproar keeps everyone awake', () => {
@@ -252,7 +257,7 @@ test('Solar Blade strikes at once in sun; Present can heal; Rollout and Thrash l
   rolls(0.1, () => applyHit(g, p, o, MOVES.present, { stack: {} }));
   assert.ok(o.hp > before, 'Present healed the foe');
   p.cooldowns = {};
-  rolls(0.05, () => use(g, p, 'rollout', 0.8)); // Rollout has 90% accuracy; a miss ends the roll
+  use(g, p, 'rollout', 0.8);
   p.cooldowns = {};
   assert.equal(g.useMove(p, 'leafBlade'), false, 'locked into Rollout');
   p.rampage = null;

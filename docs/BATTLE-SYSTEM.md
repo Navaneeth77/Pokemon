@@ -1,5 +1,8 @@
 # Battle system overhaul — audit, architecture and phases
 
+Connected moves resolve without accuracy or evasion rolls. Range, tracking, dodges and protections still
+determine whether a hit lands. Accuracy-only moves, one-hit KO moves and Bright Powder are no longer available in battle kits.
+
 ## Audit (10 Nov 2026)
 
 How it works today:

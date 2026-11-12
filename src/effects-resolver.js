@@ -75,7 +75,7 @@ export function fixedDamage(game, user, target, move) {
     case 'superFang': return Math.max(1, Math.floor(target.hp / 2));
     case 'endeavor': return Math.max(0, target.hp - user.hp);
     case 'naturesMadness': case 'ruination': return Math.max(1, Math.floor(target.hp / 2));
-    default: return extraFixed(game, user, target, move) ?? move.fixedDmg ?? null; // OHKO moves, Final Gambit; a Counter / Mirror Coat / Metal Burst blow
+    default: return extraFixed(game, user, target, move) ?? move.fixedDmg ?? null; // Final Gambit; a Counter / Mirror Coat / Metal Burst blow
   }
 }
 
@@ -182,7 +182,7 @@ export function counterHit(game, attacker, target, move, cat, dmg) {
   const c = target.counter;
   if (!c || attacker === target || move.ultimate || move.counterBlow || (c.cat && c.cat !== cat) || !attacker.alive) return;
   target.counter = null;
-  const blow = { ...c.move, fixedDmg: Math.max(1, Math.round(dmg * c.mult)), counterBlow: true, acc: 100 };
+  const blow = { ...c.move, fixedDmg: Math.max(1, Math.round(dmg * c.mult)), counterBlow: true };
   game.later(0.12, () => {
     if (!onField(target) || !onField(attacker) || game.state !== 'fighting') return;
     game.spawn(new BeamLine(target.x, target.y - target.bodyZ, attacker.x, attacker.y - attacker.bodyZ, 0.25, c.color, 4));

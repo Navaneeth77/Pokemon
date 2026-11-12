@@ -828,7 +828,7 @@ export class Game {
     return changeStage(this, mon, changes, source);
   }
 
-  // ── Battle events: mechanics announce what happened (weather start/end, form change, stat stage, miss,
+  // ── Battle events: mechanics announce what happened (weather start/end, form change, stat stage,
   // protect, immunity, ability…) and the log, HUD, animations and tests listen to the same events. ──
   on(type, fn) {
     ((this.listeners ??= new Map()).get(type) ?? this.listeners.set(type, []).get(type)).push(fn);
