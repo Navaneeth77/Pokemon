@@ -2,6 +2,7 @@ import { MOVES } from './moves.js';
 import { BOUNDS } from './arena.js';
 import { typeMultiplier } from './data/types.js';
 import { soften } from './combat.js';
+import { roleOf, fitsRole } from './roles.js';
 
 // Difficulty only changes behaviour (reaction speed, dodging, charging, combos, switching) — never damage or HP.
 const LEVELS = {
@@ -192,7 +193,9 @@ export class OpponentAI {
       }
     }
 
-    const want = this.plan === 'melee' ? me.radius + foe.radius + 14 : 140;
+    // Its role sets the distance it keeps: physical attackers press in, special attackers hang back, supports in between.
+    const role = roleOf(me.species);
+    const want = this.plan === 'melee' ? me.radius + foe.radius + 14 : role === 'special' ? 175 : role === 'support' ? 155 : 115;
     let mx = 0, my = 0;
     if (dist > want + 12) { mx += ux; my += uy; }
     else if (dist < want - 12) { mx -= ux; my -= uy; }
@@ -256,7 +259,7 @@ export class OpponentAI {
       if (me.taunted > 0 && mv.cat === 'status') continue;
       let w = 0;
       if (mv.ai === 'self') {
-        w = this.selfWeight(me, foe, mv, dist, game);
+        w = this.selfWeight(me, foe, mv, dist, game) * (fitsRole(me.species, mv) ? 1.3 : 1);
         if (w) options.push([id, w]);
         continue;
       }
@@ -269,7 +272,7 @@ export class OpponentAI {
       const aware = this.cfg?.typeAware === true ? 1 : +(this.cfg?.typeAware ?? 1);
       const eff = typeMultiplier(mv.type, foe.species.types);
       if (eff === 0) continue; // never a move the foe is immune to
-      options.push([id, w * (eff > 1 ? 1 + aware : eff < 1 ? 1 - 0.5 * aware : 1)]);
+      options.push([id, w * (eff > 1 ? 1 + aware : eff < 1 ? 1 - 0.5 * aware : 1) * (fitsRole(me.species, mv) ? 1.3 : 1)]); // prefers moves that suit its role
     }
     const total = options.reduce((s, [, w]) => s + w, 0);
     if (!total) return null;

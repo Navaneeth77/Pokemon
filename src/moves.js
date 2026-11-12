@@ -2602,7 +2602,6 @@ const NEW_MOVES = {
   megahorn: dash('Megahorn', 'bug', 120, 2.8, 'Horn charge', { windup: 0.18, dist: 170, dur: 0.15, color: '#c8f080', ghost: '#88c040', width: 5, knockback: 250 }),
 
   fireBlast: shot('Fire Blast', 'fire', 115, 3.2, 'Huge fireball · may burn', { style: 'bigFire', sound: 'explosion' }, { status: ['burn', 0.25] }),
-  waterPulse: shot('Water Pulse', 'water', 80, 1.8, 'Water orb · may stun', { style: 'water', sound: 'splash' }, { status: ['stun', 0.12] }),
   lugiaWaterPulse: {
     name:'Water Pulse',type:'water',power:95,cooldown:2.4,range:300,minRange:50,ai:'ranged',tag:'Water pulse beam',Action:BeamAttack,
     beam:beam({charge:.35,width:11,visualWidth:14,duration:.5,sound:'pulse',rings:'#b6edff',
@@ -3022,6 +3021,16 @@ export const MOVES = {
       charge: 0.35, width: 11, visualWidth: 14, duration: 0.5, sound: 'pulse', rings: '#c8a0ff',
       colors: ['#2a1838', '#6a3a8a', '#e0c8ff'], chargeColors: ['#ffffff', '#b890e0', '#4a2a6a'], teleColor: '120,60,170', flash: [140, 80, 200],
       mark: 'scorch', knockback: 140,
+    }),
+  },
+  // Water Pulse: a ringed pulse of water fired as a beam, like Dark Pulse.
+  waterPulse: {
+    name: 'Water Pulse', type: 'water', power: 80, cooldown: 1.8, range: 270, minRange: 50, ai: 'ranged', tag: 'Water pulse beam · may stun', Action: BeamAttack,
+    status: ['stun', 0.12],
+    beam: beam({
+      charge: 0.28, width: 10, visualWidth: 13, duration: 0.4, sound: 'splash', rings: '#9fd8ff',
+      colors: ['#1a4a9a', '#3a8ae8', '#d8f0ff'], chargeColors: ['#ffffff', '#86ccff', '#2a5ab8'], teleColor: '70,140,230', flash: [90, 160, 255],
+      mark: 'wet', knockback: 140,
     }),
   },
   iceBeam: {

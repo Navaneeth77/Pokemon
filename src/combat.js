@@ -1,4 +1,5 @@
 import { typeMultiplier } from './data/types.js';
+import { roleDamage } from './roles.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
 import { stageOf, stageMult, accuracyMult } from './stats.js';
@@ -231,6 +232,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Reflect, Light Screen and Aurora Veil on the target's side (field.js); Glaive Rush leaves its user open.
   dmg *= screenMult(game, attacker, target, cat, crit);
   if (attacker.charged && type === 'electric') { dmg *= 2; attacker.charged = false; } // Charge
+  dmg *= roleDamage(attacker, move); // roles.js: a move that suits its role hits 20% harder
   if (target.glaiveT > 0) dmg *= 2;
   // Fixed-damage moves (Seismic Toss, Super Fang, Endeavor) ignore the formula.
   const fixed = fixedDamage(game, attacker, target, move);

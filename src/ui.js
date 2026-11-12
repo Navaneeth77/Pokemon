@@ -10,6 +10,12 @@ import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
 import { movePool, isCompetitive, learnGen } from './data/movepool.js';
+import { ROLES, STYLES, roleOf, moveStyle, fitsRole } from './roles.js';
+
+// Role badge (roles.js) and a move's style tag, with "+20%" when it suits the Pokémon's role.
+const roleBadge = s => { const R = ROLES[roleOf(s)]; return `<b class="role-badge" style="--rc:${R.color}" title="${R.name}: ${R.blurb}">${R.short}</b>`; };
+const styleTag = (s, m) => { const st = STYLES[moveStyle(m)]; return st ? `<i class="style-tag" style="--sc:${st.color}">${st.short}</i>${fitsRole(s, m) ? '<i class="fit-tag" title="Suits its role: 20% stronger, recharges 15% faster">+20%</i>' : ''}` : ''; };
+const roleLine = s => { const r = roleOf(s), R = ROLES[r]; return `<div class="role-line">${roleBadge(s)} ${R.blurb}. ${R.fits.map(k => STYLES[k].name).join(' and ')} moves are 20% stronger${r === 'support' ? ' (status moves recharge faster)' : ''} and recharge 15% faster.</div>`; };
 import { ownsShiny, itemById } from './economy.js';
 import { SHINY } from './data/national-dims.js';
 
@@ -350,6 +356,7 @@ export class UI {
       <div class="mi-head"><img src="${portrait(s)}" alt=""><div class="mi-name"><b>${s.name}</b>${s.class !== 'regular' ? ` <span class="cls c-${s.class}">${CLASS_LABEL[s.class]}</span>` : ''}
         <div class="tp">${typeChips(s.types)}</div></div>
         <div class="mi-stats"><span>HP<b>${s.hp}</b></span><span>SPD<b>${s.speed}</b></span><span>ATK<b>${Math.round(s.atk * 100)}</b></span><span>DEF<b>${Math.round(s.def * 100)}</b></span></div></div>
+      ${roleLine(s)}
       <div class="abil"><u>${ab.name}</u> — ${esc(ab.desc)}</div>
       <ul class="mi-moves">${this.movesOf(id).map(mv).join('')}${mv(s.ultimate)}</ul><button class="mi-edit">✎ EDIT MOVES · item · Tera</button>${megas ? `<div class="mega-line">Mega Evolves into <u>${megas}</u></div>` : ''}`;
   }
@@ -435,7 +442,7 @@ export class UI {
     // Moves: your four sit pinned at the top, each with an ✕ to take it out; tap a move in the list to add it to the
     // first empty slot (tap it again to take it out). Keys 1–4 follow the slots.
     const byName = (a, b) => MOVES[a].name.localeCompare(MOVES[b].name), CAT = { physical: 'PHYS', special: 'SPEC', status: 'STATUS' };
-    const pool = [...movePool(s)].sort(byName), gen = learnGen(id);
+    const pool = [...movePool(s)].sort((a, b) => fitsRole(s, MOVES[b]) - fitsRole(s, MOVES[a]) || byName(a, b)), gen = learnGen(id);
     let query = '';
     const meta = m => `${CAT[m.cat] ?? ''}${m.cat === 'status' ? '' : ` ${m.power}`} · ${m.sure || m.acc == null ? '—' : `${m.acc}%`}`;
     let draft = [...(this.kitOf(id).moves ?? s.moves)], msg = '';
@@ -443,11 +450,11 @@ export class UI {
     const poolBtn = mid => {
       const m = MOVES[mid], on = draft.includes(mid), full = draft.filter(Boolean).length >= 4;
       return `<button data-mv="${mid}" data-q="${esc(`${m.name} ${m.type} ${m.cat}`.toLowerCase())}" class="${on ? 'on' : full ? 'full' : ''}" style="--tc:${TYPE_COLORS[m.type][0]}" title="${esc(m.tag ?? '')}">`
-        + `<span class="kp-text"><b>${m.name}${isCompetitive(s, mid) ? '<i class="kp-star" title="Used in competitive sets">★</i>' : ''}</b><small>${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></span>`
+        + `<span class="kp-text"><b>${m.name}${isCompetitive(s, mid) ? '<i class="kp-star" title="Used in competitive sets">★</i>' : ''}</b><small>${styleTag(s, m)} ${m.type.toUpperCase()} · ${meta(m)}</small><span>${esc(m.tag ?? '')}</span></span>`
         + `<em class="kp-act">${on ? '✓' : '+'}</em></button>`;
     };
     const slotHtml = (mid, i) => mid
-      ? `<div class="km-slot" style="--tc:${TYPE_COLORS[MOVES[mid].type][0]}"><i>${i + 1}</i><span><b>${MOVES[mid].name}</b><small>${meta(MOVES[mid])}</small></span><button class="km-x" data-rm="${i}" aria-label="Remove ${esc(MOVES[mid].name)}">✕</button></div>`
+      ? `<div class="km-slot" style="--tc:${TYPE_COLORS[MOVES[mid].type][0]}"><i>${i + 1}</i><span><b>${MOVES[mid].name}</b><small>${styleTag(s, MOVES[mid])} ${meta(MOVES[mid])}</small></span><button class="km-x" data-rm="${i}" aria-label="Remove ${esc(MOVES[mid].name)}">✕</button></div>`
       : `<div class="km-slot empty"><i>${i + 1}</i><span><b>Empty</b><small>tap a move below to add it</small></span></div>`;
     const draw = () => {
       const panel = overlay.querySelector('.kit-panel'), scroll = panel?.scrollTop ?? 0, focusSearch = document.activeElement?.classList.contains('kp-search');
@@ -456,6 +463,7 @@ export class UI {
       const changed = String(draft) !== String(s.moves);
       overlay.innerHTML = `<section class="kit-panel">
         <header><img src="${portrait(s)}" alt=""><div><h2>${s.name}</h2><p><b>${esc(ab?.name ?? '')}</b> · ${esc(ab?.desc ?? '')}</p></div><button class="kit-x" aria-label="Close">×</button></header>
+        ${roleLine(s)}
         <div class="km-pin">
           <h3>MOVES <b class="km-count${n < 4 ? ' short' : ''}">${n}/4</b><small>Tap ✕ to remove a move. Tap a move in the list to add it.</small></h3>
           <div class="km-slots">${draft.map(slotHtml).join('')}</div>
@@ -784,7 +792,7 @@ export class UI {
         : '';
       return `<button class="slot${i === this.lead ? ' lead' : ''}" data-i="${i}" title="${i === this.lead ? 'Leads the battle' : 'Tap to lead with this one'}">`
         + `${i === this.lead ? '<b class="lead-tag">LEAD</b>' : ''}<i class="rm" data-rm="${i}" title="Remove ${s.name}">×</i>`
-        + `<img src="${portrait(s)}" alt=""><span>${s.name}</span>${xy}${this.kitChips(id)}</button>`;
+        + `<img src="${portrait(s)}" alt=""><span>${s.name}</span>${roleBadge(s)}${xy}${this.kitChips(id)}</button>`;
     }).join('');
     box.querySelectorAll('button.slot').forEach(b => b.addEventListener('click', () => {
       this.lead = +b.dataset.i;
@@ -878,7 +886,7 @@ export class UI {
       btn.style.setProperty('--c1', c1);
       btn.style.setProperty('--c2', c2);
       btn.innerHTML = `<span class="key">${i + 1}</span>
-        <span class="info"><span class="name">${m.name}${m.chargeable ? ' <em class="hold">⚡ HOLD</em>' : ''}</span><span class="meta">${m.cat === 'status' ? CAT.status : `${CAT[m.cat]} · ${m.power}`} · ${esc(m.tag)}</span></span>
+        <span class="info"><span class="name">${m.name}${m.chargeable ? ' <em class="hold">⚡ HOLD</em>' : ''} ${styleTag(mon.species, m)}</span><span class="meta">${m.cat === 'status' ? CAT.status : `${CAT[m.cat]} · ${m.power}`} · ${esc(m.tag)}</span></span>
         <span class="type">${m.type.toUpperCase()}</span><span class="cd"></span><span class="cdt"></span>`;
       btn.addEventListener('mousedown', e => {
         e.preventDefault();

@@ -1705,3 +1705,15 @@ body.survival #difficulty, body.survival .foe, body.survival .fmt-switch { displ
 /* The 2v2 TAG choice only appears when queueing for Online Battles */
 .fmt-switch .tag-fmt { display: none; }
 body.mm .fmt-switch .tag-fmt { display: inline-block; }
+/* Roles and move styles (roles.js) */
+.role-badge{display:inline-block;margin:2px auto 0;padding:1px 6px;font:700 9.5px 'Pixelify Sans',monospace;letter-spacing:.5px;font-style:normal;color:#fff;background:var(--rc);border:1px solid #ffffff55;border-radius:4px;}
+.slot .role-badge{display:block;width:max-content;font-size:9.5px;color:#fff;}
+.role-line{margin:6px 0 4px;font-size:11px;line-height:1.35;color:#c9cfe0;}
+.role-line .role-badge{margin:0 4px 0 0;vertical-align:1px;}
+.kit-panel .role-line{margin:10px 0 2px;font-size:12px;}
+.style-tag,.fit-tag{display:inline-block;padding:0 4px;font:700 8.5px 'Pixelify Sans',monospace;font-style:normal;letter-spacing:.3px;color:#fff;background:var(--sc);border-radius:3px;vertical-align:1px;}
+.fit-tag{margin-left:3px;color:#0d2a14;background:#7dff9e;}
+.move .name .style-tag,.move .name .fit-tag{font-size:8px;}
+.km-slot .style-tag,.km-slot .fit-tag{font-size:8.5px;}
+.km-slot .style-tag{color:#fff;}
+.km-slot .fit-tag{color:#0d2a14;}

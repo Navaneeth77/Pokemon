@@ -8,6 +8,7 @@ const STAGE_LABEL = { atk: 'ATK', def: 'DEF', spa: 'SP.ATK', spd: 'SP.DEF', spe:
 const BUFF_LABEL = { atk: 'ATK', def: 'DEF', spd: 'SPE' };
 import { abilityOf, typesOf } from './data/abilities.js';
 import { statusPills, buffPills, stagePills } from './status.js';
+import { ROLES, roleOf } from './roles.js';
 
 const BAR_W = 116;
 
@@ -111,6 +112,8 @@ export class Hud {
 
     const pills = typesOf(mon).map(t => [t.toUpperCase(), TYPE_COLORS[t][0]]);
     if (mon.isMega) pills.push(['MEGA', '#c44fd8']);
+    const R = ROLES[roleOf(mon.species)];
+    pills.push([R.short.slice(0, 4), R.color]); // PHYS / SPEC / SUPP
     pills.push(...statusPills(mon).slice(0, 2));
     ctx.font = '700 5.5px "Pixelify Sans"';
     let cx = tx;

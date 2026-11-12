@@ -471,7 +471,6 @@ Object.assign(MOVE_ANIMS, {
   rockBlast: volley('rock', 3, { style: 'boulder', rgb: [200, 180, 140], gap: 0.1, dur: 0.26 }),
   ancientPower: volley('rock', 1, { style: 'boulder', rgb: [220, 190, 140], scale: 1.8, charge: 0.35, orbit: true, glow: true, shake: [6, 0.25] }),
   powerGem: volley('rock', 3, { single: true, style: 'crystal', rgb: [255, 170, 210], gap: 0.05, dur: 0.22 }),
-  waterPulse: volley('water', 1, { style: 'orb', rgb: [90, 170, 255], scale: 1.4, dome: 32, sound: 'splash' }),
   auraWheel: volley('electric', 1, { style: 'orb', rgb: [255, 235, 100], scale: 1.6, orbit: true, glow: true }),
 });
 

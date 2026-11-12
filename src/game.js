@@ -23,6 +23,7 @@ import { TYPE_COLORS } from './data/types.js';
 import { MOVES, chargedMove, adaptMove } from './moves.js';
 import { tickVolatiles, fakeOutFails } from './effects-resolver.js';
 import { moveBlocked, onFaintExtra, CALLERS } from './effects-extra.js';
+import { roleCooldown } from './roles.js';
 import { freshField, tickField, drawField, onEntry, dragOut } from './field.js';
 import { OpponentAI } from './ai.js';
 import { Input } from './input.js';
@@ -563,7 +564,7 @@ export class Game {
     }
     this.emit('move', { user, move });
     if (!NOT_COPYABLE.has(id)) this.lastUsed[user.side] = id;
-    this.startCooldown(user, id, base.cooldown);
+    this.startCooldown(user, id, base.cooldown * roleCooldown(user, base)); // roles.js: suited moves recharge 15% faster
     this.muteShake = !move.ultimate;
     try { user.action = new move.Action(move, user, this); } finally { this.muteShake = false; }
     if (base.chargeBoost) this.stage(user, base.chargeBoost); // Meteor Beam
