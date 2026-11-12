@@ -68,8 +68,10 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Accuracy (moves below 100): rolled once per move use. No Guard always hits; Compound Eyes +30%.
   // Accuracy and evasion stages count against every move, even 100% ones; sure-hit moves (Swift, Thunder in
   // rain…) skip the roll. A physical miss (the projectile was dodged, the foe was out of reach) never gets here.
-  // Lock-On / Mind Reader make its next move a sure hit; Gravity raises every accuracy by 5/3.
+  // Lock-On / Mind Reader make its next move a sure hit; nothing misses a Pokémon held up by Telekinesis; Gravity raises
+  // every accuracy by 5/3.
   if (attacker.lockOn > 0 && !stack.accRolled) { attacker.lockOn = 0; stack.accRolled = true; }
+  if (target.telekinesis > 0 && !stack.accRolled) stack.accRolled = true;
   if (move.acc != null && !move.sure && (move.acc < 100 || accuracyMult(attacker, target) !== 1) && !o.unblockable && !A.noGuard && !Dfull.noGuard && !stack.accRolled) {
     stack.accRolled = true;
     stack.missed = Math.random() * 100 >= move.acc * (game.gravity > 0 ? 5 / 3 : 1) * (A.compoundEyes ? 1.3 : 1) * (A.keenEye ? Math.max(1, accuracyMult(attacker, target)) : accuracyMult(attacker, target));
@@ -105,7 +107,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
 
   beforeHit(game, attacker, target, move, stack);
   // Tera Blast takes the user's Tera type once it has Terastallized.
-  const [type, convertMult] = move.id === 'teraBlast' && attacker.tera ? [attacker.tera, 1] : moveType(attacker, move, A);
+  // Electrify turns the target's next move Electric.
+  const [type, convertMult] = attacker.electrified > 0 ? ['electric', 1] : move.id === 'teraBlast' && attacker.tera ? [attacker.tera, 1] : moveType(attacker, move, A);
   const defTypes = typesOf(target);
   const winds = game.deltaStream && defTypes.includes('flying');
   // Scrappy: Normal and Fighting moves hit Ghost types normally.
@@ -115,7 +118,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const raw = typeMultiplier(type, hitTypes, winds);
   const calmed = winds && raw < typeMultiplier(type, defTypes);
   let eff = typeTweak(move, hitTypes, soften(raw));
-  if (type === 'ground' && target.magnetRise > 0 && move.id !== 'thousandArrows') eff = 0; // Magnet Rise
+  if (type === 'ground' && (target.magnetRise > 0 || target.telekinesis > 0) && move.id !== 'thousandArrows') eff = 0; // Magnet Rise, Telekinesis
   if (A.pierce === type && eff < 1 && eff > 0) eff = 1;
   if (A.tinted && eff < 1 && eff > 0) eff *= 2;
   // Ultimates already reach everywhere and can't be dodged, so their type advantage is capped at 2×.
@@ -233,6 +236,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   dmg *= screenMult(game, attacker, target, cat, crit);
   if (attacker.charged && type === 'electric') { dmg *= 2; attacker.charged = false; } // Charge
   dmg *= roleDamage(attacker, move); // roles.js: a move that suits its role hits 20% harder
+  if (type === 'fire' && game.waterSport > 0) dmg *= 0.33; // Water Sport
   if (target.glaiveT > 0) dmg *= 2;
   // Fixed-damage moves (Seismic Toss, Super Fang, Endeavor) ignore the formula.
   const fixed = fixedDamage(game, attacker, target, move);

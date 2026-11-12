@@ -673,7 +673,16 @@ class Utility extends MoveAction {
     // A status move's own look (data/move-anims.js `fx`), around the user (or the foe for aimed moves).
     if (this.move.fx) scheduleSteps(this, this.move.fx, c.kind === 'ray' || c.aim ? { x: this.target.x, y: this.target.y } : { x: this.user.x, y: this.user.y });
     this.anim(c.anim ?? 'Charge', 1);
-    this.at(c.at ?? 0.22, () => UTIL_FX[c.kind](this, this.game, this.user, c));
+    this.at(c.at ?? 0.22, () => {
+      // Magic Coat: a status move aimed at it bounces back onto the user.
+      const foe = this.user.foe;
+      if ((c.kind === 'ray' || c.aim) && foe?.magicCoat > 0 && foe.alive && !foe.hidden && this.move.id !== 'magicCoat') {
+        foe.magicCoat = 0;
+        this.game.floatText(foe, 'BOUNCED BACK!', '#9fe8ff');
+        return UTIL_FX[c.kind](this, this.game, foe, c);
+      }
+      UTIL_FX[c.kind](this, this.game, this.user, c);
+    });
     this.at(c.end ?? 0.5, () => this.finish(0.08));
   }
 }
@@ -3311,6 +3320,18 @@ const EXTRA_MOVES = {
   mimic: foeSp('Mimic', 'normal', 8, "This slot becomes the foe's last move until it switches out"),
   sketch: foeSp('Sketch', 'normal', 8, "This slot becomes the foe's last move for the rest of the battle"),
   transform: foeSp('Transform', 'normal', 8, 'Becomes a copy of the foe: its species, moves and stat changes'),
+  guardSplit: foeSp('Guard Split', 'psychic', 10, 'Averages Defense and Sp. Def with the foe'),
+  powerSplit: foeSp('Power Split', 'psychic', 10, 'Averages Attack and Sp. Atk with the foe'),
+  powerTrick: sp('Power Trick', 'psychic', 8, 'Swaps its own Attack and Defense'),
+  speedSwap: foeSp('Speed Swap', 'psychic', 9, 'Trades Speed with the foe'),
+  magicCoat: sp('Magic Coat', 'psychic', 6, 'For 1.2s: a status move aimed at it bounces back', { at: 0.02, end: 0.25 }),
+  bide: sp('Bide', 'normal', 9, 'Stores the damage it takes for 2.5s, then returns it doubled'),
+  electrify: foeSp('Electrify', 'electric', 8, "The foe's next move becomes Electric type"),
+  camouflage: sp('Camouflage', 'normal', 8, 'Becomes the type of the terrain (Normal without one)'),
+  conversion2: foeSp('Conversion 2', 'normal', 8, "Becomes a type that resists the foe's last move"),
+  waterSport: sp('Water Sport', 'water', 16, 'For 15s Fire moves are much weaker'),
+  telekinesis: foeSp('Telekinesis', 'psychic', 10, "Lifts the foe for 9s: every move hits it, but Ground moves can't"),
+  fairyLock: sp('Fairy Lock', 'fairy', 12, "For a moment no one can switch out"),
   dive: twoTurn('Dive', 'water', 80, 2.4, 'Dives out of reach, then surges up under the foe', { mode: 'dig', hold: 0.55 }),
   skullBash: twoTurn('Skull Bash', 'normal', 130, 3.4, 'Tucks in (Defense +1), then rams the foe', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#e8e0c8', '#a8a878'], knockback: 260 }),
   solarBlade: twoTurn('Solar Blade', 'grass', 125, 3.2, 'Gathers sunlight, then slashes', { mode: 'charge', hold: 0.7, colors: ['#ffffff', '#fff2a0', '#7ac850'], knockback: 240 }),

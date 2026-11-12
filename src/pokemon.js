@@ -49,7 +49,8 @@ export class Pokemon {
   // A fresh battle: full HP, base form.
   reset(x, y, dir) {
     if (this.kitMoves !== undefined) this.moveset = this.kitMoves; // Sketch and Mimic only last the battle
-    Object.assign(this, { transformed: null, mimicSaved: null });
+    if (this.splitBase) this.species = this.splitBase;
+    Object.assign(this, { transformed: null, mimicSaved: null, splitBase: null });
     this.species = this.baseSpecies;
     this.sprite.set = this.baseSet;
     this.portrait = this.baseSet.portrait;
@@ -70,6 +71,7 @@ export class Pokemon {
       this.transformed = null;
     }
     if (this.mimicSaved) { this.moveset = this.mimicSaved.list; this.mimicSaved = null; }
+    if (this.splitBase) { this.species = this.splitBase; this.splitBase = null; } // Guard/Power Split, Power Trick, Speed Swap
     Object.assign(this, {
       x, y, z: 0, vx: 0, vy: 0, dir,
       shownHp: this.hp, trailHp: this.hp, trailDelay: 0,
@@ -86,6 +88,7 @@ export class Pokemon {
       // effects-extra.js
       confused: 0, infatuated: 0, disabled: null, tormented: 0, imprison: 0, perish: 0, ingrained: false, ingrainT: 0, laserFocus: 0, lockOn: 0,
       endure: 0, charged: false, stockpile: 0, grudge: 0, identified: false, octolocked: null, wonderRoomT: 0, chainUse: null,
+      magicCoat: 0, electrified: 0, telekinesis: 0, bide: null, lastHit: null,
     });
     this.input.x = this.input.y = 0;
     this.sprite.play(this.idleAnim(), { force: true });
@@ -188,6 +191,8 @@ export class Pokemon {
     if (this.remote) return;
     this.hp = Math.max(0, this.hp - dmg);
     this.trailDelay = 0.45;
+    this.lastHit = { dmg, t: game?.time ?? 0 }; // Comeuppance
+    if (this.bide) this.bide.dmg += dmg;
     const kb = knockback / this.species.weight;
     this.vx += dirX * kb;
     this.vy += dirY * kb;

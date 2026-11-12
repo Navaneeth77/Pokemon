@@ -26,7 +26,7 @@ const BANNER_Y = { player: 470, opponent: 250 };
 const whose = side => (side === 'player' ? 'your' : "the foe's");
 
 export function freshField() {
-  return { sides: { player: {}, opponent: {} }, pending: { player: {}, opponent: {} }, trickRoom: 0, gravity: 0 };
+  return { sides: { player: {}, opponent: {} }, pending: { player: {}, opponent: {} }, trickRoom: 0, gravity: 0, waterSport: 0 };
 }
 
 // Puts up a side condition; false if it is already up.
@@ -69,6 +69,10 @@ export function tickField(g, dt) {
       const dir = side === 'player' ? -1 : 1;
       g.particles.spawn({ x: mon.x + rand(-40, 40), y: mon.y - dir * 40, z: rand(4, 30), vx: rand(-10, 10), vy: dir * rand(160, 220), life: 0.45, size: rand(1.5, 2.5), sizeEnd: 1, colors: ['#ffffff', '#c8f4ff'] });
     }
+  }
+  if (g.waterSport > 0 && (g.waterSport -= dt) <= 0) {
+    g.waterSport = 0;
+    g.ui.log("The effects of Water Sport have faded.");
   }
   if (g.gravity > 0 && (g.gravity -= dt) <= 0) {
     g.gravity = 0;

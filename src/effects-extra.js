@@ -9,6 +9,8 @@
 import { abilityOf, typesOf } from './data/abilities.js';
 import { ITEMS, itemOf } from './data/items.js';
 import { accuracyMult } from './stats.js';
+import { typeMultiplier, TYPE_COLORS } from './data/types.js';
+import { applyHit } from './combat.js';
 import { setSide } from './field.js';
 import { Ring, Glow, FloatText, rand } from './effects.js';
 import { sfx } from './audio.js';
@@ -46,6 +48,8 @@ export const RULED = new Set([
   'round', 'echoedVoice', 'furyCutter', 'rollout', 'iceBall', 'tripleKick', 'waterShuriken', 'grassPledge', 'firePledge', 'waterPledge', 'lastResort',
   'synchronoise', 'present', 'fling', 'snore', 'dreamEater', 'burnUp', 'thrash', 'ragingFury', 'uproar', 'jawlock', 'mistyExplosion',
   'finalGambit', 'fissure', 'sheerCold', 'guillotine', 'hornDrill', 'dive', 'skullBash', 'solarBlade', 'electroShot', 'shadowForce', 'selfDestruct',
+  'guardSplit', 'powerSplit', 'powerTrick', 'speedSwap', 'magicCoat', 'comeuppance', 'bide', 'electrify', 'camouflage', 'conversion2', 'waterSport',
+  'telekinesis', 'fairyLock',
 ]);
 
 // The move's own accuracy against the foe, for status moves (Lock-On and Gravity count).
@@ -82,6 +86,7 @@ export function moveBlocked(g, user, id, base) {
   if (id === 'spitUp' && !(user.stockpile > 0)) return no('NOTHING STOCKPILED');
   if (id === 'sheerCold' && onField(foe) && typesOf(foe).includes('ice')) return no('IT FAILED!');
   if (id === 'lastResort' && user.moves.filter(m => m !== 'lastResort').some(m => !user.usedMoves?.has(m))) return no('NOT YET!');
+  if (id === 'comeuppance' && !(user.lastHit && g.time - user.lastHit.t < 3)) return no('NOTHING TO RETURN');
   if (user.infatuated > 0 && Math.random() < 0.5) {
     g.floatText(user, 'IMMOBILISED BY LOVE', '#ff9fd0');
     g.startCooldown(user, id, base.cooldown * 0.5);
@@ -124,6 +129,8 @@ export function extraFixed(g, user, target, move) {
       g.floatText(target, "IT'S A ONE-HIT KO!", '#ff7a5a');
       return Math.ceil(target.hp);
     case 'finalGambit': return Math.max(1, Math.ceil(user.hp));
+    // Comeuppance: the last hit it took (within a turn), back at 1.5×.
+    case 'comeuppance': return user.lastHit && g.time - user.lastHit.t < 3 ? Math.round(user.lastHit.dmg * 1.5) : 0;
     default: return undefined;
   }
 }
@@ -145,6 +152,7 @@ export function extraAfterUse(g, user, move) {
   }
   if (id === 'fling' && user.item) { log(g, user, `${user.species.name} flung its ${ITEMS[user.item]?.name ?? 'item'}!`); user.item = null; }
   if (id === 'spitUp' || id === 'swallow') dropStockpile(g, user);
+  if (user.electrified > 0) user.electrified = 0; // Electrify lasts one move
 }
 
 // When it connects (effects-resolver.js onHit).
@@ -322,6 +330,47 @@ export const EXTRA_STATUS = {
   },
   mimic: (g, user) => learnFromFoe(g, user, 'mimic', false),
   sketch: (g, user) => learnFromFoe(g, user, 'sketch', true),
+  // Guard Split / Power Split average two stats with the foe; Power Trick swaps its own Attack and Defense; Speed Swap
+  // trades Speed. Each works on a copy of its species' stats that goes back when it leaves the field.
+  guardSplit: (g, user) => splitStats(g, user, user.foe, ['def', 'spdef'], 'shared its guard'),
+  powerSplit: (g, user) => splitStats(g, user, user.foe, ['atk', 'spa'], 'shared its power'),
+  powerTrick(g, user) { const s = ownStats(user); [s.atk, s.def] = [s.def, s.atk]; g.floatText(user, 'POWER TRICK!', '#c8a0ff'); log(g, user, `${user.species.name} switched its Attack and Defense!`); },
+  speedSwap(g, user) {
+    const f = user.foe;
+    if (!onField(f) || bossy(f)) return fail(g, user);
+    const a = ownStats(user), b = ownStats(f);
+    [a.speed, b.speed] = [b.speed, a.speed];
+    g.floatText(user, 'SPEED SWAPPED!', '#c8a0ff');
+  },
+  magicCoat(g, user) { user.magicCoat = 1.2; g.floatText(user, 'MAGIC COAT!', '#9fe8ff'); },
+  bide(g, user) { user.bide = { t: 2.5, dmg: 0 }; g.floatText(user, 'BIDING ITS TIME', '#ffd84a'); log(g, user, `${user.species.name} is storing energy!`); },
+  electrify(g, user) { const f = user.foe; if (!onField(f)) return fail(g, user); f.electrified = 4; g.floatText(f, 'ELECTRIFIED!', '#ffe066'); },
+  camouflage(g, user) {
+    const t = { electric: 'electric', grassy: 'grass', misty: 'fairy', psychic: 'psychic' }[g.terrain?.kind] ?? 'normal';
+    user.typeOverride = [t];
+    g.floatText(user, `${t.toUpperCase()} TYPE!`, TYPE_COLORS[t][0]);
+  },
+  conversion2(g, user) {
+    const last = MOVES[g.lastUsed[user.foe?.side]];
+    const options = last ? Object.keys(TYPE_COLORS).filter(t => typeMultiplier(last.type, [t]) < 1) : [];
+    if (!options.length) return fail(g, user);
+    const t = shuffle(options);
+    user.typeOverride = [t];
+    g.floatText(user, `${t.toUpperCase()} TYPE!`, TYPE_COLORS[t][0]);
+  },
+  waterSport(g, user) { if (g.waterSport > 0) return fail(g, user); g.waterSport = 15; log(g, user, "Fire's power was weakened!"); g.hud.showBanner('WATER SPORT', { color: '#86ccff', y: 300, life: 1.2, size: 15 }); },
+  telekinesis(g, user) {
+    const f = user.foe;
+    if (!onField(f) || bossy(f) || g.gravity > 0 || f.telekinesis > 0) return fail(g, user);
+    f.telekinesis = 9;
+    g.floatText(f, 'HURLED INTO THE AIR!', '#c8a0ff');
+    log(g, f, `${f.species.name} was hurled into the air! Every move hits it, but Ground moves can't.`);
+  },
+  fairyLock(g, user) {
+    for (const mon of [g.player, g.opponent]) if (onField(mon)) mon.blocked = Math.max(mon.blocked ?? 0, 3.5);
+    g.floatText(user, 'FAIRY LOCK!', '#ff9fd0');
+    log(g, user, 'No one will be able to run away for a while!');
+  },
   transform(g, user) {
     const f = user.foe;
     if (!onField(f) || user.transformed || f.transformed || bossy(f) || f.species.id === user.species.id) return fail(g, user);
@@ -343,6 +392,20 @@ Object.assign(EXTRA_STATUS, {
   supersonic: EXTRA_STATUS.confuseRay, sweetKiss: EXTRA_STATUS.confuseRay, teeterDance: EXTRA_STATUS.confuseRay,
   mindReader: EXTRA_STATUS.lockOn, foresight: EXTRA_STATUS.odorSleuth,
 });
+
+// A copy of its species' stats it can change for as long as it stays in (Pokémon.enter puts the real one back).
+function ownStats(mon) {
+  if (!mon.splitBase) { mon.splitBase = mon.species; mon.species = { ...mon.species }; }
+  return mon.species;
+}
+
+function splitStats(g, user, foe, keys, what) {
+  if (!onField(foe) || bossy(foe)) return fail(g, user);
+  const a = ownStats(user), b = ownStats(foe);
+  for (const k of keys) { const avg = (a[k] + b[k]) / 2; a[k] = b[k] = avg; }
+  g.floatText(user, what.toUpperCase().replace('ITS ', '') + '!', '#c8a0ff');
+  log(g, user, `${user.species.name} ${what} with ${foe.species.name}!`);
+}
 
 function swapStages(g, user, keys, what) {
   const f = user.foe;
@@ -371,7 +434,7 @@ function learnFromFoe(g, user, slot, keep) {
 
 // Every frame for the Pokémon on the field (effects-resolver.js tickVolatiles).
 export function tickExtra(g, mon, dt) {
-  for (const k of ['confused', 'infatuated', 'tormented', 'imprison', 'endure', 'laserFocus', 'lockOn', 'grudge', 'magicRoomT', 'wonderRoomT']) {
+  for (const k of ['confused', 'infatuated', 'tormented', 'imprison', 'endure', 'laserFocus', 'lockOn', 'grudge', 'magicRoomT', 'wonderRoomT', 'magicCoat', 'electrified', 'telekinesis']) {
     if (!(mon[k] > 0)) continue;
     mon[k] = Math.max(0, mon[k] - dt);
     if (mon[k] === 0 && ['confused', 'infatuated', 'tormented'].includes(k)) log(g, mon, `${mon.species.name} ${k === 'confused' ? 'snapped out of its confusion' : k === 'infatuated' ? 'got over its infatuation' : 'is no longer tormented'}!`);
@@ -385,6 +448,16 @@ export function tickExtra(g, mon, dt) {
     const after = Math.ceil(Math.max(0, mon.perish) / 3);
     if (after !== before && after > 0) g.floatText(mon, `PERISH ${after}`, '#d8c8ff');
     if (mon.perish <= 0) { mon.perish = 0; log(g, mon, `${mon.species.name}'s perish count fell to 0!`); g.dotDamage(mon, 1, '#d8c8ff'); }
+  }
+  // Bide: after storing for a while, the damage it took goes back at twice the amount.
+  if (mon.bide && (mon.bide.t -= dt) <= 0) {
+    const b = mon.bide, foe = mon.foe;
+    mon.bide = null;
+    if (!b.dmg || !onField(foe) || !mon.alive) { fail(g, mon); return; }
+    g.floatText(mon, 'BIDE UNLEASHED!', '#ffd84a');
+    g.spawn(new Ring(mon.x, mon.y, { z: mon.bodyZ, r0: 6, r1: 40, life: 0.4, color: '#ffd84a', width: 3, layer: 'air' }));
+    const a = Math.atan2(foe.y - mon.y, foe.x - mon.x);
+    applyHit(g, mon, foe, { ...MOVES.bide, cat: 'physical', util: null, fixedDmg: Math.round(b.dmg * 2), acc: 100, sure: true }, { knockback: 220, stagger: 0.4, dirX: Math.cos(a), dirY: Math.sin(a), unblockable: false });
   }
   // Ingrain: a little HP back every turn.
   if (mon.ingrained && (mon.ingrainT = (mon.ingrainT ?? 0) + dt) >= 3) { mon.ingrainT = 0; g.heal(mon, mon.maxHp / 16); }

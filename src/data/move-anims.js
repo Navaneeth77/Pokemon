@@ -679,13 +679,13 @@ const POOL_LOOKS = {
 // The learnset moves with rules of their own (effects-extra.js): a glow and rings in the move's type colour, round the
 // foe for moves aimed at it and round the user for its own.
 const EXTRA_LOOKS = {
-  user: { normal: ['endure', 'imprison', 'acupressure', 'defenseCurl', 'minimize', 'laserFocus', 'stockpile', 'swallow', 'safeguard', 'luckyChant', 'batonPass',
-    'perishSong', 'refresh', 'metronome', 'assist', 'naturePower', 'stuffCheeks'], electric: ['charge'], ice: ['mist'], psychic: ['gravity', 'magicRoom', 'wonderRoom', 'lunarBlessing'],
-    grass: ['ingrain'], ghost: ['grudge'] },
+  user: { normal: ['endure', 'imprison', 'bide', 'camouflage', 'acupressure', 'defenseCurl', 'minimize', 'laserFocus', 'stockpile', 'swallow', 'safeguard', 'luckyChant', 'batonPass',
+    'perishSong', 'refresh', 'metronome', 'assist', 'naturePower', 'stuffCheeks'], electric: ['charge'], ice: ['mist'], psychic: ['gravity', 'magicRoom', 'wonderRoom', 'lunarBlessing', 'powerTrick', 'magicCoat'],
+    grass: ['ingrain'], ghost: ['grudge'], water: ['waterSport'], fairy: ['fairyLock'] },
   foe: { ghost: ['confuseRay', 'spite', 'trickOrTreat'], normal: ['supersonic', 'teeterDance', 'swagger', 'attract', 'disable', 'meanLook', 'psychUp', 'lockOn', 'mindReader',
     'entrainment', 'simpleBeam', 'reflectType', 'odorSleuth', 'foresight', 'mimic', 'sketch', 'transform'], fairy: ['sweetKiss'], dark: ['flatter', 'torment', 'topsyTurvy', 'memento'],
-    psychic: ['powerSwap', 'guardSwap', 'heartSwap', 'psychoShift', 'skillSwap', 'rolePlay', 'magicPowder'], poison: ['venomDrench', 'purify', 'gastroAcid', 'corrosiveGas'],
-    grass: ['spicyExtract', 'worrySeed', 'forestsCurse'], fighting: ['octolock'], flying: ['mirrorMove'] },
+    psychic: ['powerSwap', 'guardSwap', 'heartSwap', 'psychoShift', 'skillSwap', 'rolePlay', 'magicPowder', 'guardSplit', 'powerSplit', 'speedSwap', 'telekinesis', 'conversion2'], poison: ['venomDrench', 'purify', 'gastroAcid', 'corrosiveGas'],
+    grass: ['spicyExtract', 'worrySeed', 'forestsCurse'], fighting: ['octolock'], flying: ['mirrorMove'], electric: ['electrify'] },
 };
 for (const [where, byType] of Object.entries(EXTRA_LOOKS)) for (const [type, ids] of Object.entries(byType)) for (const id of ids) {
   if (POOL_LOOKS[id]) continue;

@@ -313,7 +313,7 @@ if all(os.path.exists(f) for f in (LEARN, PLAY, SPEC)):
     gen_of = lambda code: int(code[0]) if code[:1].isdigit() else 0
     regular = lambda code: len(code) > 1 and code[1] not in 'SV'  # not events or Virtual Console transfers
     NOMINAL = {'reversal': 100, 'flail': 100, 'wringout': 120, 'crushgrip': 120, 'hardpress': 100, 'frustration': 102, 'ruination': 100,
-               'fling': 60, 'present': 80, 'finalgambit': 100, 'fissure': 150, 'sheercold': 150, 'guillotine': 150, 'horndrill': 150}
+               'fling': 60, 'present': 80, 'finalgambit': 100, 'comeuppance': 100, 'fissure': 150, 'sheercold': 150, 'guillotine': 150, 'horndrill': 150}
     # Moves that only do something in a double battle (or would help the foe in a one-on-one): never offered.
     NOT_SINGLES = {'helpinghand', 'coaching', 'dragoncheer', 'aromaticmist', 'followme', 'ragepowder', 'allyswitch', 'afteryou', 'quash',
                    'spotlight', 'gearup', 'magneticflux', 'healpulse', 'floralhealing', 'decorate', 'snatch', 'wideguard', 'craftyshield',

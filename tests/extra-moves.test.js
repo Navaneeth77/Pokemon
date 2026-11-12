@@ -182,3 +182,48 @@ test("online: another screen replays the move the server's Metronome picked, not
   run(g, 0.6);
   assert.equal(o.copied, 'flamethrower', 'the plain replay picks nothing by itself');
 });
+
+test('Magic Coat bounces a status move back; Comeuppance returns the last hit at 1.5×; Bide returns twice what it stored', () => {
+  const g = battle(['espeon', 'snorlax', 'lapras'], ['gengar', 'snorlax', 'lapras']), p = g.player, o = g.opponent;
+  p.magicCoat = 1.2;
+  use(g, o, 'confuseRay');
+  assert.ok(o.confused > 0 && !(p.confused > 0), 'the confusion bounced back onto Gengar');
+  const g2 = battle(['kingambit', 'snorlax', 'lapras'], ['blissey', 'snorlax', 'lapras']), k = g2.player, b = g2.opponent;
+  k.lastHit = { dmg: 100, t: g2.time };
+  const hp = b.hp;
+  rolls(0.5, () => applyHit(g2, k, b, MOVES.comeuppance, { stack: {} }));
+  assert.equal(Math.round(hp - b.hp), 150);
+  const g3 = battle(['snorlax', 'lapras', 'gengar'], ['blissey', 'snorlax', 'lapras']), s = g3.player, t = g3.opponent;
+  use(g3, s, 'bide', 0.4);
+  s.takeHit(80, { dirX: 0, dirY: 1, knockback: 0, stagger: 0 }, g3);
+  const thp = t.hp;
+  run(g3, 3);
+  assert.ok(thp - t.hp >= 150, `Bide returned ${Math.round(thp - t.hp)}`);
+});
+
+test('Power Split and Speed Swap change stats until it switches out; Electrify, Telekinesis, Water Sport, Fairy Lock', () => {
+  const g = battle(['espeon', 'snorlax', 'lapras'], ['garchomp', 'snorlax', 'lapras']), p = g.player, o = g.opponent;
+  const [pa, oa] = [p.species.atk, o.species.atk];
+  use(g, p, 'powerSplit');
+  assert.equal(p.species.atk, (pa + oa) / 2);
+  assert.equal(o.species.atk, (pa + oa) / 2);
+  const [ps, os] = [p.species.speed, o.species.speed];
+  use(g, p, 'speedSwap');
+  assert.deepEqual([p.species.speed, o.species.speed], [os, ps]);
+  g.switchTo(1, true);
+  run(g, 3);
+  g.switchTo(0, true);
+  run(g, 3);
+  assert.equal(g.player.species.atk, pa, 'back to its own stats after switching');
+  use(g, g.player, 'telekinesis');
+  assert.ok(o.telekinesis > 0);
+  const hp = o.hp;
+  applyHit(g, g.player, o, MOVES.earthquake, { stack: {} });
+  assert.equal(o.hp, hp, "Ground moves can't reach it");
+  use(g, g.player, 'waterSport');
+  assert.ok(g.waterSport > 0);
+  use(g, g.player, 'fairyLock');
+  assert.ok(o.blocked > 0 && g.player.blocked > 0);
+  use(g, g.player, 'electrify');
+  assert.ok(o.electrified > 0);
+});
