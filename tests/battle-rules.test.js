@@ -112,7 +112,7 @@ test('Drizzle and Drought start their weather on entry, and the weather changes 
   assert.equal(sun.weather, null, 'ability weather lasts 25s');
 });
 
-test('Dragon Dance raises Attack and Speed one stage each, and the boosts are used in damage', () => {
+test('Dragon Dance boosts Attack and Speed after one second and caps Attack at double damage', () => {
   const g = battle(['dragonite', 'snorlax', 'lapras'], ['snorlax', 'lapras', 'blissey']);
   const hit = () => fixedRandom(() => {
     const foe = g.opponent, hp = foe.hp = foe.maxHp;
@@ -121,11 +121,20 @@ test('Dragon Dance raises Attack and Speed one stage each, and the boosts are us
   });
   const before = hit();
   assert.ok(g.useMove(g.player, 'dragonDance', 0, true));
-  run(g, 1);
-  assert.deepEqual({ atk: g.player.stages.atk, spe: g.player.stages.spe }, { atk: 1, spe: 1 });
+  run(g, 0.9);
+  assert.deepEqual(g.player.stages, {});
+  run(g, 0.2);
+  assert.deepEqual(g.player.stages, { atk: 1, spe: 1 });
   assert.equal(speedRatio(g.player, g), 1.5);
   const after = hit();
   assert.ok(Math.abs(after / before - 1.25) < 0.06, `+1 Attack ≈ ×1.25 damage: ${before} → ${after}`);
+  for (let i = 0; i < 6; i++) {
+    assert.ok(g.useMove(g.player, 'dragonDance', 0, true));
+    run(g, 1.4);
+  }
+  assert.deepEqual(g.player.stages, { atk: 6, spe: 6 });
+  const capped = hit();
+  assert.ok(Math.abs(capped / before - 2) < 0.06, `+6 Attack ≈ ×2 damage: ${before} → ${capped}`);
 });
 
 test('a light hit interrupts setup and the move still spends its cooldown', () => {
@@ -133,7 +142,7 @@ test('a light hit interrupts setup and the move still spends its cooldown', () =
     const g = battle(['dragonite', 'snorlax', 'lapras'], ['snorlax', 'lapras', 'blissey']);
     const { player, opponent } = g;
     assert.ok(g.useMove(player, id), id);
-    run(g, 0.4);
+    run(g, id === 'dragonDance' ? 0.9 : 0.4);
     assert.equal(player.action?.settingUp, true, id);
     assert.deepEqual(player.stages, {}, id);
     assert.ok(fixedRandom(() => applyHit(g, opponent, player, MOVES.tackle)), id);

@@ -2789,7 +2789,7 @@ Object.assign(NEW_MOVES, {
   recover: util('Recover', 'normal', 10, 'Heals 50% HP', { kind: 'heal', pct: 0.5 }),
 
   // Setup: stat stages (stats.js), each with its own look.
-  dragonDance: util('Dragon Dance', 'dragon', 6, 'Attack +1, Speed +1', { kind: 'stages', self: { atk: 1, spe: 1 }, look: 'dragon', anim: 'Pose', end: 0.7 }),
+  dragonDance: util('Dragon Dance', 'dragon', 6, '1s windup · Attack +1, Speed +1', { kind: 'stages', self: { atk: 1, spe: 1 }, look: 'dragon', anim: 'Pose', at: 1 }),
   calmMind: util('Calm Mind', 'psychic', 6, 'Sp. Atk +1, Sp. Def +1', { kind: 'stages', self: { spa: 1, spd: 1 }, look: 'mind', end: 0.6 }),
   nastyPlot: util('Nasty Plot', 'dark', 7, 'Sp. Atk +2', { kind: 'stages', self: { spa: 2 }, look: 'plot', end: 0.6 }),
   bulkUp: util('Bulk Up', 'fighting', 6, 'Attack +1, Defense +1', { kind: 'stages', self: { atk: 1, def: 1 }, look: 'bulk', anim: 'Pose', end: 0.6 }),
