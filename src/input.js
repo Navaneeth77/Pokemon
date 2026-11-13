@@ -12,7 +12,7 @@ export class Input {
     this.held = new Set();
     window.addEventListener('keydown', e => this.onDown(e));
     window.addEventListener('keyup', e => {
-      this.held.delete(e.code);
+      if (this.held.delete(e.code)) this.game.online?.sendDirection?.();
       // Releasing a held move key fires a charged attack.
       if (e.code in ATTACK_KEYS && !this.game.switchMenu) this.game.playerRelease(ATTACK_KEYS[e.code]);
     });
@@ -42,7 +42,10 @@ export class Input {
     }
     if (MOVE_KEYS[e.code]) {
       if (fighting) e.preventDefault();
-      this.held.add(e.code);
+      if (!this.held.has(e.code)) {
+        this.held.add(e.code);
+        this.game.online?.sendDirection?.();
+      }
     } else if (e.code in ATTACK_KEYS) {
       if (!fighting) return;
       e.preventDefault();
@@ -79,6 +82,7 @@ export class Input {
   clear() {
     this.held.clear();
     this.touch = null;
+    this.game.online?.sendDirection?.(undefined, true);
   }
 
   vector() {

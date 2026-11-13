@@ -40,11 +40,9 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()
 // Testing only: every Pokémon starts with this fraction of its HP so a full match takes seconds.
 const TEST_HP = Math.min(1, Math.max(0.01, Number(process.env.MATCH_TEST_HP) || 1));
 
-// Battles are simulated at 60 steps a second, but the server only wakes 30 times a second (two steps
-// per wake) and sends each player one message per wake with everything that happened plus the current
-// state. Few wake-ups and few messages keep CPU use low enough for small shared hosting plans.
+// Advance combat at 60 Hz. Keep full snapshots at 30 Hz and deliver combat events as soon as they occur.
 const STEP = 1 / 60;
-const WAKE_MS = 1000 / 30;
+const SNAPSHOT_STEP = 2 * STEP;
 const MAX_CATCHUP = 6; // after a stall, at most this many steps are made up at once
 const QUEUE_TIMEOUT_MS = 3 * 60_000; // nobody compatible found: tell the player, they can retry
 // Every online queue (Online Battles, Tag Battles, Draft Battles, public Legendary Raids): after this long
@@ -443,7 +441,14 @@ class Match {
     }
   }
 
-  // Once per wake: one message per player with the events since the last one and the current state.
+  flushEvents() {
+    if (!this.out.length) return;
+    const events = this.out;
+    this.out = [];
+    this.broadcast({ t: 'b', e: events });
+  }
+
+  // Full snapshots use the same cadence whether or not a move just happened.
   flush() {
     const g = this.game;
     if (!g) return;
@@ -933,13 +938,14 @@ function onClose(conn) {
   if (p.state === 'idle') players.delete(p.pid);
 }
 
-// ── Clock: runs only while a battle is going on (60 steps a second, 30 wake-ups); housekeeping 1×/s ──
-let loop = null, last = 0, acc = 0;
+// ── Clock: runs only while a battle is going on; housekeeping 1×/s ──
+let loop = null, last = 0, acc = 0, snapshotAcc = 0;
 function ensureLoop() {
   if (loop) return;
   last = performance.now();
   acc = 0;
-  loop = setInterval(runBattles, WAKE_MS);
+  snapshotAcc = 0;
+  loop = setTimeout(runBattles, Math.ceil(STEP * 1000));
 }
 
 const runtimePerf = { simulationMs:0, snapshotMs:0, steps:0 };
@@ -949,12 +955,12 @@ function runBattles() {
   last = now;
   const live = [...matches.values()].filter(m => m.phase === 'battle');
   if (!live.length) {
-    clearInterval(loop);
     loop = null;
     return;
   }
   while (acc >= STEP) {
     acc -= STEP;
+    snapshotAcc += STEP;
     for (const m of live) {
       try {
         const measureAt=performance.now();
@@ -967,8 +973,16 @@ function runBattles() {
     }
   }
   const snapshotAt=performance.now();
-  for (const m of live) if (m.phase === 'battle') m.flush();
+  const snapshotDue = snapshotAcc >= SNAPSHOT_STEP;
+  if (snapshotDue) snapshotAcc %= SNAPSHOT_STEP;
+  for (const m of live) {
+    if (m.phase !== 'battle') continue;
+    if (snapshotDue) m.flush();
+    else m.flushEvents?.();
+  }
   runtimePerf.snapshotMs+=performance.now()-snapshotAt;
+  const untilStep = (STEP - acc) * 1000 - (performance.now() - now);
+  loop = setTimeout(runBattles, Math.max(1, Math.ceil(untilStep)));
 }
 
 setInterval(() => {

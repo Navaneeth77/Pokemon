@@ -2074,22 +2074,24 @@ export class Game {
     const cssScale = vh / h;
     this.k = Math.max(1, Math.min(quality().ratio, touch ? 2 : 3, Math.round(cssScale * (devicePixelRatio || 1))));
     this.menuRenderDirty = true;
-    this.canvas.width = Math.ceil(w * this.k);
-    this.canvas.height = Math.ceil(h * this.k);
+    const width = Math.ceil(w * this.k), height = Math.ceil(h * this.k);
+    if (this.canvas.width !== width) this.canvas.width = width;
+    if (this.canvas.height !== height) this.canvas.height = height;
     this.particles.max = touch ? 450 : 1200;
   }
 
   run() {
-    let last = performance.now();
+    let last = null;
     const frame = now => {
       // Scheduled first so an unexpected error in one frame can't stop the game loop for good.
       requestAnimationFrame(frame);
-      // rAF timestamps can be slightly earlier than the performance.now() read before the first frame;
-      // a negative step would run every timer backwards, so clamp it.
-      const frameMs = Math.max(0, now - last);
+      const frameMs = last === null ? 0 : now - last;
       const dt = Math.min(0.05, frameMs / 1000);
       last = now;
-      if (document.hidden) return;
+      if (document.hidden) {
+        last = null;
+        return;
+      }
       // The opening has its own animation loop. Team/title menus only need a static arena behind them.
       if (this.state === 'menu' || this.state === 'select') {
         if (this.menuRenderDirty || this.lastRenderedState !== this.state) {
@@ -2100,10 +2102,14 @@ export class Game {
       this.lastRenderedState=this.state;
       const start = performance.now();
       this.update(dt);
-      const updated = performance.now();
+      const updated = this.profile ? performance.now() : 0;
       this.render();
-      if (observeFrame(performance.now()-start)) this.resize();
-      if (this.profile) { this.profile.push([frameMs, updated-start, performance.now()-updated]); if(this.profile.length>3600)this.profile.shift(); }
+      const rendered = performance.now();
+      if (observeFrame(rendered - start, frameMs)) this.resize();
+      if (this.profile) {
+        this.profile.push([frameMs, updated - start, rendered - updated]);
+        if (this.profile.length > 3600) this.profile.shift();
+      }
     };
     requestAnimationFrame(frame);
   }

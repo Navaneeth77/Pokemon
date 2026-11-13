@@ -40,8 +40,12 @@ export class TouchControls {
     this.knob = this.root.querySelector('.t-knob');
     this.moves = [...this.root.querySelectorAll('.t-move')];
     this.ult = this.root.querySelector('.t-ult');
+    this.ultValue = this.ult.querySelector('small');
     this.mega = this.root.querySelector('.t-mega');
+    this.megaTitle = this.mega.querySelector('b');
+    this.megaSubtitle = this.mega.querySelector('small');
     this.dodge = this.root.querySelector('.t-dodge');
+    this.dodgeValue = this.dodge.querySelector('small');
     this.team = this.root.querySelector('.t-team');
     this.root.addEventListener('contextmenu', e => e.preventDefault());
     this.bindJoystick();
@@ -92,6 +96,7 @@ export class TouchControls {
       this.knob.style.transform = `translate(${dx}px, ${dy}px)`;
       const m = Math.min(1, Math.hypot(dx, dy) / JOY_R);
       input.touch = m < DEAD ? { x: 0, y: 0 } : { x: dx / JOY_R, y: dy / JOY_R };
+      this.game.online?.sendDirection?.();
     };
     const end = e => {
       if (e.pointerId !== id) return;
@@ -100,6 +105,7 @@ export class TouchControls {
       this.joy.classList.remove('active');
       this.joy.style.left = this.joy.style.top = ''; // back to its resting spot as a hint
       input.touch = null;
+      this.game.online?.sendDirection?.(undefined, true);
     };
     this.zone.addEventListener('pointerdown', e => {
       if (id !== null) return;
@@ -155,17 +161,26 @@ export class TouchControls {
       b.classList.toggle('long', m.name.length > 10);
     });
     const ult = Math.floor(p.ult);
-    this.ult.querySelector('small').textContent = ult >= 100 ? 'READY!' : `${ult}%`;
-    this.ult.classList.toggle('ready', ult >= 100);
-    this.ult.style.setProperty('--fill', `${ult}%`);
+    if (ult !== this.lastUlt) {
+      this.lastUlt = ult;
+      this.ultValue.textContent = ult >= 100 ? 'READY!' : `${ult}%`;
+      this.ult.classList.toggle('ready', ult >= 100);
+      this.ult.style.setProperty('--fill', `${ult}%`);
+    }
     const dcd = p.dodgeCD;
-    this.dodge.querySelector('small').textContent = dcd > 0 ? `${dcd.toFixed(1)}s` : 'ready';
-    this.dodge.style.setProperty('--cd', `${Math.max(0, Math.min(100, (dcd / 1.2) * 100))}%`);
-    this.dodge.classList.toggle('cool', dcd > 0);
+    const dodgeLabel = dcd > 0 ? `${dcd.toFixed(1)}s` : 'ready';
+    if (this.dodgeValue.textContent !== dodgeLabel) this.dodgeValue.textContent = dodgeLabel;
+    const dodgeFill = Math.round(Math.max(0, Math.min(100, dcd / 1.2 * 100)));
+    if (dodgeFill !== this.lastDodgeFill) {
+      this.lastDodgeFill = dodgeFill;
+      this.dodge.style.setProperty('--cd', `${dodgeFill}%`);
+      this.dodge.classList.toggle('cool', dcd > 0);
+    }
     const tera = !p.species.mega?.length && !p.isMega;
     this.mega.classList.toggle('hidden', (tera ? !p.teraType || p.tera || g.raid : p.isMega) || g.playerTeam.megaUsed || (g.story && !g.story.playerMega));
-    this.mega.querySelector('b').textContent = tera ? 'TERA' : 'MEGA';
-    this.mega.querySelector('small').textContent = tera ? p.teraType ?? '' : 'Evolve';
+    const megaTitle = tera ? 'TERA' : 'MEGA', megaSubtitle = tera ? p.teraType ?? '' : 'Evolve';
+    if (this.megaTitle.textContent !== megaTitle) this.megaTitle.textContent = megaTitle;
+    if (this.megaSubtitle.textContent !== megaSubtitle) this.megaSubtitle.textContent = megaSubtitle;
     const cd = Math.ceil(g.switchCD);
     g.playerTeam.members.forEach((m, i) => {
       const b = this.mates[i];

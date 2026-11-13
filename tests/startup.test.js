@@ -111,3 +111,33 @@ test('cancel and immediate retry cannot send the cancelled attempt into the new 
   connections[1]();loads[1]();await second;assert.equal(sent.filter(m=>m.t==='queue').length,1);
  }finally{clearTimeout(mm.wakeNote);}
 });
+
+
+test('online movement can clear before initialization and a changed direction reaches the server before a dodge', () => {
+  const messages = [];
+  let vector = { x: 0, y: 0 };
+  const mm = Object.assign(Object.create(Matchmaker.prototype), {
+    state: 'battle',
+    match: { id: 'test' },
+    flow: {},
+    game: { state: 'fighting', input: { vector: () => vector } },
+    send: message => messages.push(message),
+    predict() {},
+  });
+  mm.sendDirection(undefined, true);
+  assert.deepEqual(messages, []);
+
+  mm.begin();
+  mm.sendDirection(100);
+  vector = { x: 1, y: 0 };
+  mm.sendDirection(101);
+  assert.equal(messages.length, 1);
+  mm.intent('dodge');
+  assert.deepEqual(messages.map(message => message.t), ['in', 'in', 'act']);
+  assert.equal(messages[1].x, 1);
+  assert.equal(messages[2].k, 'dodge');
+
+  vector = { x: 0, y: 0 };
+  mm.sendDirection(undefined, true);
+  assert.equal(messages.at(-1).x, 0);
+});

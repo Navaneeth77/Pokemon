@@ -9,7 +9,7 @@ export function structureField() {
 
 class ArenaStructure extends Spike {
   constructor(game, owner, field, x, y, { style = 'stone', type = 'rock', damage = 0.035 } = {}) {
-    super(Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, x)), Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, y)), style, 6);
+    super(Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, x)), Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, y)), style, 6, true);
     Object.assign(this, { game, side: owner.side, field, type, damage, sinkFor: 0.35, holdInCutscene: true });
   }
 
@@ -17,15 +17,18 @@ class ArenaStructure extends Spike {
     if (!super.update(dt)) return false;
     if (this.game.state !== 'fighting') return false;
     const mon = this.side === 'player' ? this.game.opponent : this.game.player;
-    const previous = this.previous;
     const grounded = mon?.alive && !mon.hidden && !mon.remote && !mon.untouchable && mon.lift < 20;
-    this.previous = grounded ? { mon, x: mon.x, y: mon.y } : null;
-    const wasInside = previous?.mon === mon && this.inside;
+    const sameTarget = this.previousMon === mon, wasInside = sameTarget && this.inside;
+    const previousX = this.previousX, previousY = this.previousY;
+    this.previousMon = grounded ? mon : null;
     this.inside = false;
-    if (!grounded || this.age < 0.2) return true;
-    const radius = 10 + mon.radius * 0.65;
-    this.inside = Math.hypot(mon.x - this.x, mon.y - this.y) <= radius;
-    if (wasInside || (!this.inside && !this.crossed(mon, previous, radius))) return true;
+    if (!grounded) return true;
+    this.previousX = mon.x;
+    this.previousY = mon.y;
+    if (this.age < 0.2) return true;
+    const radiusSq = (10 + mon.radius * 0.65) ** 2;
+    this.inside = (mon.x - this.x) ** 2 + (mon.y - this.y) ** 2 <= radiusSq;
+    if (wasInside || (!this.inside && !(sameTarget && this.crossed(mon, previousX, previousY, radiusSq)))) return true;
 
     const last = this.field.lastContact.get(mon) ?? -Infinity;
     if (this.game.time - last < 0.65) return true;
@@ -50,13 +53,12 @@ class ArenaStructure extends Spike {
     super.draw(ctx);
   }
 
-  crossed(mon, previous, radius) {
-    if (previous?.mon !== mon) return false;
-    const dx = mon.x - previous.x, dy = mon.y - previous.y;
+  crossed(mon, previousX, previousY, radiusSq) {
+    const dx = mon.x - previousX, dy = mon.y - previousY;
     const distanceSq = dx * dx + dy * dy;
     if (!distanceSq || distanceSq > 70 ** 2) return false;
-    const t = Math.max(0, Math.min(1, ((this.x - previous.x) * dx + (this.y - previous.y) * dy) / distanceSq));
-    return Math.hypot(previous.x + t * dx - this.x, previous.y + t * dy - this.y) <= radius;
+    const t = Math.max(0, Math.min(1, ((this.x - previousX) * dx + (this.y - previousY) * dy) / distanceSq));
+    return (previousX + t * dx - this.x) ** 2 + (previousY + t * dy - this.y) ** 2 <= radiusSq;
   }
 }
 

@@ -1085,7 +1085,8 @@ export class UI {
         el.btn.className = `mate ${active ? 'active' : !m.alive ? 'fainted' : status === 'SWITCH' ? 'ready' : 'cooling'}`;
       }
     });
-    this.menuLabel.textContent = cd > 0 ? `ready in ${cd}s` : '';
+    const menuLabel = cd > 0 ? `ready in ${cd}s` : '';
+    if (this.menuLabel.textContent !== menuLabel) this.menuLabel.textContent = menuLabel;
     const label = cd > 0 ? `Switch ready in ${cd}s` : canSwitch ? 'Switch ready · Q' : 'Switching…';
     if (this.switchLabel.textContent !== label) {
       this.switchLabel.textContent = label;

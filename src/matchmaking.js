@@ -30,7 +30,7 @@ const PID_KEY = 'msb.pid';
 const CONNECT_TIMEOUT_MS = 12000; // one attempt; a sleeping server is retried until WAKE_WAIT_MS
 const WAKE_WAIT_MS = 120000; // allow a sleeping host to boot, then complete readiness + welcome
 const SILENCE_MS = 10000;
-const INPUT_GAP_MS = 25; // a changed direction goes out straight away, at most 40 times a second
+const INPUT_GAP_MS = 1000 / 60;
 const PRED_MS = 700; // our own predicted attack waits at least this long for the server to confirm it
 // The opponent is shown slightly in the past, between two server updates, so uneven delivery still
 // looks smooth; how far in the past adapts to how uneven the connection is.
@@ -459,7 +459,7 @@ export class Matchmaker {
           if (b && b.maxHp !== m.raid.maxHp) b.species = { ...b.species, hp: m.raid.maxHp };
         }
         if(m.ally) this.updateAlly(m.ally, m.ts);
-        // One message per server wake-up: what happened since the last one, then the current state.
+        // Combat events may arrive between the regular state snapshots.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
         if (Array.isArray(m.e)) this.events=appendBattleEvents(this.events,m.e);
         if (m.s && this.state === 'battle') this.onSnapshot(m.s, m.ts);
@@ -669,6 +669,8 @@ export class Matchmaker {
   // Attacks and dodges also start here straight away (see predict), so they never wait for the round trip.
   intent(kind, i) {
     if (this.state !== 'battle' || !this.match || this.match.spectator || (this.match.tag && !this.inControl)) return;
+    // Keep a direction change ordered ahead of a dodge or attack pressed between frames.
+    this.sendDirection(performance.now(), true);
     this.send({ t: 'act', id: this.match.id, k: kind, i });
     this.predict(kind, i);
   }
@@ -743,10 +745,18 @@ export class Matchmaker {
         if (!this.tryMove(pr.buffer.i, now) && pr.buffer.t <= 0) pr.buffer = null;
       }
     }
+    this.sendDirection(now);
+  }
+
+  sendDirection(now = performance.now(), urgent = false) {
+    if (this.state !== 'battle' || !this.match || !this.sentAt || this.match.spectator || (this.match.tag && !this.inControl)) return;
+    const g = this.game;
     const v = g.state === 'fighting' && !this.flow.pauseOpen ? g.input.vector() : { x: 0, y: 0 };
     const x = Math.round(v.x * 100) / 100, y = Math.round(v.y * 100) / 100;
     const same = this.lastIn && this.lastIn.x === x && this.lastIn.y === y, since = now - this.inAt;
-    if (since < INPUT_GAP_MS || (same && since < 500)) return;
+    if (same && (urgent || since < 500)) return;
+    if (!urgent && since < INPUT_GAP_MS) return;
+    if (this.ws?.bufferedAmount > 4096 && !urgent) return;
     this.lastIn = { x, y };
     this.inAt = now;
     const q = ++this.inSeq;

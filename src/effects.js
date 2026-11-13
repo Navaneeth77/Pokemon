@@ -892,20 +892,53 @@ const SPIKE_COLORS = {
   crystal: ['#ffc0e0', '#c0508a', '#ffffff'], dark: ['#3a2a4a', '#140c1c', '#a080d0'], magma: ['#b8461c', '#5a1a08', '#ffd060'],
 };
 
+const spikeBlades = () => Array.from({ length: 4 }, () => ({
+  dx: rand(-9, 9), dy: rand(-3, 3), h: rand(16, 30), w: rand(4, 7), lean: rand(-0.35, 0.35),
+})).sort((p, q) => p.dy - q.dy);
+
+const settledSpikes = new Map();
+const settledLayouts = [];
+const SPIKE_ORIGIN_X = 24, SPIKE_ORIGIN_Y = 36;
+
 export class Spike extends Effect {
-  constructor(x, y, style, life) {
+  constructor(x, y, style, life, persistent = false) {
     super('air', life);
     Object.assign(this, { x, y, style });
-    this.blades = Array.from({ length: 4 }, () => ({ dx: rand(-9, 9), dy: rand(-3, 3), h: rand(16, 30), w: rand(4, 7), lean: rand(-0.35, 0.35) }))
-      .sort((p, q) => p.dy - q.dy);
+    if (persistent) {
+      this.variant = Math.floor(Math.random() * 8);
+      this.blades = settledLayouts[this.variant] ??= spikeBlades();
+    } else {
+      this.blades = spikeBlades();
+    }
   }
 
   draw(ctx) {
     const grow = Math.min(1, this.age / 0.1), sink = Math.min(1, (this.life - this.age) / (this.sinkFor ?? this.life * 0.3));
-    const [fill, edge, ridge] = SPIKE_COLORS[this.style] ?? SPIKE_COLORS.stone;
+    const style = Object.hasOwn(SPIKE_COLORS, this.style) ? this.style : 'stone';
+    if (this.variant !== undefined && grow === 1 && sink === 1) {
+      // Cache the fully grown shapes. Rising and sinking still use the same animated paths.
+      const scale = 2, key = `${style}/${this.variant}`;
+      let sprite = settledSpikes.get(key);
+      if (!sprite) {
+        sprite = document.createElement('canvas');
+        sprite.width = SPIKE_ORIGIN_X * 2 * scale;
+        sprite.height = (SPIKE_ORIGIN_Y + 6) * scale;
+        const paint = sprite.getContext('2d');
+        paint.scale(scale, scale);
+        this.drawBlades(paint, SPIKE_ORIGIN_X, SPIKE_ORIGIN_Y, 1, style);
+        settledSpikes.set(key, sprite);
+      }
+      ctx.drawImage(sprite, this.x - SPIKE_ORIGIN_X, this.y - SPIKE_ORIGIN_Y, sprite.width / scale, sprite.height / scale);
+      return;
+    }
+    this.drawBlades(ctx, this.x, this.y, grow * sink, style);
+  }
+
+  drawBlades(ctx, x, y, height, style) {
+    const [fill, edge, ridge] = SPIKE_COLORS[style];
     ctx.lineWidth = 1;
     for (const b of this.blades) {
-      const h = b.h * grow * sink, bx = this.x + b.dx, by = this.y + b.dy, tx = bx + b.lean * h, ty = by - h;
+      const h = b.h * height, bx = x + b.dx, by = y + b.dy, tx = bx + b.lean * h, ty = by - h;
       ctx.beginPath();
       ctx.moveTo(bx - b.w, by);
       ctx.lineTo(tx, ty);
