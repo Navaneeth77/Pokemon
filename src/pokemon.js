@@ -9,7 +9,8 @@ import { tickStatus, tickBuffs, buffMult } from './status.js';
 import { speedRatio, moveFactor, rechargeFactor } from './stats.js';
 
 const RECALL_TIME = 0.4;
-const DODGE_TIME = 0.2;
+// 13 server steps (60 Hz): the distance online players already had (≈86.7 units), now the same at any frame rate.
+const DODGE_TIME = 13 / 60;
 const DODGE_SPEED = 400;
 const DODGE_INVULN = 0.28;
 export const DODGE_COOLDOWN = 1.6;
@@ -333,9 +334,11 @@ export class Pokemon {
     this.escapeT = Math.max(0, this.escapeT - dt);
     if (this.escapeT > 0) this.stagger = Math.min(this.stagger, 0.05);
     if (this.dodgeT > 0) {
+      // Move only for the dodge time that is left, so the distance doesn't depend on the frame rate.
+      const step = Math.min(dt, this.dodgeT);
       this.dodgeT -= dt;
-      this.x += this.dodgeDir.x * (this.dodgeSpeed ?? DODGE_SPEED) * dt;
-      this.y += this.dodgeDir.y * (this.dodgeSpeed ?? DODGE_SPEED) * dt;
+      this.x += this.dodgeDir.x * (this.dodgeSpeed ?? DODGE_SPEED) * step;
+      this.y += this.dodgeDir.y * (this.dodgeSpeed ?? DODGE_SPEED) * step;
       this.ghostT -= dt;
       if (this.ghostT <= 0) {
         this.ghostT = 0.03;

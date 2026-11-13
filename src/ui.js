@@ -126,31 +126,49 @@ export class UI {
       this.game.flow.mm.find({ format: this.tagQueue ? 'tag' : this.format, team: [...this.selection], lead: this.lead, mega, kit: this.teamKits() });
       return;
     }
+    // The battle is fixed now, before waiting for sprites: edits made meanwhile can't change it, and leaving
+    // the screen (Back) cancels it — `loadGen` moves on, so a load that finishes late starts nothing.
+    const gen = this.loadGen = (this.loadGen ?? 0) + 1;
+    const L = this.leader, story = this.story, cfg = {
+      selection: [...this.selection], foes: [...this.foes], difficulty: this.difficulty, lead: this.lead,
+      megaPicks: { ...this.megaPick }, kits: this.teamKits(),
+    };
     this.loading = true;
     btn.disabled = true;
     btn.textContent = 'Loading…';
     try {
-      this.game.kits = this.teamKits();
-      await this.game.ensureSprites([...this.selection, ...this.foes]);
-      this.game.selection = [...this.selection];
-      this.game.opponentSelection = [...this.foes];
-      this.game.difficulty = this.difficulty;
-      const L = this.leader;
-      this.game.aiConfig = this.story?.aiConfig ?? (L ? leaderAi(L, this.difficulty) : null); // later leaders play sharper
-      this.game.story = this.story;
-      this.game.foeCanMega = this.story ? this.story.mega : L ? leaderMega(L, this.difficulty) : true;
+      this.game.kits = cfg.kits;
+      await this.game.ensureSprites([...cfg.selection, ...cfg.foes]);
+      if (gen !== this.loadGen || (this.game.flow && this.game.flow.screen !== 'select')) return;
+      this.game.selection = cfg.selection;
+      this.game.opponentSelection = cfg.foes;
+      this.game.difficulty = cfg.difficulty;
+      this.game.aiConfig = story?.aiConfig ?? (L ? leaderAi(L, cfg.difficulty) : null); // later leaders play sharper
+      this.game.story = story;
+      this.game.foeCanMega = story ? story.mega : L ? leaderMega(L, cfg.difficulty) : true;
       this.game.foeTrainer = L ? leaderTrainer(L) : null;
-      if (this.story) (this.story.remember ?? (t => this.game.flow.story.rememberTeam(t)))(this.selection);
-      this.game.lead = this.lead;
-      this.game.megaPicks = { ...this.megaPick };
+      if (story) (story.remember ?? (t => this.game.flow.story.rememberTeam(t)))(cfg.selection);
+      this.game.lead = cfg.lead;
+      this.game.megaPicks = cfg.megaPicks;
       this.game.start();
     } catch (err) {
       console.error(err);
-      btn.textContent = 'Failed to load — retry';
+      if (gen === this.loadGen) btn.textContent = 'Failed to load — retry';
     } finally {
-      this.loading = false;
-      btn.disabled = false;
+      if (gen === this.loadGen) {
+        this.loading = false;
+        btn.disabled = false;
+      }
     }
+  }
+
+  // Leaving the team screen while a battle is loading abandons that load.
+  cancelLoading() {
+    if (!this.loading) return;
+    this.loadGen = (this.loadGen ?? 0) + 1;
+    this.loading = false;
+    const btn = $('#start-btn');
+    if (btn) btn.disabled = false;
   }
 
   // ── Selection screen: searchable, filterable roster; details of the hovered Pokémon; team slots ──
@@ -210,6 +228,7 @@ export class UI {
     }
     $('.sel-back').addEventListener('click', e => {
       e.currentTarget.blur();
+      this.cancelLoading();
       if (this.builder) this.game.flow?.showTeams();
       else this.game.flow?.toTitle();
     });
@@ -386,7 +405,7 @@ export class UI {
 
   // The team can't change once READY is pressed (friend room) or while searching for a match.
   get teamLocked() {
-    return !!(this.online?.locked || (this.queue && this.game.flow?.mm.busy));
+    return !!(this.loading || this.online?.locked || (this.queue && this.game.flow?.mm.busy));
   }
 
   toggle(id) {

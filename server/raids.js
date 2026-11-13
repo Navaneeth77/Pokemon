@@ -89,7 +89,7 @@ class RaidSession {
     const boss=this.encounter.snapshot(this.flushes++%30===0);
     this.members.forEach((m,i)=>{
       const g=m.game,other=this.members[1-i].game,ack=m.ack.A&&[m.ack.A.q,Math.round((this.clock-m.ack.A.at)*1000)];
-      this.manager.send(this.entries[i].player,{t:'b',ts:Math.round(this.clock*1000),e:m.out.splice(0,256),s:{A:this.manager.snapshot(g.playerTeam,g.switchCD,ack),B:this.manager.snapshot(g.opponentTeam,0,null)},raid:boss,
+      this.manager.send(this.entries[i].player,{t:'b',ts:Math.round(this.clock*1000),e:m.out.splice(0,256),s:{A:this.manager.snapshot(g.playerTeam,g.switchCD,ack,g),B:this.manager.snapshot(g.opponentTeam,0,null,g)},raid:boss,
         ally:{species:other.player.species.id,x:other.player.x,y:other.player.y,dir:other.player.dir,hp:other.player.hp,maxHp:other.player.maxHp,hidden:other.player.hidden,eliminated:this.eliminated.has(1-i),disconnected:this.disconnected.has(1-i)}});
     });
   }

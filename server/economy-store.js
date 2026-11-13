@@ -8,6 +8,23 @@ const PID = /^[A-Za-z0-9_-]{8,64}$/, HEX = /^[a-f0-9]{64}$/;
 // every request, so it is left out of the comparison).
 const fingerprint = w => JSON.stringify({ ...w, lastNow: 0 });
 
+// Writes and fsyncs, so a completed save survives a crash or power cut, not just the process exiting.
+function writeDurably(file, text, flags) {
+  const fd = fs.openSync(file, flags, 0o600);
+  try {
+    fs.writeSync(fd, text);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+// A new or renamed file is only durable once its directory entry is synced too (best effort: not every
+// platform allows opening a directory).
+function syncDir(dir) {
+  let fd;
+  try { fd = fs.openSync(dir, 'r'); fs.fsyncSync(fd); } catch { /* unsupported here */ } finally { if (fd != null) fs.closeSync(fd); }
+}
+
 // Wallets live in memory and are saved one player at a time, so a wallet request never rewrites (or
 // even copies) everyone else's data on the match server's single thread. Saving goes to `sink` when one
 // is attached (Redis, see server/index.js); otherwise to an append-only journal file: one small line per
@@ -19,6 +36,8 @@ export class EconomyStore {
     this.sink = sink;
     this.data = { version: 1, players: {} };
     this.error = null;
+    this.commits = new Map(); // pid → the promise of that player's latest save reaching storage
+    this.unsaved = new Set(); // players whose latest save failed (memory is ahead of storage)
     if (file) this.read();
   }
 
@@ -61,8 +80,9 @@ export class EconomyStore {
 
   compact() {
     const lines = ['{"version":1}', ...Object.entries(this.data.players).map(([pid, r]) => JSON.stringify({ pid, ...r }))];
-    fs.writeFileSync(`${this.file}.tmp`, `${lines.join('\n')}\n`, { mode: 0o600 });
+    writeDurably(`${this.file}.tmp`, `${lines.join('\n')}\n`, 'w');
     fs.renameSync(`${this.file}.tmp`, this.file);
+    syncDir(path.dirname(this.file));
   }
 
   // Wallets loaded from another store (Redis) at startup.
@@ -74,15 +94,43 @@ export class EconomyStore {
 
   authenticated(pid, secret) { return typeof secret === 'string' && HEX.test(secret) && this.data.players[pid]?.credential === this.hash(secret); }
 
-  // Saves one wallet. A failure leaves both the file and memory unchanged.
+  // Saves one wallet. The journal line is flushed to disk (fsync) before memory changes; a failure leaves
+  // both unchanged. With a `sink` (Redis) the write finishes later: `committed(pid)` resolves once it has
+  // landed, and callers that report success to a player wait for it.
   save(pid, record) {
     if (this.error) throw Error(this.error);
-    if (this.sink) this.sink(pid, record);
+    let done;
+    if (this.sink) done = Promise.resolve(this.sink(pid, record));
     else {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.appendFileSync(this.file, `${JSON.stringify({ pid, ...record })}\n`, { mode: 0o600 });
+      const fresh = !fs.existsSync(this.file);
+      writeDurably(this.file, `${JSON.stringify({ pid, ...record })}\n`, 'a');
+      if (fresh) syncDir(path.dirname(this.file));
+      done = Promise.resolve();
     }
     this.data.players[pid] = record;
+    this.commits.set(pid, done);
+    // Only the latest save counts. Handling both outcomes also keeps a failed write from being an unhandled rejection.
+    const settle = ok => () => {
+      if (this.commits.get(pid) !== done) return;
+      this.commits.delete(pid);
+      if (ok) this.unsaved.delete(pid);
+      else this.unsaved.add(pid);
+    };
+    done.then(settle(true), settle(false));
+  }
+
+  // Resolves when every change made so far to this player's wallet is in storage; rejects if the latest
+  // write failed (it is retried in the background, and wallet operations are idempotent by id).
+  // A wallet whose last save failed is saved again (its newest version) before anything is confirmed.
+  committed(pid) {
+    const inFlight = this.commits.get(pid);
+    if (inFlight) return inFlight;
+    if (this.unsaved.has(pid) && this.data.players[pid] && !this.error) {
+      this.save(pid, this.data.players[pid]);
+      return this.commits.get(pid);
+    }
+    return Promise.resolve();
   }
 
   request(pid, secret, op, id, now = Date.now()) {

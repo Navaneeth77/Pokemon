@@ -274,8 +274,9 @@ export function applyHit(game, attacker, target, move, o = {}) {
     if (target.focusing) target.lostFocus = true; // Focus Punch
     counterHit(game, attacker, target, move, cat, dmg);
   }
-  if (target.endure > 0 && dmg >= target.hp && target.hp > 1) {
-    dmg = Math.ceil(target.hp) - 1;
+  // Endure holds for every direct hit while it is up, including a second hit at 1 HP.
+  if (target.endure > 0 && dmg > 0 && dmg >= target.hp) {
+    dmg = Math.max(0, Math.ceil(target.hp) - 1);
     game.spawn(new FloatText(target.x, head - 10, 'ENDURED!', '#ffd84a'));
     game.ui.log(`${target.species.name} endured the hit!`, target.side);
   }

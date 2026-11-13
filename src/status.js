@@ -191,7 +191,9 @@ export function addBuff(game, mon, stat, mult, dur, source = null) {
 // Contrary flips the change, Simple doubles it; Clear Body, Hyper Cutter, Clear Amulet and Mirror Armor
 // stop or reflect drops; Defiant / Competitive answer them; White Herb undoes them once.
 const STAGE_WORDS = { 1: 'rose!', 2: 'rose sharply!', 3: 'rose drastically!', '-1': 'fell!', '-2': 'harshly fell!', '-3': 'severely fell!' };
-export function changeStage(game, mon, changes, source = null) {
+// `reflected` marks a drop Mirror Armor already sent back: like the main games, it can't be reflected again
+// (two Mirror Armor holders would otherwise bounce it forever), so it lands on the original source.
+export function changeStage(game, mon, changes, source = null, reflected = false) {
   if (mon.remote || !mon.alive) return false;
   const ab = abilityOf(mon), item = itemOf(mon), byFoe = source && source !== mon;
   let any = false, dropped = false;
@@ -203,9 +205,9 @@ export function changeStage(game, mon, changes, source = null) {
       if (game.sides?.[mon.side]?.mist > 0) { text(game, mon, 'PROTECTED BY MIST', '#d8f0ff', 6); continue; }
       if (item?.noDebuff) { game.itemPop(mon, 'The Clear Amulet kept its stats up!'); continue; }
       if (ab.noDebuff || ab.keepStat === (stat === 'spa' ? 'atk' : stat)) { game.abilityPop(mon, `Its ${STAT_NAME[stat]} can't be lowered!`); continue; }
-      if (ab.mirror && source.alive && !source.hidden) {
+      if (ab.mirror && !reflected && source.alive && !source.hidden) {
         game.abilityPop(mon, 'It reflected the stat drop!');
-        changeStage(game, source, { [stat]: n }, mon);
+        changeStage(game, source, { [stat]: n }, mon, true);
         continue;
       }
     }

@@ -961,6 +961,7 @@ export class Flow {
   }
 
   toTitle() {
+    this.ui.cancelLoading?.();
     this.ui.setStory(null);
     this.game.story = null;
     this.mm.stop();
@@ -1004,7 +1005,9 @@ export class Flow {
       else if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
         sfx.sendOut();
-        this.menuItems[this.menuIndex][1]();
+        // menuIndex counts buttons in screen order (grouped); data-i is the item they stand for.
+        const card = document.querySelectorAll('#title-menu .tm-item')[this.menuIndex];
+        this.menuItems[card ? +card.dataset.i : this.menuIndex][1]();
         return;
       } else return;
       e.preventDefault();

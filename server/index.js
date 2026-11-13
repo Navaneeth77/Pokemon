@@ -86,6 +86,7 @@ const REDIS = envValue('UPSTASH_REDIS_REST_URL') && envValue('UPSTASH_REDIS_REST
   ? { url: envValue('UPSTASH_REDIS_REST_URL').replace(/\/$/, ''), token: envValue('UPSTASH_REDIS_REST_TOKEN') }
   : null;
 const REDIS_KEY = process.env.LEADERBOARD_KEY || 'chaos-arena:records';
+const WALLET_WRITE_MS = 150; // wallet writes are batched this long (a request waits for its own write)
 const STORAGE = REDIS ? 'redis' : 'file';
 let storageError = null; // last database problem (shown on /health; never includes the token)
 
@@ -119,31 +120,50 @@ try {
 }
 
 // Wallets (Trainer Guild) follow the same rule as the leaderboard: in Upstash Redis when it's set up, so
-// they survive Render restarts and redeploys, otherwise in the journal file. Only the changed wallet is
-// written, in the background; a failed write is retried and never blocks a battle.
+// they survive Render restarts and redeploys, otherwise in the journal file. Only the changed wallets are
+// written, a moment later and never blocking a battle. Exactly one write is in flight at a time and the
+// queue always holds each wallet's newest version, so an older write can never land after a newer one.
+// A wallet request is only answered "done" once its write has landed (see /economy below).
 if (REDIS) {
-  const WALLET_KEY = process.env.WALLET_KEY || 'chaos-arena:wallets', pending = new Map();
-  let timer = null;
+  const WALLET_KEY = process.env.WALLET_KEY || 'chaos-arena:wallets', pending = new Map(); // pid → { record, waiters }
+  let timer = null, timerDue = 0, writing = false;
+  // Never postpones a write already due sooner; a new change pulls a slow retry (after a failure) forward.
+  const schedule = ms => {
+    if (writing || (timer && timerDue <= Date.now() + ms)) return;
+    clearTimeout(timer);
+    timerDue = Date.now() + ms;
+    timer = setTimeout(flush, ms);
+  };
   const flush = async () => {
     timer = null;
+    if (writing || !pending.size) return;
+    writing = true;
     const batch = [...pending];
     pending.clear();
-    if (!batch.length) return;
     try {
-      await redis(['HSET', WALLET_KEY, ...batch.flatMap(([pid, r]) => [pid, JSON.stringify(r)])]);
+      await redis(['HSET', WALLET_KEY, ...batch.flatMap(([pid, e]) => [pid, JSON.stringify(e.record)])]);
+      for (const [, e] of batch) for (const w of e.waiters) w.resolve();
+      writing = false;
+      if (pending.size) schedule(WALLET_WRITE_MS);
     } catch (err) {
       console.error('could not save wallets to Redis:', err.message);
-      for (const [pid, r] of batch) if (!pending.has(pid)) pending.set(pid, r);
-      timer = setTimeout(flush, 10_000);
+      for (const [, e] of batch) for (const w of e.waiters) w.reject(Error('Your wallet change could not be saved yet. Please try again in a moment.'));
+      // Retry later, unless a newer version of that wallet is already waiting (it supersedes this one).
+      for (const [pid, e] of batch) if (!pending.has(pid)) pending.set(pid, { record: e.record, waiters: [] });
+      writing = false;
+      schedule(10_000);
     }
   };
   try {
     const flat = (await redis(['HGETALL', WALLET_KEY])) ?? [];
     economy.load(Array.from({ length: flat.length >> 1 }, (_, i) => { try { return [flat[2 * i], JSON.parse(flat[2 * i + 1])]; } catch { return []; } }));
-    economy.sink = (pid, record) => {
-      pending.set(pid, record);
-      timer ??= setTimeout(flush, 1500);
-    };
+    economy.sink = (pid, record) => new Promise((resolve, reject) => {
+      const e = pending.get(pid) ?? { waiters: [] };
+      e.record = record;
+      e.waiters.push({ resolve, reject });
+      pending.set(pid, e);
+      schedule(WALLET_WRITE_MS);
+    });
   } catch (err) {
     economy.error = 'Economy storage could not be loaded. Existing data was preserved.';
     console.error('could not load wallets from Redis:', err.message);
@@ -158,11 +178,14 @@ function saveRecords(...pids) {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushRecords, 1500);
 }
+let recordsWriting = false; // one leaderboard write at a time, so an older one can't land after a newer one
 async function flushRecords() {
   if (REDIS) {
+    if (recordsWriting) { clearTimeout(saveTimer); saveTimer = setTimeout(flushRecords, 500); return; }
     const pids = [...dirty].filter(p => records.has(p));
     dirty.clear();
     if (!pids.length) return;
+    recordsWriting = true;
     try {
       await redis(['HSET', REDIS_KEY, ...pids.flatMap(p => [p, JSON.stringify(records.get(p))])]);
       storageError = null;
@@ -170,7 +193,10 @@ async function flushRecords() {
       storageError = `save failed: ${err.message}`;
       for (const p of pids) dirty.add(p); // try again shortly
       console.error('could not save the leaderboard to Redis:', err.message);
+      clearTimeout(saveTimer);
       saveTimer = setTimeout(flushRecords, 10_000);
+    } finally {
+      recordsWriting = false;
     }
     return;
   }
@@ -245,7 +271,8 @@ const SHINY_SET = new Set(SHINY);
 function validTeam(m) {
   // A Tag Battle player brings three Pokémon; their partner brings the other three.
   const tag = m.format === 'tag', format = tag ? 3 : m.format === 6 ? 6 : m.format === 3 ? 3 : 0;
-  const team = Array.isArray(m.team) ? m.team.map(String) : [];
+  // Entries must already be strings: converting arbitrary JSON (e.g. {"toString":null}) can throw.
+  const team = Array.isArray(m.team) && m.team.every(id => typeof id === 'string') ? m.team : [];
   if (!format || team.length !== format || new Set(team).size !== format || !team.every(id => ROSTER_SET.has(id))) return null;
   const lead = Number.isInteger(m.lead) && m.lead >= 0 && m.lead < format ? m.lead : 0;
   const mega = {};
@@ -495,7 +522,7 @@ class Match {
   // A button press from one player, applied with exactly the rules an offline player has.
   act(s, m) {
     if (this.phase !== 'battle') return;
-    const g = this.game, k = String(m.k), i = Number.isInteger(m.i) ? m.i : -1;
+    const g = this.game, k = typeof m.k === 'string' ? m.k : '', i = Number.isInteger(m.i) ? m.i : -1;
     this.active[s] = Date.now();
     if (g.state !== 'fighting') return;
     if (s === 'A') {
@@ -582,7 +609,9 @@ class Match {
       if (p.match !== this) continue;
       p.match = null;
       p.state = 'idle';
-      const again = requeue(s) && p.ws?.readyState === 1;
+      // A drafted team only exists for that draft: putting it into the ordinary queue would silently turn
+      // an unranked draft into a ranked 3v3/6v6. Draft survivors go back to the menu instead.
+      const again = !this.draftMode && requeue(s) && p.ws?.readyState === 1;
       sendTo(p, { t: 'aborted', id: this.id, reason, requeued: again });
       if (again) enqueue(p, { format: e.format, team: e.team, lead: e.lead, mega: e.mega, kit: e.kit }, e.since, true);
     }
@@ -824,16 +853,16 @@ function onMessage(conn, raw) {
       }
       return;
     case 'loaded':
-      if (p.match?.id === m.id) p.match.loadedBy(p.matchSide, p);
+      if (p.match && p.match.id === m.id) p.match.loadedBy(p.matchSide, p);
       return;
     case 'in':
-      if (p.match?.id === m.id) p.match.input(p.matchSide, m, p);
+      if (p.match && p.match.id === m.id) p.match.input(p.matchSide, m, p);
       return;
     case 'act':
-      if (p.match?.id === m.id) p.match.act(p.matchSide, m, p);
+      if (p.match && p.match.id === m.id) p.match.act(p.matchSide, m, p);
       return;
     case 'leave':
-      if (p.match?.id === m.id) p.match.leave(p.matchSide, 'forfeit', p);
+      if (p.match && p.match.id === m.id) p.match.leave(p.matchSide, 'forfeit', p);
       return;
     // Quick chat: one of a fixed list of lines (no free text), at most one every 1.5s.
     case 'emote': {
@@ -858,7 +887,7 @@ function onMessage(conn, raw) {
       return unspectate(p);
     // Friends: who of these friend codes is online, where, and (if battling) which battle to watch.
     case 'friends': {
-      const codes = Array.isArray(m.codes) ? m.codes.slice(0, 50).map(c => String(c).toUpperCase()) : [];
+      const codes = Array.isArray(m.codes) ? m.codes.slice(0, 50).filter(c => typeof c === 'string').map(c => c.toUpperCase()) : [];
       const where = whereAll(), list = [];
       for (const q of players.values()) {
         const code = codeOf(q.pid);
@@ -870,10 +899,10 @@ function onMessage(conn, raw) {
     }
     // A friend-room invitation passed on to an online friend.
     case 'invite': {
-      const now = Date.now(), room = String(m.room ?? '').slice(0, 12);
+      const now = Date.now(), room = typeof m.room === 'string' ? m.room.slice(0, 12) : '', code = typeof m.code === 'string' ? m.code.toUpperCase() : '';
       if (now - (p.inviteAt ?? 0) < 3000 || !/^[A-Za-z0-9-]{3,12}$/.test(room)) return;
       p.inviteAt = now;
-      const to = [...players.values()].find(q => q.ws && codeOf(q.pid) === String(m.code ?? '').toUpperCase());
+      const to = [...players.values()].find(q => q.ws && codeOf(q.pid) === code);
       if (to) sendTo(to, { t: 'invite', from: p.name, code: codeOf(p.pid), room });
       return sendTo(p, { t: 'invited', ok: !!to });
     }
@@ -901,6 +930,8 @@ function hello(conn, m) {
   if (m.v !== PROTOCOL) return send(conn.ws, { t: 'error', code: 'version', message: 'The game was updated — refresh the page.' });
   const pid = typeof m.pid === 'string' && PID_RE.test(m.pid) ? m.pid : null;
   if (!pid) return send(conn.ws, { t: 'error', code: 'bad-id', message: 'Missing player id.' });
+  // A connection is bound to the first identity it introduces; switching would orphan the old player.
+  if (conn.player && conn.player.pid !== pid) return send(conn.ws, { t: 'error', code: 'identity-locked', message: 'This connection already belongs to another player.' });
   let p = players.get(pid);
   if (p && p.ws && p.ws !== conn.ws) {
     if (p.ws.readyState === 1) {
@@ -1062,9 +1093,17 @@ const server = http.createServer((req, res) => {
     if(economyRate.size>2000)for(const [key,v]of economyRate)if(now-v.at>10000)economyRate.delete(key);
     if(rate.n>40){res.writeHead(429).end(JSON.stringify({error:'Please wait a moment before trying again.'}));return;}
     let body='';req.on('data',c=>{body+=c;if(body.length>2048)req.destroy();});
-    req.on('end',()=>{try{const q=JSON.parse(body),wallet=economy.request(q.pid,q.credential,q.op,q.id);
-      res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({wallet}));
-    }catch(e){res.writeHead(400,{'content-type':'application/json'}).end(JSON.stringify({error:e.message}));}});return;
+    req.on('end',async()=>{
+      let q,wallet;
+      try{q=JSON.parse(body);wallet=economy.request(q.pid,q.credential,q.op,q.id);}
+      catch(e){res.writeHead(400,{'content-type':'application/json'}).end(JSON.stringify({error:e.message}));return;}
+      // Success is only reported once the change is in storage; otherwise the player is told to retry
+      // (the write keeps retrying in the background, and repeating an operation id is harmless).
+      try{
+        await Promise.race([economy.committed(q.pid),new Promise((_,no)=>setTimeout(()=>no(Error('Saving your wallet is taking too long. Please try again.')),6000).unref())]);
+        res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({wallet}));
+      }catch(e){res.writeHead(503,{'content-type':'application/json'}).end(JSON.stringify({error:e.message}));}
+    });return;
   }
   if (req.url === '/lobby') {
     const origin = req.headers.origin;
@@ -1106,7 +1145,16 @@ const wss = new WebSocketServer({
 wss.on('connection', ws => {
   const conn = { ws, player: null, tokens: RATE.burst, refill: Date.now(), dropped: 0, alive: true };
   ws.on('pong', () => (conn.alive = true));
-  ws.on('message', data => onMessage(conn, data.toString()));
+  // One bad message must never take down every other battle: an unexpected error ends only this connection
+  // (its close handler then clears its queue entry, draft or match like any disconnect).
+  ws.on('message', data => {
+    try { onMessage(conn, data.toString()); }
+    catch (err) {
+      console.error('message handler failed; closing that connection:', err?.message ?? err);
+      send(ws, { t: 'error', code: 'bad-message', message: 'That message could not be processed.' });
+      ws.close(1011, 'bad message');
+    }
+  });
   ws.on('close', () => onClose(conn));
   ws.on('error', noop);
   ws.conn = conn;

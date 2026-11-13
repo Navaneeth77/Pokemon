@@ -653,6 +653,7 @@ export class Matchmaker {
     this.inSeq = 0;
     this.sentAt = new Map(); // direction update number → when it was sent
     this.pred = { moves: [], dodge: 0, charge: null, released: null, buffer: null };
+    this.hydrated = false; // the first state update during the fight restores who is out (see hydrate)
     this.hist = []; // where our own Pokémon was over the last moment, for lining it up with the server
     this.histMon = null;
     this.corr = null;
@@ -828,6 +829,11 @@ export class Matchmaker {
       while (b.length > 2 && (b[1].ts < shown - 100 || b.length > 90)) b.shift();
     }
     if (g.state !== 'fighting') return;
+    if (!this.hydrated) {
+      this.hydrated = true;
+      this.hydrate(g.playerTeam, mine, 'player');
+      this.hydrate(g.opponentTeam, theirs, 'opponent');
+    }
     this.applyState(g.playerTeam, mine, true);
     this.applyState(g.opponentTeam, theirs, false);
     if (typeof mine.sw === 'number') g.switchCD = mine.sw;
@@ -897,6 +903,34 @@ export class Matchmaker {
     const f = (t - a.ts) / (c.ts - a.ts || 1);
     if (a.i !== c.i || Math.hypot(c.x - a.x, c.y - a.y) > 120) return f < 0.5 ? a : c;
     return { ...(f < 0.5 ? a : c), x: a.x + (c.x - a.x) * f, y: a.y + (c.y - a.y) * f, fz: a.fz + (c.fz - a.fz) * f, ah: a.ah + (c.ah - a.ah) * f };
+  }
+
+  // A screen that joins a battle already under way (spectating, rejoining a raid) is set up from the leads,
+  // and the switches and faints before it joined are never replayed. The first full state update fixes
+  // that: who is out, who has fainted, and everyone's HP. Later events only animate. For a battle watched
+  // from the start this changes nothing (the leads are out and everyone is healthy).
+  hydrate(team, s, loc) {
+    const g = this.game;
+    s.hp?.forEach((hp, k) => {
+      const m = team.members[k];
+      if (!m) return;
+      m.hp = Math.max(0, Math.min(m.maxHp, hp));
+      if (m.hp <= 0) m.fainted = true;
+    });
+    const next = team.members[s.i];
+    if (next && next !== team.active) {
+      const cur = team.active;
+      cur?.cancelAction?.();
+      if (cur) cur.hidden = true;
+      team.index = s.i;
+      if (next.fainted && next.hp > 0) next.fainted = false;
+      next.enter(this.fx(s.x), this.fy(s.y), this.fd(s.d ?? 0));
+      // Already out on the server: shown straight away, without a send-out (whose entry effects the server ran long ago).
+      Object.assign(next, { hidden: false, appear: 0 });
+      g.link();
+      if (loc === 'player') g.ui.setActive?.(next);
+      if (this.pred) Object.assign(this.pred, { moves: [], dodge: 0, charge: null, released: null, buffer: null });
+    }
   }
 
   // HP, meters, statuses and the like straight from the server (positions are smoothed per frame).

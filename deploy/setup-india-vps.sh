@@ -19,7 +19,7 @@ HOST="${IP//./-}.sslip.io"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y curl git ca-certificates gnupg debian-keyring debian-archive-keyring apt-transport-https
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt-get install -y nodejs
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list

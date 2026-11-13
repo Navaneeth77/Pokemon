@@ -1267,23 +1267,24 @@ export class Game {
     abilityOf(mon).onFaint?.(this, mon, by, move);
     if (!this.headless) playCry(mon.baseSpecies.dex, { rate: 0.8, gain: 0.45 });
     if (by && by !== mon && by.alive && !by.hidden) abilityOf(by).onKO?.(this, by, mon);
-    // Destiny Bond: whatever knocks it out goes down with it.
     onFaintExtra(this, mon, by, move); // Grudge
-    if (mon.destinyBond > 0 && move && by && by !== mon && by.alive && !by.hidden && !by.remote && !by.boss) {
-      this.ui.log(`${mon.species.name} took its attacker down with it!`, mon.side);
-      this.later(0.35, () => {
-        if (!by.alive || by.hidden || this.state !== 'fighting') return;
-        this.spawn(new FloatText(by.x, by.y - by.headZ - 18, 'DESTINY BOND!', '#b08aff', 8));
-        by.hp = 0;
-        this.onFaint(by, mon);
-      });
-    }
+    // Destiny Bond: whatever knocks it out goes down with it. Resolved now, before the outcome is chosen —
+    // a delayed KO was skipped whenever this was the last Pokémon, because the finale had already begun.
+    const bond = mon.destinyBond > 0 && move && by && by !== mon && by.alive && !by.hidden && !by.remote && !by.boss;
     mon.faint();
     dustCloud(this, mon.x, mon.y, 16, 5);
     this.ui.log(`${mon.species.name} fainted!`, mon.side);
     this.hitstop(0.12);
     this.shake(6, 0.4, true);
     sfx.faint();
+    if (bond && this.state === 'fighting') {
+      this.ui.log(`${mon.species.name} took its attacker down with it!`, mon.side);
+      this.spawn(new FloatText(by.x, by.y - by.headZ - 18, 'DESTINY BOND!', '#b08aff', 8));
+      by.hp = 0;
+      // If that was the attacker's last Pokémon too, this starts the finale with the Destiny Bond side
+      // winning (it caused the final KO); the checks below then see the battle is over.
+      this.onFaint(by, mon);
+    }
     if (this.state !== 'fighting') return;
     if (next < 0) {
       this.startFinale(by, mon, move);

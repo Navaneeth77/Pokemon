@@ -179,6 +179,14 @@ export class Music {
     const ac = audioContext();
     if (!ac) return;
     for (const t of this.tracks) {
+      // After a frozen or hidden tab, skip the beats that are already past (keeping the song in time)
+      // instead of creating audio for every one of them at once.
+      const behind = ac.currentTime - t.next;
+      if (behind > 0.25) {
+        const skip = Math.ceil(behind / t.song.stepDur);
+        t.next += skip * t.song.stepDur;
+        t.step = (t.step + skip) % t.song.len;
+      }
       while (t.next < ac.currentTime + 0.15) {
         if (!t.fading || t.next < t.fading) this.scheduleStep(ac, t, t.step, t.next);
         t.next += t.song.stepDur;
