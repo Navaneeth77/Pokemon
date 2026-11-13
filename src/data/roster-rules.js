@@ -8,7 +8,7 @@ for(const row of EVOLUTION_DATA)if(row[2]&&!regionalOnly.has(row[1])){
  const list=children.get(row[2])??[];list.push(row);children.set(row[2],list);
 }
 export const evolutionRow=id=>byKey.get(key(id));
-export const isFinalSpecies=id=>{const row=evolutionRow(id);return !!row&&!children.has(row[0]);};
+export const isFinalSpecies=id=>{const row=evolutionRow(id);return key(id)==='floetteeternal'||!!row&&!children.has(row[0]);};
 export function finalDescendants(id){
  const row=evolutionRow(id);if(!row)return [];
  const visit=r=>children.has(r[0])?children.get(r[0]).flatMap(visit):[key(r[1])];return visit(row);

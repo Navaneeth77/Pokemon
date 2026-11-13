@@ -28,6 +28,7 @@ const SOFT_HOMING = { track: 1.4, trackTime: 0.7, maxTurn: 0.6 };
 
 // Per-move tuning on top of the defaults.
 export const TARGETING_TUNING = {
+  auraSphere: { kind: 'homing', ...STRONG_HOMING, speed: 610, range: 290, hitbox: 17 },
   shadowBall: { track: 1.6 }, energyBall: { track: 1.4 }, sludgeBomb: { kind: 'homing', ...SOFT_HOMING, track: 1.2 }, moonblastShot: { kind: 'homing', ...SOFT_HOMING, track: 1.5 }, moonblastAtk: { kind: 'homing', ...SOFT_HOMING, track: 1.5 },
   fireBlast: { kind: 'straight', speed: 420 }, focusBlast: { kind: 'straight', speed: 380 }, overheat: { kind: 'straight', speed: 420 },
   gunkShotAtk: { kind: 'straight' }, pyroBall: { kind: 'straight' }, poltergeist: { track: 2.4, maxTurn: 1.2 },

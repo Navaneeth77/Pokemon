@@ -1,3 +1,4 @@
+import { drawBeamRings } from './beam-rings.js';
 import { Effect } from './effects.js';
 import { TYPE_COLORS } from './data/types.js';
 
@@ -332,7 +333,7 @@ export class DashStreak extends Effect {
 
 // The filaments live inside the firing lane and end when the attack is interrupted.
 export function showBeamWake(game, move, line, duration, width) {
-  if (!game.headless && drawsNewEffects(move)) return game.spawn(new BeamWake(move, line, duration, width));
+  if (!game.headless) return game.spawn(new BeamWake(move, line, duration, width));
 }
 
 class BeamWake extends Effect {
@@ -342,34 +343,10 @@ class BeamWake extends Effect {
   }
 
   draw(ctx) {
-    const { x0: x, y0: y, x1: endX, y1: endY } = this.line;
-    const length = Math.hypot(endX - x, endY - y);
-    if (length < 1) return;
-    const fade = Math.min(1, (1 - this.age / this.life) * 4);
+    const { x0, y0, x1, y1 } = this.line;
+    const fade = Math.min(1, this.age * 20, (1 - this.age / this.life) * 5);
     const color = this.move.beam?.colors[1] ?? palette(this.move.type)[0];
-    const shape = ELEMENT_SHAPE[this.move.type];
-    const amplitude = this.width * 0.6;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(Math.atan2(endY - y, endX - x));
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 9; i++) {
-      const p = (this.age * 4 + i / 9) % 1;
-      const side = i % 2 ? 1 : -1;
-      const x = length * p;
-      const y = side * amplitude * (0.55 + 0.4 * Math.sin(p * TAU + i));
-      const tail = Math.min(x, 8 + 18 * p);
-      ctx.globalAlpha = fade * Math.min(0.9, p * 6, (1 - p) * 7);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(x - tail, y + side * 3);
-      ctx.quadraticCurveTo(x - tail * 0.55, y + side * 6, x, y);
-      ctx.stroke();
-      ctx.fillStyle = i % 3 ? color : '#fff8e6';
-      drawElement(ctx, shape, x, y, Math.max(2.2, Math.min(5, amplitude * 0.52)), Math.PI / 2);
-    }
-    ctx.restore();
+    drawBeamRings(ctx, x0, y0, x1, y1, this.width, this.age, color, fade);
   }
 }
 

@@ -1,3 +1,4 @@
+import { spawnStructure, structureField } from './arena-structures.js';
 import { animDuration } from './assets.js';
 import { dirFromVector } from './sprite.js';
 import { LegendaryBeam, AeroblastBeam } from './raid-art.js';
@@ -16,7 +17,7 @@ import { profileOf } from './targeting.js';
 import { BEAM_CLASH_HOLD } from './clash-animation.js';
 import { DashStreak, HazardLanding, ORIGINAL_PULSES, PulseTrain, WeatherArrival, presentationOf, showBeamWake, showMoveCast, showStatusRelease, showStrikeRelease } from './move-presentation.js';
 import { RETIRED_MOVES } from './data/movepool.js';
-import { ORBS } from './projectiles.js';
+import { ORBS, drawChargedSphere } from './projectiles.js';
 import { TYPE_ULTS } from './ult-choreo.js';
 import { LEGEND_ULTS } from './ult-legends.js';
 import { LEGEND_ULTS_2 } from './ult-legends2.js';
@@ -24,10 +25,11 @@ import { LEGEND_ULTS_3 } from './ult-legends3.js';
 import { LEGEND_ULTS_4 } from './ult-legends4.js';
 import { FAV_ULTS } from './ult-favs.js';
 import { FAV_ULTS_2 } from './ult-favs2.js';
+import { SPECIES_ULTIMATES } from './ult-species.js';
 import {
-  ItemFly, UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
+  Effect, ItemFly, UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
-  debris, windBurst, metalSparks, Missile, TidalWave, Moon, Tether, FloatingRock, PsyDome,
+  debris, windBurst, metalSparks, Missile, TidalWave, Tether, FloatingRock, PsyDome,
 } from './effects.js';
 import { AirBlade, Orb } from './projectiles.js';
 import { sfx } from './audio.js';
@@ -206,7 +208,7 @@ class Stream extends MoveAction {
       this.sound = c.sound(c.duration + 0.05);
       if (c.core) {
         const m = this.mouth(), p = this.front(c.reach);
-        this.core = this.game.spawn(new Beam(m.x, m.y - m.z, p.x, p.y - 8, c.duration, { width: 7, colors: c.core }));
+        this.core = this.game.spawn(new Beam(m.x, m.y - m.z, p.x, p.y - 8, c.duration, { width: 7, colors: c.core, rings: false }));
       }
       if (!this.game.headless) {
         const m = this.mouth(), end = this.front(c.reach);
@@ -215,7 +217,7 @@ class Stream extends MoveAction {
       }
       if(skyLegend(this.user)) {
         const u=this.user,p=this.front(c.reach);
-        this.jet=this.game.spawn(new LegendaryBeam(u,p.x,p.y-8,'#85d6f6',c.width*1.4,c.duration,true));
+        this.jet=this.game.spawn(new LegendaryBeam(u,p.x,p.y-8,'#85d6f6',c.width*1.4,c.duration,true,false));
         this.game.spawn(new PressureWave(p.x,p.y,40,'water'));
       }
     });
@@ -522,6 +524,16 @@ class Shot extends MoveAction {
       this.charging = true;
       this.user.sprite.play('Charge', { loop: true, force: true });
       this.game.spawn(new Glow(this.user.x, this.user.y, this.user.bodyZ, 32, c.glow ?? [255, 255, 255], c.charge, true));
+      if (c.sphere && !this.game.headless) {
+        const orb = new Effect('air', c.charge + 0.35);
+        orb.draw = ctx => {
+          if (this.cancelled || this.done) return;
+          const { x, y, z } = this.mouth();
+          drawChargedSphere(ctx, x, y - z, 2 + 11 * Math.min(1, orb.age / c.charge), orb.age);
+        };
+        this.game.spawn(orb);
+        this.chargeOrb = orb;
+      }
       this.at(c.charge, () => this.volley());
     } else this.volley();
   }
@@ -554,6 +566,7 @@ class Shot extends MoveAction {
   }
 
   fire(off, i) {
+    if (this.chargeOrb) this.chargeOrb.dead = true;
     this.retarget();
     const c = this.move.shot, m = this.mouth(), ang = this.aim + off;
     const style = c.styles ? c.styles[i % c.styles.length] : c.style;
@@ -620,11 +633,11 @@ class BeamAttack extends MoveAction {
     this.beamLine = { x0: m.x, y0: m.y - m.z, x1: this.beamEnd.x, y1: this.beamEnd.y };
     const originalPulse = ORIGINAL_PULSES.has(this.move.id);
     this.beamVisual = skyLegend(u)
-      ? g.spawn(new LegendaryBeam(u, end.x, end.y - 10, u.species.id.startsWith('rayquaza') ? '#75f5b1' : '#a5dcff', c.visualWidth * 1.5, c.duration, true))
-      : g.spawn(new Beam(m.x, m.y - m.z, end.x, end.y - 10, c.duration, { width: c.visualWidth, colors: c.colors, tapered: !originalPulse }));
+      ? g.spawn(new LegendaryBeam(u, end.x, end.y - 10, u.species.id.startsWith('rayquaza') ? '#75f5b1' : '#a5dcff', c.visualWidth * 1.5, c.duration, true, false))
+      : g.spawn(new Beam(m.x, m.y - m.z, end.x, end.y - 10, c.duration, { width: c.visualWidth, colors: c.colors, tapered: !originalPulse, rings: false }));
     this.beamWake = showBeamWake(g, this.move, this.beamLine, c.duration, c.visualWidth);
     sfx[c.sound]();
-    if ((c.rings || this.move.id === 'bubbleBeam' || this.move.id === 'twinBeam') && !g.headless) {
+    if (originalPulse && !g.headless) {
       this.pulseFx = g.spawn(new PulseTrain({ x: m.x, y: m.y - m.z }, this.beamTip, this.move));
     }
     g.shake(c.shake, 0.4);
@@ -1693,15 +1706,15 @@ class Ultimate extends MoveAction {
   }
 
   // Deals `frac` of the move's power to the target, wherever it is.
-  strike(frac, opts = {}) {
+  strike(frac, { customArt = false, ...opts } = {}) {
     const u = this.user, t = this.target;
     if (!t.alive || t.hidden) return;
     const d = u.distTo(t) || 1;
-    if (this.t-(this.lastImpact??-1)>.12) {
+    if (!customArt && this.t - (this.lastImpact ?? -1) > 0.12) {
       this.lastImpact=this.t;
       this.game.spawn(new UltimateImpact(t.x,t.y,t.bodyZ,u.boss?(frac>=.25?88:frac>=.1?60:28):54));
     }
-    applyHit(this.game, u, t, this.move, {
+    return applyHit(this.game, u, t, this.move, {
       power: this.move.power * frac, dirX: (t.x - u.x) / d, dirY: (t.y - u.y) / d, knockback: 160, stagger: 0.4,
       unblockable: true, stack: this.stack, ...opts,
     });
@@ -1812,31 +1825,6 @@ const ULTS = {
     a.end(1.4);
   },
 
-  frenzyPlant(a, g, u, t) {
-    for (let ring = 1; ring <= 8; ring++) {
-      a.later(ring * 0.08, () => {
-        for (let i = 0; i < 10; i++) {
-          const ang = (i / 10) * Math.PI * 2 + ring;
-          const x = u.x + Math.cos(ang) * ring * 42, y = u.y + Math.sin(ang) * ring * 30;
-          if (x < 10 || x > 350 || y < 90 || y > 600) continue;
-          g.spawn(new Spike(x, y, 'vine', 1));
-          if (i % 3 === 0) g.marks.leaves(x, y, 10);
-        }
-        g.shake(3, 0.15);
-      });
-    }
-    for (const [dt, frac] of [[0.45, 0.35], [0.75, 0.35], [1.05, 0.3]]) {
-      a.later(dt, () => {
-        for (let k = 0; k < 3; k++) g.spawn(new Spike(t.x + rand(-10, 10), t.y + rand(-6, 6), 'vine', 0.9));
-        leafBurst(g, t.x, t.y, 10, 14);
-        g.marks.fracture(t.x, t.y, 20, 6);
-        sfx.quake();
-        a.strike(frac, { knockback: 120 });
-      });
-    }
-    a.end(1.4);
-  },
-
   blizzard(a, g, u, t) {
     g.spawn(new ScreenDim(1.9, 0.25, '200,230,255'));
     g.spawn(new StormSwirl(180, 350, 260, 1.9));
@@ -1855,42 +1843,6 @@ const ULTS = {
     };
     for (let i = 0; i < 6; i++) a.later(0.3 + i * 0.25, () => a.strike(1 / 6, { knockback: 50, stagger: 0.3, freezeChance: i === 5 ? 0.5 : 0 }));
     a.end(1.9);
-  },
-
-  auraStorm(a, g, u, t) {
-    const rgb = [90, 150, 255];
-    g.spawn(new ScreenDim(1.4, 0.45, '6,12,40'));
-    g.spawn(new EnergyAura(u, 1.2, true, { glow: [120, 170, 255], rings: ['#bfe0ff', '#6a9cff'] }));
-    for (const [dt, frac] of [[0.25, 0.5], [0.75, 0.5]]) {
-      a.later(dt, () => {
-        a.anim('Shoot', 1);
-        g.spawn(new Pillar(u.x, u.y, 0.6, rgb, 480));
-        g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 480, life: 0.6, color: '#bfe0ff', width: 8 }));
-        g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 360, life: 0.5, color: '#6a9cff', width: 5 }));
-        windBurst(g, u.x, u.y, u.bodyZ, 60, ['#ffffff', '#b8d8ff', '#4a7aff']);
-        g.marks.energy(u.x, u.y, 50, rgb, 5);
-        a.boom(8);
-        a.later((u.distTo(t) / 480) * 0.6, () => {
-          g.spawn(new Glow(t.x, t.y, t.bodyZ, 40, rgb, 0.3));
-          a.strike(frac, { knockback: 300 });
-        });
-      });
-    }
-    a.end(1.4);
-  },
-
-  waterShurikenBarrage(a, g, u, t) {
-    for (let i = 0; i < 12; i++) {
-      a.later(i * 0.08, () => {
-        const p = i % 3 === 0 ? { x: u.x, y: u.y } : a.edge();
-        g.spawn(new Missile(p.x, p.y, t.x, t.y, 14, 0.3, 'shuriken', () => {
-          waterSplash(g, t.x, t.y);
-          a.strike(1 / 12, { knockback: 50, stagger: 0.25 });
-        }, [120, 190, 255]));
-        sfx.whoosh();
-      });
-    }
-    a.end(1.5);
   },
 
   dracoMeteor(a, g, u, t) {
@@ -1931,35 +1883,6 @@ const ULTS = {
     a.end(1.5);
   },
 
-  blazeKickOverdrive(a, g, u, t) {
-    u.phasing = true;
-    for (let i = 0; i < 5; i++) {
-      a.later(i * 0.15, () => {
-        const ang = (i / 5) * Math.PI * 2;
-        g.spawn(new Afterimage(u, 0.3, '#ff7a2a'));
-        u.x = clampX(t.x + Math.cos(ang) * 26);
-        u.y = clampY(t.y + Math.sin(ang) * 20);
-        u.face(t.x, t.y);
-        a.aim = u.aimAt(t);
-        a.anim('Attack', 2);
-        g.spawn(new SlashArc(u.x, u.y, u.bodyZ - 4, a.aim, { radius: u.radius + 12, spread: 2.6, colors: ['#ff7a2a', '#fff0a0'], width: 6, mirror: i % 2 === 1 }));
-        for (let k = 0; k < 12; k++) {
-          g.particles.spawn({ x: t.x, y: t.y, z: t.bodyZ, vx: rand(-80, 80), vy: rand(-60, 60), vz: rand(20, 90), life: 0.45, size: rand(3, 6), sizeEnd: 1, colors: FIRE });
-        }
-        g.marks.scorch(t.x + rand(-10, 10), t.y + rand(-6, 6), 9);
-        sfx.whoosh();
-        a.strike(0.14, { knockback: 40, stagger: 0.3 });
-      });
-    }
-    a.later(0.85, () => {
-      a.erupt(t.x, t.y, FIRE, [255, 160, 70], 360);
-      g.marks.fracture(t.x, t.y, 30, 6.5);
-      a.boom(10);
-      a.strike(0.3, { knockback: 300 });
-      u.phasing = false;
-    });
-    a.end(1.2);
-  },
 
   // Mewtwo: the arena turns psychic purple, boulders tear free and pelt the target, a tether seizes it
   // and yanks it into the sky, it's spiked back down, and a psychic dome bursts across the arena.
@@ -2036,52 +1959,15 @@ const ULTS = {
     a.end(3.9);
   },
 
-  meteorMash(a, g, u, t) {
-    u.invuln = true;
-    u.zOverride = u.z;
-    a.phase = 'rise';
-    a.onTick = dt => {
-      if (a.phase === 'rise') u.zOverride = Math.min(220, u.zOverride + dt * 600);
-      if (a.phase === 'dive') {
-        a.diveT += dt;
-        const k = Math.min(1, a.diveT / 0.22);
-        u.x = a.from.x + (t.x - a.from.x) * k;
-        u.y = a.from.y + (t.y - a.from.y) * k;
-        u.zOverride = 220 * (1 - k * k);
-        g.spawn(new Afterimage(u, 0.25, '#bfe0ff'));
-        if (k >= 1) {
-          a.phase = 'done';
-          u.zOverride = null;
-          u.invuln = false;
-          g.marks.fracture(u.x, u.y, 70, 7.5);
-          for (let i = 0; i < 6; i++) g.marks.fracture(u.x + rand(-120, 120), u.y + rand(-160, 160), 20, 7);
-          g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 460, life: 0.6, color: '#dfe7f2', width: 7 }));
-          g.spawn(new Ring(u.x, u.y, { r0: 6, r1: 260, life: 0.45, color: '#bfe0ff', width: 4 }));
-          metalSparks(g, u.x, u.y, 10);
-          debris(g, u.x, u.y, 50, 220);
-          dustCloud(g, u.x, u.y, 26, 8);
-          g.hitstop(0.1);
-          g.punch(u.x, u.y, 0.14, 0.5);
-          a.boom(14);
-          a.strike(1, { knockback: 340, stagger: 0.7 });
-        }
-      }
-    };
-    a.later(0.45, () => {
-      a.phase = 'dive';
-      a.diveT = 0;
-      a.from = { x: u.x, y: u.y };
-      sfx.dash();
-    });
-    a.end(1.2);
-  },
 
   stoneEdge(a, g, u, t) {
+    const field = structureField();
     for (let wave = 0; wave < 9; wave++) {
       a.later(wave * 0.07, () => {
         const y = (u.y > 360 ? 590 - wave * 62 : 100 + wave * 62);
         for (let x = 20; x <= 340; x += 40) {
-          g.spawn(new Spike(x + rand(-8, 8), y + rand(-10, 10), 'stone', 1));
+          if (wave % 2 === 0 && (x - 20) % 80 === 0) spawnStructure(g, u, field, x, y);
+          else g.spawn(new Spike(x + rand(-8, 8), y + rand(-10, 10), 'stone', 1));
           if (Math.random() < 0.3) g.marks.fracture(x, y, 12, 6);
         }
         g.shake(3, 0.12);
@@ -2169,30 +2055,8 @@ const ULTS = {
     a.end(1.6);
   },
 
-  moonblast(a, g, u, t) {
-    g.spawn(new ScreenDim(1.8, 0.5, '30,10,40'));
-    g.spawn(new Moon(180, 110, 1.8));
-    for (let i = 0; i < 20; i++) {
-      a.later(0.1 + i * 0.03, () => {
-        const p = a.spot();
-        g.particles.spawn({ x: p.x, y: p.y, z: rand(40, 200), vz: -rand(40, 120), life: 0.8, size: 2, colors: ['#ffffff', '#ffd0e8'] });
-      });
-    }
-    a.later(0.7, () => {
-      g.spawn(new Beam(180, 110, t.x, t.y - 8, 0.6, { width: 26, colors: ['#f080b0', '#ffc8e4', '#ffffff'] }));
-      sfx.beamFire();
-      a.strike(0.4, { knockback: 80 });
-    });
-    a.later(1.15, () => {
-      g.spawn(new Glow(t.x, t.y, 10, 90, [255, 160, 210], 0.5));
-      g.spawn(new Ring(t.x, t.y, { r0: 8, r1: 200, life: 0.5, color: '#ffd0e8', width: 6 }));
-      g.marks.energy(t.x, t.y, 40, [255, 150, 210], 6);
-      g.marks.fracture(t.x, t.y, 40, 7);
-      a.boom(10);
-      a.strike(0.6, { knockback: 280 });
-    });
-    a.end(1.6);
-  },
+
+  ...SPECIES_ULTIMATES,
 };
 
 // ── Signature ultimates ─────────────────────────────────────────────────────────────
@@ -2913,6 +2777,20 @@ Object.assign(NEW_MOVES, {
 const sig = (name, type, power, c, beats, len) => ({ name, type, power, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate, sig: { c, beats, len } });
 
 const SIGNATURES = {
+  gyaradosHydroPump: sig('Lake of Rage', 'water', 260, ['#e4fcff', '#5db5fc', '#21578c'], [], 1.62),
+  gengarShadowBall: sig('Shadow Stealth', 'ghost', 260, ['#dec2ff', '#9455da', '#3a1c4d'], [], 1.79),
+  sceptileLeafBlade: { ...sig('Leaf Blade', 'grass', 270, ['#e9ffc6', '#95e451', '#267741'], [], 1.65), critRatio: 2 },
+  dragonDartsUlt: sig('Dragon Darts', 'dragon', 280, ['#eaffd3', '#78dcca', '#5366aa'], [], 1.55),
+  snipeShotUlt: sig('Snipe Shot', 'water', 260, ['#e6feff', '#6edbff', '#3579bf'], [], 1.56),
+  pyroBallUlt: sig('Pyro Ball', 'fire', 270, ['#fff2b3', '#ff8f42', '#ba4024'], [], 1.8),
+  spiritShackleUlt: sig('Spirit Shackle', 'ghost', 270, ['#fff8d1', '#91ba71', '#534486'], [], 1.72),
+  drumBeatingUlt: sig('Drum Beating', 'grass', 270, ['#f2f7bd', '#a3bd52', '#4c622c'], [], 1.66),
+  gigatonHammerUlt: sig('Gigaton Hammer', 'steel', 270, ['#fff2e7', '#d7a9be', '#6d637b'], [], 1.67),
+  saltCureUlt: sig('Salt Cure', 'rock', 235, ['#fff9de', '#dbcbb4', '#8a7f76'], [], 1.55),
+  greninjaNightSlash: sig('Midnight Crossing', 'dark', 260, ['#ebd6ff', '#9369be', '#29203c'], [], 1.6),
+  florgesPetalRay: sig('Corolla Ray', 'fairy', 265, ['#fff9e3', '#f5abd9', '#ab659e'], [], 1.65),
+  celebiForestSpiral: sig('Forest Reawakening', 'grass', 265, ['#f6ffbf', '#87cf63', '#44774d'], [], 1.8),
+  lightOfRuinUlt: { ...sig('Light of Ruin', 'fairy', 270, ['#fff7ea', '#fa83a7', '#57224f'], [], 1.9), recoil: 0.5 },
   petalBlizzard: sig('Petal Blizzard', 'grass', 270, ['#ffe0f0', '#ff7ab0', '#3f9a3a'], [[0, 'dim'], [0.1, 'vortex', { frac: 0.4 }], [1, 'pillars', { n: 10, frac: 0.6 }]]),
   hydroCannon: sig('Hydro Cannon', 'water', 280, ['#ffffff', '#5aa6f0', '#1f4cc0'],
     [[0, 'dim'], [0, 'charge'], [0.5, 'beam', { width: 22, off: -9, frac: 0.35 }], [0.62, 'beam', { width: 22, off: 9, frac: 0.35 }], [1.2, 'nova', { frac: 0.3 }]]),
@@ -2920,7 +2798,7 @@ const SIGNATURES = {
   outrage: sig('Outrage', 'dragon', 280, ['#e0d0ff', '#8a5cff', '#3a1a90'], [[0, 'dim'], [0.1, 'rush', { passes: 4, frac: 0.65 }], [1.5, 'nova', { frac: 0.35 }]]),
   bulletBarrage: sig('Bullet Barrage', 'steel', 270, ['#ffffff', '#dfe7f2', '#c84040'], [[0, 'dim'], [0.1, 'flurry', { n: 8, frac: 0.6 }], [1.3, 'slash', { n: 1, big: true, frac: 0.4 }]]),
   calamityStrike: sig('Calamity Strike', 'dark', 280, ['#e0c8ff', '#6a3a8a', '#1a0f24'], [[0, 'dim', { alpha: 0.6 }], [0.1, 'storm', { n: 10, frac: 0.4 }], [1.2, 'slash', { n: 2, big: true, frac: 0.6 }]]),
-  illusionAmbush: sig('Illusion Ambush', 'dark', 270, ['#ffb0b0', '#c03a3a', '#2a1020'], [[0, 'dim', { alpha: 0.6 }], [0.1, 'flurry', { n: 7, frac: 0.55 }], [1.1, 'vortex', { frac: 0.45, dur: 0.6 }]]),
+  illusionAmbush: sig('Night Daze', 'dark', 270, ['#ffb0b0', '#c03a3a', '#2a1020'], [[0, 'dim', { alpha: 0.6 }], [0.1, 'flurry', { n: 7, frac: 0.55 }], [1.1, 'vortex', { frac: 0.45, dur: 0.6 }]]),
   fairyRibbons: sig('Fairy Ribbon Storm', 'fairy', 270, ['#ffffff', '#ffb0e0', '#5ab0f0'], [[0, 'dim'], [0.1, 'throw', { frac: 0.45 }], [1.4, 'dome', { frac: 0.55 }]]),
   sheerCold: sig('Sheer Cold', 'ice', 270, ['#ffffff', '#bdf3ff', '#2b8794'],
     [[0, 'dim', { alpha: 0.35 }], [0.1, 'wave', { frac: 0.35 }], [0.9, 'spikes', { style: 'ice', frac: 0.45 }], [2, 'nova', { frac: 0.2 }], [2, 'status', { name: 'freeze', dur: 1.2 }]], 2.6),
@@ -2977,8 +2855,7 @@ const SIGNATURES = {
   doomDesire: sig('Doom Desire', 'steel', 280, ['#ffffff', '#fff6a0', '#3a5ab0'], [[0, 'dim'], [0.1, 'rain', { style: 'star', n: 10, frac: 0.4 }], [0.2, 'mark', { delay: 1.3, style: 'star', frac: 0.6 }]], 2.4),
   psychoBoost: sig('Psycho Boost', 'psychic', 290, ['#ffffff', '#ff8a6a', '#5a2a8a'],
     [[0, 'dim', { alpha: 0.6 }], [0, 'charge', { dur: 0.6 }], [0.6, 'barrage', { n: 1, big: true, from: 'user', frac: 0.8 }], [1.5, 'nova', { frac: 0.2 }]], 2.2),
-  darkVoid: sig('Dark Void', 'dark', 280, ['#d0b8ff', '#4a2a6a', '#05030a'],
-    [[0, 'dim', { alpha: 0.8 }], [0.1, 'vortex', { frac: 0.5, dur: 1 }], [1.15, 'status', { name: 'sleep', dur: 1.8 }], [1.2, 'storm', { n: 6, frac: 0.5 }]], 2.2),
+  darkVoid: sig('Dark Void', 'dark', 280, ['#d0b8ff', '#4a2a6a', '#05030a'], [], 2.2),
   seedFlare: sig('Seed Flare', 'grass', 290, ['#ffffff', '#c8ff8a', '#3f9a3a'], [[0, 'dim'], [0, 'charge', { dur: 0.6 }], [0.6, 'nova', { frac: 0.6 }], [1, 'pillars', { n: 12, frac: 0.4 }]], 2.2),
   judgment: sig('Judgment', 'normal', 290, ['#ffffff', '#fff2b0', '#c8a040'], [[0, 'dim', { alpha: 0.55 }], [0.2, 'rain', { n: 20, frac: 0.7 }], [1.7, 'sky', { kind: 'light', frac: 0.3 }]], 2.4),
   vCreate: sig('V-create', 'fire', 290, ['#fff0a0', '#ff5a1a', '#8a1a08'], [[0, 'dim'], [0.1, 'rush', { passes: 1, frac: 0.4 }], [0.6, 'slash', { n: 2, frac: 0.3 }], [1.1, 'pillars', { n: 4, frac: 0.3 }]]),
@@ -3005,7 +2882,7 @@ const SIGNATURES = {
     [[0, 'dim', { alpha: 0.6 }], [0.1, 'flurry', { n: 7, frac: 0.5 }], [1, 'spikes', { style: 'ice', frac: 0.3 }], [2.1, 'nova', { frac: 0.2 }], [2.1, 'status', { name: 'freeze', dur: 1 }]], 2.6),
   infernoSkyDive: sig('Inferno Sky Dive', 'fire', 285, ['#fff0a0', '#ff7a2a', '#8a1a08'],
     [[0, 'dim'], [0.1, 'rain', { n: 10, frac: 0.3 }], [0.5, 'dive', { frac: 0.5, height: 360 }], [1.4, 'pillars', { n: 4, frac: 0.2 }]], 2.3),
-  psychicCataclysm: sig('Psychic Cataclysm', 'psychic', 285, ['#ffffff', '#ffb0e0', '#a04aa0'],
+  psychicCataclysm: sig('Telekinesis', 'psychic', 285, ['#ffffff', '#ffb0e0', '#a04aa0'],
     [[0, 'dim', { alpha: 0.6 }], [0.1, 'throw', { frac: 0.35 }], [1.4, 'barrage', { n: 8, from: 'ring', frac: 0.35 }], [2.3, 'dome', { frac: 0.3 }]], 3),
   sereneTidalTempest: sig('Serene Tidal Tempest', 'water', 280, ['#ffffff', '#9fe8ff', '#f080b0'],
     [[0, 'dim'], [0.1, 'vortex', { frac: 0.25, dur: 0.7 }], [0.9, 'wave', { frac: 0.45 }], [1, 'heal', { pct: 0.12 }], [1.8, 'nova', { frac: 0.3 }], [1.9, 'status', { name: 'slow', dur: 3 }]], 2.4),
@@ -3088,8 +2965,8 @@ export const MOVES = {
     shot: { style: 'grass', sound: 'pulse' },
   },
   auraSphere: {
-    name: 'Aura Sphere', type: 'fighting', power: 85, cooldown: 2, range: 270, minRange: 40, ai: 'ranged', tag: 'Aura orb', Action: Shot,
-    shot: { style: 'aura', sound: 'pulse' },
+    name: 'Aura Sphere', type: 'fighting', power: 80, cooldown: 2, range: 300, minRange: 30, ai: 'ranged', tag: 'Aura orb', Action: Shot,
+    shot: { style: 'aura', sound: 'pulse', sphere: true, charge: 0.9, chargeColors: ['#e1f8ff', '#83d9ff', '#427dde'], glow: [85, 158, 255] },
   },
   shadowBall: {
     name: 'Shadow Ball', type: 'ghost', power: 85, cooldown: 2, range: 260, minRange: 40, ai: 'ranged', tag: 'Shadow orb', Action: Shot,
@@ -3209,7 +3086,7 @@ export const MOVES = {
   hydroPump: { name: 'Hydro Pump', type: 'water', power: 260, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
   frenzyPlant: { name: 'Frenzy Plant', type: 'grass', power: 270, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
   blizzard: { name: 'Blizzard', type: 'ice', power: 260, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
-  auraStorm: { name: 'Aura Storm', type: 'fighting', power: 270, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
+  auraStorm: { name: 'Aura Sphere', type: 'fighting', cutsceneColors: ['#84deff', '#214a9c'], power: 270, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
   waterShurikenBarrage: { name: 'Water Shuriken Barrage', type: 'water', power: 260, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
   dracoMeteor: { name: 'Draco Meteor', type: 'dragon', power: 280, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
   shadowBallBarrage: { name: 'Shadow Ball Barrage', type: 'ghost', power: 260, cooldown: 30, ultimate: true, tag: ULT, Action: Ultimate },
@@ -3512,12 +3389,13 @@ for (const m of Object.values(MOVES)) if (!m.ultimate && m.cooldown) m.cooldown 
 
 // Physical ultimates use Attack and Defense even when their choreography covers the whole arena.
 const PHYSICAL_ULTIMATES = new Set([
-  'petalBlizzard', 'infernoOverdrive', 'outrage', 'bulletBarrage', 'calamityStrike', 'illusionAmbush', 'kingsJudgment',
+  'petalBlizzard', 'infernoOverdrive', 'outrage', 'bulletBarrage', 'calamityStrike', 'greninjaNightSlash', 'kingsJudgment',
   'sacredFire', 'precipiceBlades', 'shadowForce', 'boltStrike', 'sunsteelStrike', 'behemothBlade', 'behemothBash',
   'collisionCourse', 'voltFangStorm', 'regiRockfall', 'ironFortress', 'vCreate', 'diamondStorm', 'hyperspaceFury',
   'soulStealing', 'plasmaFists', 'razorwindExecution', 'psychicBladeDance', 'tidalEarthquake', 'frozenShadowBarrage',
   'infernoSkyDive', 'dragonAxeCataclysm', 'gigaImpact', 'dynamicPunch', 'gunkShot', 'fissure', 'skyAttack',
   'dragonAscent', 'blazeKickOverdrive', 'meteorMash', 'stoneEdge', 'gmaxSlam',
+  'sceptileLeafBlade', 'dragonDartsUlt', 'pyroBallUlt', 'spiritShackleUlt', 'drumBeatingUlt', 'gigatonHammerUlt', 'saltCureUlt',
 ]);
 for (const m of Object.values(MOVES)) {
   if (m.ultimate) m.cat = PHYSICAL_ULTIMATES.has(m.id) ? 'physical' : 'special';

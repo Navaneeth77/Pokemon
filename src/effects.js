@@ -1,3 +1,4 @@
+import { drawBeamRings } from './beam-rings.js';
 import { loadImage } from './assets.js';
 import { quality } from './quality.js';
 import { outlinedText, rainbowRing, megaSymbol } from './draw.js';
@@ -270,9 +271,9 @@ export class FangBite extends Effect {
 }
 
 export class Beam extends Effect {
-  constructor(x0, y0, x1, y1, life, { width = 22, colors = ['#ff7b2e', '#ffd36b', '#fffbe8'], tapered = false } = {}) {
+  constructor(x0, y0, x1, y1, life, { width = 22, colors = ['#ff7b2e', '#ffd36b', '#fffbe8'], tapered = false, rings = true } = {}) {
     super('air', life);
-    Object.assign(this, { x0, y0, x1, y1, width, colors, tapered });
+    Object.assign(this, { x0, y0, x1, y1, width, colors, tapered, rings });
   }
 
   set(x0, y0, x1, y1) {
@@ -285,6 +286,7 @@ export class Beam extends Effect {
     const w = this.width * env * (1 + 0.12 * Math.sin(this.age * 60));
     const [outer, mid, core] = this.colors;
     const len = Math.hypot(this.x1 - this.x0, this.y1 - this.y0);
+    if (this.rings) drawBeamRings(ctx, this.x0, this.y0, this.x1, this.y1, w, this.age, mid, env, this.width);
     ctx.save();
     ctx.translate(this.x0, this.y0);
     ctx.rotate(Math.atan2(this.y1 - this.y0, this.x1 - this.x0));
@@ -311,7 +313,7 @@ export class Beam extends Effect {
     ctx.fillStyle = core;
     ctx.fillRect(0, -w * 0.14, len, w * 0.28);
     ctx.beginPath();
-    ctx.arc(0, 0, w * 0.7, 0, Math.PI * 2);
+    ctx.arc(0, 0, w * 0.48, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -899,7 +901,7 @@ export class Spike extends Effect {
   }
 
   draw(ctx) {
-    const t = this.age / this.life, grow = Math.min(1, this.age / 0.1), sink = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
+    const grow = Math.min(1, this.age / 0.1), sink = Math.min(1, (this.life - this.age) / (this.sinkFor ?? this.life * 0.3));
     const [fill, edge, ridge] = SPIKE_COLORS[this.style] ?? SPIKE_COLORS.stone;
     ctx.lineWidth = 1;
     for (const b of this.blades) {
@@ -1102,6 +1104,25 @@ export class Missile extends Effect {
 // Projectile shapes for move sequences (move-sequence.js): an ice crystal, a boulder, a seed, a sludge bomb, a
 // fireball.
 const MISSILE_SHAPES = {
+  // Dragon Darts launches a pair of Dreepy from Dragapult's head.
+  dreepyDart(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(-17, 4); ctx.quadraticCurveTo(-6, -2, -5, 1);
+    ctx.lineTo(-1, -3); ctx.lineTo(-1, -9); ctx.lineTo(6, -5); ctx.lineTo(12, -6);
+    ctx.lineTo(15, -2); ctx.lineTo(12, 2); ctx.lineTo(7, 3); ctx.lineTo(1, 8);
+    ctx.lineTo(0, 4); ctx.quadraticCurveTo(-10, 7, -17, 4);
+    ctx.fillStyle = '#77bfa8'; ctx.strokeStyle = '#354d60'; ctx.lineWidth = 1.25;
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f5df93'; ctx.fillRect(7, -3, 3, 2);
+  },
+  spiritArrow(ctx) {
+    ctx.strokeStyle = '#d2aaf8'; ctx.lineWidth = 2.8;
+    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(13, 0);
+    ctx.moveTo(-13, -4); ctx.lineTo(-7, 0); ctx.lineTo(-13, 4);
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(7, -4); ctx.lineTo(7, 4); ctx.closePath();
+    ctx.fillStyle = '#fff2dc'; ctx.fill();
+  },
   crystal(ctx, R, G, B) {
     ctx.fillStyle = `rgb(${R},${G},${B})`;
     ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(0, 4); ctx.lineTo(-8, 0); ctx.lineTo(0, -4); ctx.closePath(); ctx.fill();

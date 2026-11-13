@@ -371,35 +371,53 @@ export const LEGEND_ULTS_2 = {
     let gather = 0.6;
     a.ticks.push(dt => { if ((gather -= dt) > 0) a.converge(110, dt, C, 50); });
     sfx.megaCharge();
-    // Orbs fly up out of sight.
-    for (let i = 0; i < 5; i++) {
-      a.later(0.55 + i * 0.05, () => {
-        const orb = g.spawn(new Glow(u.x + rand(-20, 20), u.y, u.bodyZ, 14, GOLD, 0.4));
-        a.ticks.push(dt => { orb.z += dt * 800; });
+    const heavens = new Effect('air', 2.45);
+    const center = { x: 180, y: 110 };
+    heavens.draw = ctx => {
+      const age = heavens.age;
+      const radius = 24 + Math.min(1, age / 0.83) * 59;
+      ctx.save();
+      ctx.translate(center.x, center.y);
+      ctx.globalAlpha = Math.min(0.88, age * 2.7, (heavens.life - age) * 3.6);
+      for (let i = 0; i < 3; i++) {
+        ctx.strokeStyle = i % 2 ? '#fff1bc' : '#d6af65';
+        ctx.lineWidth = i ? 1.6 : 3;
+        ctx.beginPath(); ctx.ellipse(0, 0, radius - i * 10, (radius - i * 10) * 0.39, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      for (let i = 0; i < 12; i++) {
+        const angle = i * Math.PI / 6 + age * 0.55;
+        const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius * 0.39;
+        ctx.fillStyle = i % 3 ? '#e0bb70' : '#fff8de';
+        ctx.fillRect(x - 2, y - 2, 4, 4);
+      }
+      ctx.restore();
+    };
+    if (!g.headless) g.spawn(heavens);
+    a.later(0.56, () => { a.anim('Shoot', 1); sfx.pulse(); });
+    for (const [index, offset] of [-29, 25, 0, -18, 18].entries()) {
+      a.later(0.88 + index * 0.16, () => {
+        const x = t.x + offset, y = t.y + (index % 2 ? 10 : -7);
+        g.spawn(new Ring(x, y, { r0: 32, r1: 16, life: 0.29, color: C[1], width: 2 }));
+        a.later(0.26, () => {
+          const fromX = center.x + offset * 2, fromY = center.y - 18;
+          g.spawn(new Beam(fromX, fromY, x, y, 0.22, { width: 14, colors: [C[2], C[1], C[0]], tapered: true }));
+          g.spawn(new Glow(x, y, 6, 24, GOLD, 0.25));
+          g.marks.energy(x, y, 16, GOLD, 6);
+          sfx.shard();
+          if (!t.untouchable && Math.hypot(t.x - x, t.y - y) <= t.radius + 42) a.strike(0.14, { customArt: true, knockback: 52, stagger: 0.3 });
+        });
       });
     }
-    a.later(0.55, () => { a.anim('Shoot', 1); sfx.pulse(); });
-    // Judgment rains down; every fourth light lands on the foe.
-    for (let i = 0; i < 20; i++) {
-      a.later(0.85 + i * 0.045, () => {
-        const aimed = i % 4 === 0, p = aimed ? { x: t.x, y: t.y } : a.spot();
-        g.spawn(new Falling(p.x, p.y, 0.4, 'star', () => {
-          g.spawn(new Ring(p.x, p.y, { r0: 3, r1: 26, life: 0.3, color: '#fff2b0', width: 3 }));
-          g.spawn(new Glow(p.x, p.y, 6, 24, GOLD, 0.25));
-          g.marks.energy(p.x, p.y, rand(8, 12), GOLD, 6);
-          if (i % 3 === 0) sfx.explosion();
-          if (aimed) a.strike(0.7 / 5, { knockback: 90, stagger: 0.3 });
-        }, GOLD));
+    a.later(1.92, () => {
+      const x = t.x, y = t.y;
+      g.spawn(new Ring(x, y, { r0: 60, r1: 39, life: 0.27, color: C[1], width: 3 }));
+      a.later(0.25, () => {
+        g.spawn(new Beam(center.x, center.y - 30, x, y, 0.39, { width: 49, colors: [C[2], C[1], C[0]], tapered: true }));
+        g.spawn(new Pillar(x, y, 0.53, GOLD, 160));
+        g.flash(0.08);
+        crater(a, g, x, y, { r: 46, rgb: GOLD, ring: C[0], mark: (x, y, r) => g.marks.energy(x, y, r, GOLD, 6) });
+        if (!t.untouchable && Math.hypot(t.x - x, t.y - y) <= t.radius + 48) a.strike(0.3, { customArt: true, knockback: 280, stagger: 0.6 });
       });
-    }
-    a.later(1.9, () => {
-      g.spawn(new BeamLine(t.x, t.y - 480, t.x, t.y, 0.55, '#fff2b0', 26));
-      g.spawn(new BeamLine(t.x, t.y - 480, t.x, t.y, 0.4, '#ffffff', 9));
-      g.spawn(new Pillar(t.x, t.y, 0.7, GOLD, 480));
-      rays(g, t.x, t.y, 12, 110, '#fff2b0', 0.4, 4);
-      g.flash(0.12);
-      crater(a, g, t.x, t.y, { r: 46, rgb: GOLD, ring: '#ffffff', mark: (x, y, r) => g.marks.energy(x, y, r, GOLD, 6) });
-      a.strike(0.3, { knockback: 280, stagger: 0.6 });
     });
     a.end(2.6);
   },
@@ -485,8 +503,7 @@ export const LEGEND_ULTS_2 = {
     a.end(2.3);
   },
 
-  // Dark Void (Darkrai): darkness spreads across the floor, a black void swallows the foe and puts it to sleep, then
-  // nightmares strike it as dark lightning.
+  // Dark Void (Darkrai): the void closes around the foe, then fades into sleep.
   darkVoid(a, g, u, t) {
     const VOID = [90, 50, 140], C = ['#d0b8ff', '#4a2a6a', '#05030a'];
     g.spawn(new ScreenDim(2.3, 0.85, '4,2,8'));
@@ -516,20 +533,15 @@ export const LEGEND_ULTS_2 = {
       a.boom(8);
       a.strike(0.5, { knockback: 60, stagger: 0.5 });
     });
-    a.later(1.15, () => {
+    a.later(1.42, () => {
+      g.spawn(new Ring(t.x, t.y, { r0: 39, r1: 5, life: 0.36, color: '#563777', width: 3 }));
+      g.spawn(new Glow(t.x, t.y, t.bodyZ, 43, VOID, 0.48, true));
+      g.marks.energy(t.x, t.y, 17, VOID, 4);
+      sfx.pulse();
+      a.strike(0.5, { knockback: 45, stagger: 0.3 });
       status(g, u, t, 'sleep', 1.8);
       for (let i = 0; i < 3; i++) g.particles.spawn({ x: t.x + 6 + i * 4, y: t.y, z: t.headZ + 6 + i * 8, vx: 10, vz: 18, life: 0.9, size: 3 + i, colors: ['#d0b8ff'], fade: true });
     });
-    // Nightmares.
-    for (let i = 0; i < 6; i++) {
-      a.later(1.3 + i * 0.1, () => {
-        const onFoe = i % 2 === 0, p = onFoe ? t : a.spot();
-        g.spawn(new Lightning(p.x + rand(-6, 6), 70, p.x, p.y - 4, 0.25, { width: 2.5, branches: 4, glow: 'rgba(120,70,180,0.6)', core: '#d0b8ff' }));
-        g.marks.energy(p.x, p.y, 12, VOID, 6);
-        if (i % 2 === 0) sfx.thunderbolt();
-        if (onFoe) a.strike(0.5 / 3, { knockback: 50, stagger: 0.3 });
-      });
-    }
     a.end(2.2);
   },
 };

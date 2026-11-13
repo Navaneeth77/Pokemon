@@ -154,6 +154,16 @@ export async function loadSpecies(ids) {
   return Object.fromEntries(ids.map((id, i) => [id, sets[i]]));
 }
 
+// The dev roster playback cycles through hundreds of decoded sheets in one tab.
+export function releaseSpriteSet(id) {
+  spriteCache.delete(id);
+  spriteCache.delete(`${id}~shiny`);
+  const prefix = `/sprites/${id}/`;
+  for (const path of imageCache.keys()) {
+    if (path.startsWith(prefix)) imageCache.delete(path);
+  }
+}
+
 export function animDuration(anim, upToFrame = anim.frames) {
   let ticks = 0;
   for (let i = 0; i < upToFrame; i++) ticks += anim.durations[i];

@@ -1,12 +1,123 @@
+import { spawnStructure, structureField } from './arena-structures.js';
+import { WORLD_W, WORLD_H } from './arena.js';
+import { drawChargedSphere } from './projectiles.js';
 // Legendary signature ultimates, batch 3: the Regis (Regirock, Regice, Registeel, Regieleki, Regidrago), Latias,
 // Latios, Raikou, Suicune and Mew. Same rules as ult-legends.js; mechanics kept from the old beat scripts:
 // Absolute Zero freezes, Iron Fortress raises Defense, Thunder Cage paralyzes, Mist Ball slows.
+import { TrackingShot } from './ult-species.js';
 import {
-  rand, Glow, Ring, Spike, Missile, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura, Lightning,
+  Effect, rand, Glow, Ring, Spike, Missile, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura, Lightning,
   StormCloud, TidalWave, FloatingRock, FangBite, Ripple, Tether, dustCloud, debris, iceShatter, metalSparks, electricBurst, waterSplash,
 } from './effects.js';
 import { sfx } from './audio.js';
 import { clampX, clampY, inward, spray, crater } from './ult-choreo.js';
+
+class MistWake extends Effect {
+  constructor(shot) {
+    super('air', 1.05);
+    this.shot = shot;
+    this.samples = [];
+  }
+
+  update(dt) {
+    if (!super.update(dt)) return false;
+    this.sampleTime = (this.sampleTime ?? 0) + dt;
+    const { live, age } = this.shot;
+    if (age < this.shot.life && age !== this.lastAge && this.sampleTime >= 0.034) {
+      this.sampleTime -= 0.034;
+      this.lastAge = age;
+      this.samples.push({ x: live.x, y: live.y, angle: live.angle, at: this.age });
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    for (const [i, { x, y, angle, at }] of this.samples.entries()) {
+      const p = (this.age - at) / 0.42;
+      if (p >= 1) continue;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.globalAlpha *= (1 - p) * 0.48;
+      const drift = Math.sin(i * 2.8) * (6 + p * 14);
+      ctx.fillStyle = i % 2 ? '#c89ac4' : '#e8bed6';
+      ctx.beginPath();
+      ctx.ellipse(-12 - p * 16, drift, 14 + p * 9, 3.5 + p * 4, Math.sin(i * 2.4) * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+
+class MistImpact extends Effect {
+  constructor(x, y, heading) {
+    super('air', 0.57);
+    Object.assign(this, { x, y, heading });
+  }
+
+  draw(ctx) {
+    const p = this.age / this.life, travel = 1 - (1 - p) ** 2;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.heading);
+    ctx.globalAlpha *= 1 - p;
+    for (let i = 0; i < 11; i++) {
+      const angle = (i - 5) * 0.23;
+      const distance = 10 + travel * (45 + i % 4 * 13);
+      const x = Math.cos(angle) * distance, y = Math.sin(angle) * distance;
+      const radius = 16 + p * 13;
+      const mist = ctx.createRadialGradient(x, y, radius * 0.13, x, y, radius);
+      mist.addColorStop(0, i % 2 ? 'rgba(191,141,190,0.67)' : 'rgba(247,195,225,0.78)');
+      mist.addColorStop(1, 'rgba(239,179,211,0)');
+      ctx.fillStyle = mist;
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    }
+    ctx.restore();
+  }
+}
+
+class PsychicMist extends Effect {
+  constructor(x, y) {
+    super('top', 3.4);
+    Object.assign(this, { x, y, finishInDemo: true });
+  }
+
+  draw(ctx) {
+    const t = this.age, opacity = Math.min(1, t / 0.45, (this.life - t) / 0.76);
+    const spread = Math.min(1, t / 0.55);
+    ctx.save();
+    ctx.globalAlpha *= opacity;
+    ctx.fillStyle = 'rgba(218,185,226,0.27)';
+    ctx.fillRect(-1600, -1600, WORLD_W + 3200, WORLD_H + 3200);
+    for (let i = 0; i < 9; i++) {
+      const drift = Math.sin(i * 1.76 + t * (i % 2 ? 0.86 : -0.63));
+      const targetX = (i % 3) * 160 + 23 + drift * 65;
+      const targetY = Math.floor(i / 3) * 230 + 83 + Math.sin(i * 2.73 + t * 0.62) * 37;
+      const x = this.x + (targetX - this.x) * spread, y = this.y + (targetY - this.y) * spread;
+      const radius = 135 + i % 3 * 31;
+      const cloud = ctx.createRadialGradient(x, y, 5, x, y, radius);
+      cloud.addColorStop(0, i % 3 ? 'rgba(251,225,244,0.29)' : 'rgba(151,112,188,0.26)');
+      cloud.addColorStop(1, 'rgba(227,186,229,0)');
+      ctx.fillStyle = cloud;
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    }
+    for (let i = 0; i < 18; i++) {
+      const x = ((i * 91 + t * (12 + i % 3 * 6)) % (WORLD_W + 64)) - 32;
+      const y = 51 + i * 32 + Math.sin(t * 1.8 + i * 1.3) * 12;
+      const brightness = (0.5 + 0.5 * Math.sin(t * 3 + i * 2.2)) * opacity;
+      ctx.globalAlpha = brightness * 0.67;
+      ctx.fillStyle = i % 3 === 0 ? '#fff1ff' : '#bd8fe0';
+      ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3);
+      if (i % 4 === 0) {
+        ctx.fillRect(Math.round(x) - 3, Math.round(y), 7, 1);
+        ctx.fillRect(Math.round(x), Math.round(y) - 3, 1, 7);
+      }
+    }
+    ctx.restore();
+  }
+}
 
 const alive = t => t.alive && !t.hidden;
 const status = (g, u, t, name, dur) => { if (alive(t)) g.applyStatus(t, name, { source: u, dur }); };
@@ -101,6 +212,8 @@ export const LEGEND_ULTS_3 = {
   // Absolute Zero (Regice): its braille glows icy blue, frost races across the floor, rows of ice spikes march to
   // the foe, it is sealed in ice, and the ice shatters. Freezes.
   absoluteZero(a, g, u, t) {
+    const field = structureField();
+    const ice = { style: 'ice', type: 'ice', damage: 0.026 };
     const ICE = [170, 230, 255];
     g.spawn(new ScreenDim(2.2, 0.45, '8,24,40'));
     braille(a, g, u, [180, 240, 255], BRAILLE.regice);
@@ -120,7 +233,11 @@ export const LEGEND_ULTS_3 = {
       for (let i = 1; i <= steps; i++) {
         a.later(i * 0.05, () => {
           const k = i / steps, x = u.x + Math.cos(ang) * d * k, y = u.y + Math.sin(ang) * d * k;
-          for (const off of [-16, 16]) g.spawn(new Spike(x - Math.sin(ang) * off, y + Math.cos(ang) * off, 'ice', 0.9));
+          for (const off of [-16, 16]) {
+            const sx = x - Math.sin(ang) * off, sy = y + Math.cos(ang) * off;
+            if (i % 2 === 0) spawnStructure(g, u, field, sx, sy, ice);
+            else g.spawn(new Spike(sx, sy, 'ice', 0.9));
+          }
           g.marks.frost(x, y, 12);
           if (i === steps) {
             iceShatter(g, t.x, t.y, t.bodyZ);
@@ -274,40 +391,50 @@ export const LEGEND_ULTS_3 = {
   // Mist Ball (Latias): a soft pink mist rolls over the arena, it forms balls of mist and lobs them at the foe, and
   // the mist closes into a dome around it. Slows.
   mistBall(a, g, u, t) {
-    const PINK = [255, 180, 225], C = ['#ffffff', '#ffb0e0', '#a04aa0'];
-    g.spawn(new ScreenDim(2.4, 0.45, '30,14,30'));
-    let mist = 2;
-    a.ticks.push(dt => {
-      if ((mist -= dt) <= 0 || Math.random() > 0.5) return;
-      g.particles.spawn({ x: rand(0, 360), y: rand(80, 620), z: rand(4, 30), vx: rand(20, 50), drag: 0.5, life: 1.2, size: rand(10, 18), sizeEnd: 14, colors: ['#ffe0f4'], alpha: 0.18, round: true });
+    const rgb = [247, 169, 218], colors = ['#fff0fa', '#e4a2cb', '#986998'];
+    g.spawn(new ScreenDim(1.93, 0.29, '30,14,30'));
+    u.face(t.x, t.y);
+    a.anim('Charge', 0.9);
+    const focus = new Effect('air', 0.72);
+    const origin = () => {
+      const m = a.mouth();
+      return { x: m.x, y: m.y - m.z };
+    };
+    focus.draw = ctx => {
+      const { x, y } = origin(), p = focus.age / focus.life;
+      drawChargedSphere(ctx, x, y, 2 + 19 * p, focus.age, 'mist');
+    };
+    if (!g.headless) g.spawn(focus);
+    for (const at of [0.15, 0.28, 0.42, 0.55]) a.later(at, () => {
+      const m = a.mouth();
+      inward(g, m.x, m.y, m.z, 9, 49, colors);
     });
-    g.spawn(new Glow(u.x, u.y, u.bodyZ, 34, PINK, 0.5, true));
-    let gather = 0.45;
-    a.ticks.push(dt => { if ((gather -= dt) > 0) a.converge(90, dt, C, 44); });
-    sfx.zap(0.4);
-    for (let i = 0; i < 8; i++) {
-      a.later(0.45 + i * 0.09, () => {
-        const m = a.mouth(), off = (i % 3 - 1) * 14;
-        a.anim('Shoot', 2);
-        g.spawn(new Missile(m.x, m.y, t.x + off, t.y, Math.max(20, m.z), 0.32, 'orb', () => {
-          for (let k = 0; k < 5; k++) g.particles.spawn({ x: t.x + off + rand(-8, 8), y: t.y + rand(-5, 5), z: t.bodyZ, vx: rand(-30, 30), vz: rand(10, 40), drag: 1, life: 0.7, size: rand(6, 10), sizeEnd: 12, colors: ['#ffe0f4'], alpha: 0.4, round: true });
-          g.spawn(new Ripple(t, '#ffd0ec'));
-          a.strike(0.5 / 8, { knockback: 40, stagger: 0.25 });
-        }, PINK, 1.6));
+    sfx.zap(0.68);
+    a.later(0.72, () => {
+      u.face(t.x, t.y);
+      a.anim('Shoot', 1.25);
+      const shot = new TrackingShot(u, t, {
+        origin: origin(), style: 'orb', duration: 0.52, color: rgb,
+        flight: { speed: 1120, range: 760, radius: 20, sphere: 'mist' },
+      }, ({ x, y, angle }) => {
+        const z = t.bodyZ, ground = y + z;
+        if (!g.headless) {
+          g.spawn(new MistImpact(x, y, angle));
+          // A fresh hit refreshes the mist instead of stacking full-screen layers.
+          for (const effect of g.effects) if (effect instanceof PsychicMist) effect.dead = true;
+          g.spawn(new PsychicMist(x, y));
+        }
+        g.spawn(new Glow(x, ground, z, 42, rgb, 0.24));
+        g.marks.energy(x, ground, 29, rgb, 4);
+        spray(g, x, ground, z, 20, colors, { speed: 154, up: 61, life: [0.19, 0.38] });
         sfx.pulse();
+        g.shake(6, 0.28);
+        if (a.strike(1, { customArt: true, knockback: 240, stagger: 0.5, hitstop: 0.058 })) status(g, u, t, 'slow', 3);
       });
-    }
-    a.later(1.35, () => {
-      g.spawn(new PsyDome(t.x, t.y, 80, 0.7, PINK));
-      let left = 0.3;
-      a.ticks.push(dt => { if ((left -= dt) > 0) inward(g, t.x, t.y, t.bodyZ, 4, 80, ['#ffffff', '#ffd0ec']); });
+      if (!g.headless) g.spawn(new MistWake(shot));
+      g.spawn(shot);
     });
-    a.later(1.7, () => {
-      crater(a, g, t.x, t.y, { r: 40, rgb: PINK, ring: '#ffffff', mark: (x, y, r) => g.marks.energy(x, y, r, PINK, 6) });
-      a.strike(0.5, { knockback: 240, stagger: 0.5 });
-    });
-    a.later(1.8, () => status(g, u, t, 'slow', 3));
-    a.end(2.3);
+    a.end(1.95);
   },
 
   // Luster Purge (Latios): light gathers into a brilliant orb before it, it fires a prism beam of pure light, and the
@@ -401,6 +528,12 @@ export const LEGEND_ULTS_3 = {
   // Aurora Tide (Suicune): aurora ribbons ripple across the sky, it runs on the water as a purifying wave sweeps
   // the arena, then it fires an aurora beam.
   auroraTide(a, g, u, t) {
+    const sourceY = u.y;
+    a.anim('Charge', 0.8);
+    for (const [at, color] of [[0, '#81cddb'], [0.13, '#bcece1'], [0.26, '#e4e8fc']]) a.later(at, () => {
+      g.spawn(new Ring(u.x, u.y, { r0: 9, r1: 56, life: 0.43, color, width: 2 }));
+      g.marks.wet(u.x, u.y, 25);
+    });
     const AQUA = [150, 230, 255], AURORA = ['#9affd0', '#9fe8ff', '#b48cff', '#ff9ad0'];
     g.spawn(new ScreenDim(2.4, 0.55, '4,20,34'));
     for (let r = 0; r < 4; r++) {
@@ -413,14 +546,14 @@ export const LEGEND_ULTS_3 = {
     sfx.hydro(0.4);
     // The purifying wave.
     a.later(0.35, () => {
-      const down = t.y > u.y, y0 = down ? 60 : 640, y1 = down ? 640 : 60, dur = 0.85;
+      const down = t.y > u.y, y0 = sourceY, y1 = down ? 640 : 60, dur = 0.78;
       const w = g.spawn(new TidalWave(y0, y1, dur, AQUA, true));
       a.ticks.push(() => {
         if (w.age >= w.life) return;
         for (let i = 0; i < 3; i++) g.particles.spawn({ x: rand(0, 360), y: w.y, z: rand(0, 14), vx: rand(-20, 20), vy: (down ? 1 : -1) * rand(40, 90), vz: rand(40, 120), gz: 300, life: 0.45, size: rand(2, 4), colors: ['#ffffff', '#9fe8ff', '#4a5ad0'] });
       });
       sfx.hydro(dur);
-      a.later((Math.abs(t.y - y0) / 580) * dur, () => {
+      a.later(Math.min(1, Math.abs((t.y - y0) / (y1 - y0 || 1))) * dur, () => {
         waterSplash(g, t.x, t.y);
         g.shake(7, 0.35);
         sfx.splash();

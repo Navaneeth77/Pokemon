@@ -1,12 +1,98 @@
+import { spawnStructure, structureField } from './arena-structures.js';
 // Signature ultimates of fan favourites, batch 5: Venusaur, Blastoise, Infernape, Scizor, Zoroark, Sylveon, Lapras,
 // Aegislash, Umbreon and Espeon. Same rules as ult-legends.js; Sheer Cold keeps its freeze.
 import {
-  rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage,
-  TidalWave, Tether, RainbowStreak, Ripple, dustCloud, leafBurst, iceShatter, metalSparks, waterSplash,
+  Effect, rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage,
+  RainbowStreak, Ripple, dustCloud, leafBurst, iceShatter, metalSparks, waterSplash,
 } from './effects.js';
 import { sfx } from './audio.js';
 import { clampX, clampY, inward, spray, crater, glide } from './ult-choreo.js';
 import { Crescent } from './ult-legends2.js';
+
+class FairyRibbon extends Effect {
+  constructor(user, target, side, life) {
+    super('air', life);
+    Object.assign(this, { user, target, side });
+  }
+
+  draw(ctx) {
+    const { user, target, side } = this;
+    const p = Math.min(1, this.age / 0.25);
+    const loosen = Math.max(0, (this.age - this.life + 0.24) / 0.24);
+    const fromX = user.x + side * 4, fromY = user.y - user.headZ + 5;
+    const toX = target.x, toY = target.y - target.bodyZ;
+    const color = side > 0 ? '#e99bbc' : '#91c9e1';
+    const edge = side > 0 ? '#986083' : '#577d9c';
+    const ribbon = k => {
+      const sweep = Math.sin(Math.PI * k);
+      return [
+        fromX + (toX - fromX) * k + side * (sweep * 45 + Math.sin(k * 7.5) * k * (15 + loosen * 25)),
+        fromY + (toY - fromY) * k - sweep * 48 + Math.cos(k * 7.5) * k * 12,
+      ];
+    };
+    ctx.save();
+    ctx.globalAlpha *= 1 - loosen;
+    const [x, y] = ribbon(0);
+    ctx.beginPath();
+    ctx.moveTo(x, y - 2);
+    for (let i = 1; i <= 20; i++) {
+      const k = p * i / 20, [px, py] = ribbon(k);
+      ctx.lineTo(px, py - Math.sin(k * 3.2) * 7 - 2);
+    }
+    for (let i = 20; i >= 0; i--) {
+      const k = p * i / 20, [px, py] = ribbon(k);
+      ctx.lineTo(px, py + Math.sin(k * 3.2) * 6 + 2);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = edge;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - 1);
+    for (let i = 1; i <= 20; i++) {
+      const [px, py] = ribbon(p * i / 20);
+      ctx.lineTo(px, py - 1);
+    }
+    ctx.strokeStyle = '#fff1f4';
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class IceCrown extends Effect {
+  constructor(x, y, life) {
+    super('air', life);
+    Object.assign(this, { x, y, breakAt: life });
+  }
+
+  draw(ctx) {
+    const p = Math.min(1, this.age / 0.31);
+    const scatter = Math.max(0, (this.age - this.breakAt) / 0.36);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.globalAlpha *= (1 - Math.min(1, scatter)) * 0.92;
+    for (const [offset, height, width, lean] of [[-36, 32, 10, -13], [31, 40, 11, 13], [-21, 60, 12, -9], [21, 69, 14, 10], [0, 89, 18, -4]]) {
+      const lift = scatter * (1 - scatter) * 100;
+      ctx.save();
+      ctx.translate(offset * (1 + scatter * 1.8), -lift - Math.abs(offset) * 0.13);
+      ctx.rotate(Math.sign(offset || 1) * scatter * 0.62);
+      const h = Math.max(1, height * p), half = width * (0.45 + p * 0.55);
+      ctx.beginPath();
+      ctx.moveTo(-half, 0); ctx.lineTo(lean - half * 0.42, -h * 0.8);
+      ctx.lineTo(lean, -h); ctx.lineTo(lean + half * 0.55, -h * 0.78);
+      ctx.lineTo(half, 0); ctx.lineTo(2, 5); ctx.closePath();
+      ctx.fillStyle = '#9bd1e9'; ctx.fill();
+      ctx.strokeStyle = '#4e829f'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(2, 5); ctx.lineTo(lean, -h); ctx.lineTo(lean + half * 0.55, -h * 0.78); ctx.lineTo(half, 0); ctx.closePath();
+      ctx.fillStyle = '#d9f8ff'; ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
 
 const alive = t => t.alive && !t.hidden;
 const status = (g, u, t, name, dur) => { if (alive(t)) g.applyStatus(t, name, { source: u, dur }); };
@@ -28,25 +114,6 @@ function blitz(a, g, u, t, { n, gap, start, frac, ghost, r = 26, onHit }) {
   }
   a.later(start + n * gap, () => { u.phasing = false; });
 }
-// Lift on a ribbon or tether and slam twice.
-function throwTwice(a, g, u, t, frac, color, colors, rgb, onSlam) {
-  if (!alive(t)) return;
-  a.anim('Shoot', 1);
-  g.spawn(new Tether(u, t, 1.2, rgb));
-  a.lift(t, { x: t.x, y: t.y, z: 60 }, 0.35, 0, null, color, colors, true);
-  sfx.zap(0.6);
-  [[0.45, 0], [0.85, 1]].forEach(([dt, k]) => a.later(dt, () => {
-    if (!alive(t)) return;
-    sfx.whoosh();
-    a.lift(t, { x: clampX(t.x + (k ? -60 : 60)), y: clampY(t.y + rand(-30, 30)), z: 0 }, 0.28, 70, () => {
-      onSlam();
-      g.shake(8, 0.3);
-      sfx.quake();
-      a.strike(frac / 2, { knockback: 0, stagger: 0.6 });
-    }, color, colors, !k);
-  }));
-}
-
 export const FAV_ULTS = {
   // Petal Blizzard (Venusaur): the flower on its back blooms, a whirlwind of petals circles the arena and closes in on
   // the foe, then flowers burst into bloom all around it.
@@ -214,12 +281,21 @@ export const FAV_ULTS = {
         Object.assign(u, { x, y });
       });
     }
-    blitz(a, g, u, t, {
-      n: 7, gap: 0.11, start: 0.4, frac: 0.55, ghost: '#ff8a9a',
-      onHit: (i, ang) => {
-        g.spawn(new SlashArc(t.x, t.y, t.bodyZ, ang + Math.PI, { radius: 24, spread: 2.2, colors: ['#a02a40', '#ff8a9a'], width: 5, mirror: i % 2 === 1 }));
-        sfx.slash();
-      },
+    a.later(0.38, () => {
+      a.anim('Shoot', 0.96);
+      const origin = { x: u.x, y: u.y }, angle = u.aimAt(t), distance = u.distTo(t);
+      const count = Math.max(5, Math.ceil((distance + 15) / 30));
+      let hit = false;
+      for (let i = 1; i <= count; i++) a.later(i * 0.59 / count, () => {
+        const p = i / count, r = 12 + p * 22;
+        const x = origin.x + Math.cos(angle) * (distance + 15) * p, y = origin.y + Math.sin(angle) * (distance + 15) * p;
+        g.spawn(new Ring(x, y, { r0: 6, r1: r, life: 0.25, color: p > 0.5 ? C[0] : C[1], width: 2.5 }));
+        g.spawn(new Glow(x, y, 12, r, DARK, 0.2));
+        if (!hit && alive(t) && !t.untouchable && Math.hypot(t.x - x, t.y - y) <= r + t.radius) {
+          hit = true;
+          a.strike(0.55, { customArt: true, knockback: 115, stagger: 0.35 });
+        }
+      });
     });
     a.later(1.25, () => {
       let left = 0.5;
@@ -235,77 +311,131 @@ export const FAV_ULTS = {
     a.end(2.2);
   },
 
-  // Fairy Ribbon Storm (Sylveon): its ribbons stream out and wrap the foe, swing it up and down twice, then a dome
-  // of fairy light bursts around it.
+  // Two waves of ribbon light wind around the target before the final pull.
   fairyRibbons(a, g, u, t) {
-    const PINK = [255, 150, 200], C = ['#ffffff', '#ffb0d8', '#5ab0f0'];
-    g.spawn(new ScreenDim(2.6, 0.45, '30,10,26'));
-    for (let i = 0; i < 4; i++) {
-      a.later(i * 0.05, () => {
-        const ang = u.aimAt(t) + (i - 1.5) * 0.4;
-        g.spawn(new RainbowStreak(u.x, u.y - u.bodyZ, u.x + Math.cos(ang) * 60, u.y - u.bodyZ + Math.sin(ang) * 40, 0.5));
+    const colors = ['#fff5f6', '#ecaccd', '#9ad6ec'];
+    g.spawn(new ScreenDim(1.94, 0.23, '34,17,34'));
+    u.face(t.x, t.y);
+    a.anim('Charge', 0.95);
+    for (const [side, at] of [[-1, 0.15], [1, 0.27]]) a.later(at, () => {
+      g.spawn(new Glow(u.x + side * 9, u.y, u.headZ, 20, [234, 148, 204], 0.28));
+    });
+    const aim = u.aimAt(t);
+    const reach = Math.max(0, u.distTo(t) - 73);
+    const approach = { x: clampX(u.x + Math.cos(aim) * reach), y: clampY(u.y + Math.sin(aim) * reach) };
+    a.later(0.34, () => {
+      a.anim('Hop', 1.2);
+      glide(a, g, u, approach, 0.32, '#d3a0c3', {
+        onStep(p) { u.zOverride = p < 1 ? 12 * Math.sin(p * Math.PI) : null; },
       });
-    }
-    sfx.zap(0.3);
-    a.later(0.2, () => throwTwice(a, g, u, t, 0.45, '#ffb0d8', C, PINK, () => {
-      g.spawn(new PsyDome(t.x, t.y, 40, 0.35, PINK));
-      spray(g, t.x, t.y, 4, 12, C, { speed: 100, up: 120 });
-      g.marks.energy(t.x, t.y, 18, PINK, 6);
-    }));
-    a.later(1.35, () => {
-      for (let i = 0; i < 6; i++) g.spawn(new RainbowStreak(t.x - 50 + i * 20, t.y, t.x - 50 + i * 20, t.y - 110, 0.5));
-      g.spawn(new PsyDome(t.x, t.y, 100, 0.7, PINK));
-      sfx.zap(0.3);
     });
-    a.later(1.7, () => {
-      spray(g, t.x, t.y, t.bodyZ, 30, C, { speed: 160, up: 200 });
-      crater(a, g, t.x, t.y, { r: 44, rgb: PINK, ring: '#ffffff', mark: (x, y, r) => g.marks.energy(x, y, r, PINK, 6) });
-      a.strike(0.55, { knockback: 260, stagger: 0.6 });
+    let bound = false;
+    for (const [at, side, share] of [[0.55, -1, 0.22], [0.77, 1, 0.23]]) a.later(at, () => {
+      if (!alive(t) || u.distTo(t) > 130) return;
+      a.anim('Swing', 1.2);
+      if (!g.headless) g.spawn(new FairyRibbon(u, t, side, side < 0 ? 0.81 : 0.63));
+      sfx.whoosh();
+      a.later(0.25, () => {
+        if (!alive(t) || t.untouchable || u.distTo(t) > 130) return;
+        bound = true;
+        const x = t.x, y = t.y, z = t.bodyZ;
+        g.spawn(new Glow(x, y, z, 30, [240, 157, 221], 0.25));
+        spray(g, x, y, z, 14, colors, { speed: 92, up: 57 });
+        a.strike(share, { customArt: true, knockback: 10, stagger: 0.24 });
+      });
     });
-    a.end(2.4);
+    a.later(1.08, () => {
+      if (!bound || !alive(t) || t.untouchable || u.distTo(t) > 132) return;
+      a.anim('Attack', 1.25);
+      const x = t.x, y = t.y;
+      a.lift(t, { x, y, z: 0 }, 0.32, 31, () => {
+        g.spawn(new Glow(x, y, 16, 51, [240, 148, 211], 0.36));
+        for (const [color, r1, life] of [['#e49ac9', 56, 0.32], ['#aedfed', 77, 0.46]]) {
+          g.spawn(new Ring(x, y, { r0: 7, r1, life, color, width: 4 }));
+        }
+        spray(g, x, y, 13, 28, colors, { speed: 153, up: 89 });
+        sfx.shard();
+        g.shake(6, 0.25);
+        a.strike(0.55, { customArt: true, knockback: 230, stagger: 0.52, hitstop: 0.058 });
+      }, '#efb5de', colors);
+    });
+    a.end(1.91);
   },
 
-  // Sheer Cold (Lapras): it sings as snow begins to fall, a freezing wave sweeps the arena, ice spikes burst up under
-  // the foe, and the cold shatters around it. Freezes.
+  // Lapras sends cold along the ground from its own position. Ice forms at contact and then breaks apart.
   sheerCold(a, g, u, t) {
-    const ICE = [190, 240, 255], C = ['#ffffff', '#bdf3ff', '#2b8794'];
-    g.spawn(new ScreenDim(2.6, 0.35, '10,30,40'));
-    let snow = 2.4;
-    a.ticks.push(dt => {
-      if ((snow -= dt) <= 0) return;
-      for (let i = 0; i < 3; i++) g.particles.spawn({ x: rand(0, 380), y: rand(60, 640), z: rand(120, 200), vx: rand(-20, -5), vz: -rand(50, 90), life: 1.4, size: rand(1.5, 3), colors: ['#ffffff', '#e6f6ff'], fade: false });
+    const aqua = [132, 205, 247], colors = ['#f0fcff', '#a0d9ed', '#518fbf'];
+    const field = structureField();
+    g.spawn(new ScreenDim(2.25, 0.34, '11,25,44'));
+    u.face(t.x, t.y);
+    a.anim('Charge', 0.81);
+    sfx.waterRise();
+    const center = { x: t.x, y: t.y }, source = { x: u.x, y: u.y };
+    const aim = u.aimAt(t), dx = center.x - source.x, dy = center.y - source.y;
+    const release = 0.34, travel = 0.48;
+    a.later(release, () => {
+      a.anim('Shoot', 1.09);
+      sfx.wind(travel);
+      if (g.headless) return;
+      const gust = new Effect('air', 0.62);
+      gust.draw = ctx => {
+        const p = Math.min(1, gust.age / travel);
+        ctx.save();
+        for (let i = 0; i < 34; i++) {
+          const trail = i % 7 * 0.055, k = p - trail;
+          if (k < 0) continue;
+          const spread = Math.sin(i * 7.41 + gust.age * 6) * (11 + k * 39);
+          const x = source.x + dx * k - Math.sin(aim) * spread;
+          const y = source.y + dy * k + Math.cos(aim) * spread - 12 - (i % 6) * 2;
+          ctx.globalAlpha = Math.min(1, k * 5, (gust.life - gust.age) * 9) * (0.56 + i % 3 * 0.15);
+          ctx.fillStyle = colors[i % 3];
+          ctx.fillRect(Math.round(x), Math.round(y), i % 4 === 0 ? 4 : 2, i % 4 === 0 ? 4 : 2);
+          if (i % 4 === 0) {
+            ctx.fillRect(Math.round(x - 2), Math.round(y + 1), 8, 2);
+            ctx.fillRect(Math.round(x + 1), Math.round(y - 2), 2, 8);
+          }
+        }
+        ctx.restore();
+      };
+      g.spawn(gust);
     });
-    for (let i = 0; i < 5; i++) a.later(i * 0.12, () => g.spawn(new Ring(u.x, u.y, { z: u.headZ, r0: 10, r1: 50 + i * 10, life: 0.5, color: '#bdf3ff', width: 2, layer: 'air' })));
-    sfx.ice();
-    a.later(0.3, () => {
-      const down = t.y > u.y, y0 = down ? 60 : 640, y1 = down ? 640 : 60, dur = 0.8;
-      const w = g.spawn(new TidalWave(y0, y1, dur, ICE, true));
-      a.ticks.push(() => {
-        if (w.age >= w.life) return;
-        if (Math.random() < 0.6) g.marks.frost(rand(20, 340), w.y, rand(10, 16));
-      });
-      sfx.hydro(dur);
-      a.later((Math.abs(t.y - y0) / 580) * dur, () => {
-        iceShatter(g, t.x, t.y, t.bodyZ);
-        a.strike(0.35, { dirX: 0, dirY: down ? 1 : -1, knockback: 200, stagger: 0.5 });
-      });
+    let firstHit = false;
+    for (let i = 1; i <= 12; i++) a.later(release + travel * i / 12, () => {
+      const k = i / 12, x = source.x + dx * k, y = source.y + dy * k;
+      if (i % 3 === 0) spray(g, x, y, 7, 5, colors, { speed: 49, up: 36, life: [0.16, 0.28] });
+      if (firstHit || !alive(t) || t.untouchable || Math.hypot(t.x - x, t.y - y) > t.radius + 25) return;
+      firstHit = true;
+      iceShatter(g, x, y, 8);
+      a.strike(0.35, { customArt: true, knockback: 27, stagger: 0.31 });
     });
-    for (const [dt, f] of [[1.2, 0.15], [1.45, 0.15], [1.7, 0.15]]) {
-      a.later(dt, () => {
-        for (let k = 0; k < 5; k++) g.spawn(new Spike(t.x + rand(-16, 16), t.y + rand(-8, 8), 'ice', 0.9));
-        g.marks.frost(t.x, t.y, 26);
-        iceShatter(g, t.x, t.y, 8);
-        sfx.shard();
-        a.strike(f, { knockback: 60, stagger: 0.4 });
-      });
-    }
-    a.later(2.0, () => {
-      for (let i = 0; i < 3; i++) iceShatter(g, t.x + rand(-12, 12), t.y + rand(-6, 6), t.bodyZ);
-      crater(a, g, t.x, t.y, { r: 44, rgb: ICE, ring: '#ffffff', mark: (x, y, r) => g.marks.frost(x, y, r) });
-      a.strike(0.2, { knockback: 220, stagger: 0.5 });
+    let crown;
+    a.later(0.86, () => {
+      g.marks.frost(center.x, center.y, 43);
+      crown = g.spawn(new IceCrown(center.x, center.y + 7, 0.96));
+      waterSplash(g, center.x, center.y);
+      sfx.ice();
     });
-    a.later(2.05, () => status(g, u, t, 'freeze', 1.2));
-    a.end(2.6);
+    for (const [i, at] of [0.92, 1.06, 1.21].entries()) a.later(at, () => {
+      const x = clampX(center.x + (i - 1) * 23), y = clampY(center.y + (i % 2 ? 8 : -5));
+      spawnStructure(g, u, field, x, y, { style: 'ice', type: 'ice', damage: 0.026 });
+      g.spawn(new Glow(x, y, 25, 31, aqua, 0.27));
+      sfx.shard();
+      if (!t.untouchable && Math.hypot(t.x - x, t.y - y) <= t.radius + 32) a.strike(0.15, { customArt: true, knockback: 17, stagger: 0.26 });
+    });
+    a.later(1.47, () => {
+      if (crown) crown.breakAt = crown.age;
+      iceShatter(g, center.x, center.y, 33);
+      waterSplash(g, center.x, center.y);
+      g.spawn(new Glow(center.x, center.y, 34, 58, aqua, 0.38));
+      for (const [color, r1, life] of [[colors[0], 56, 0.28], [colors[1], 86, 0.47]]) {
+        g.spawn(new Ring(center.x, center.y, { r0: 9, r1, life, color, width: 4 }));
+      }
+      g.shake(9, 0.29);
+      sfx.ice();
+      if (t.untouchable || Math.hypot(t.x - center.x, t.y - center.y) > t.radius + 58) return;
+      if (a.strike(0.2, { customArt: true, knockback: 220, stagger: 0.5, hitstop: 0.065 })) status(g, u, t, 'freeze', 1.2);
+    });
+    a.end(2.03);
   },
 
   // King's Judgment (Aegislash): its shield flares, it switches to Blade Forme in a flash, three royal cuts cross the
@@ -362,31 +492,34 @@ export const FAV_ULTS = {
   // Lunar Eclipse (Umbreon): its rings glow, a moon rises and darkens into an eclipse, shards of moonlight rain on
   // the foe, and a dome of darkness closes over it.
   lunarEclipse(a, g, u, t) {
-    const GOLD = [255, 220, 100], DARK = [60, 40, 90];
-    g.spawn(new ScreenDim(2.2, 0.75, '6,4,12'));
-    for (const [dx, dz] of [[-10, 6], [10, 6], [0, -4], [-6, 14], [6, 14]]) g.spawn(new Glow(u.x + dx, u.y, u.bodyZ + dz, 6, GOLD, 1.8));
-    g.spawn(new Crescent(180, 116, 26, 2, '#ffe680', [255, 220, 100]));
-    sfx.zap(0.5);
-    for (let i = 0; i < 12; i++) {
-      a.later(0.35 + i * 0.07, () => {
-        const aimed = i % 3 === 0, p = aimed ? { x: t.x, y: t.y } : { x: clampX(t.x + rand(-110, 110)), y: clampY(t.y + rand(-80, 80)) };
-        g.spawn(new Falling(p.x, p.y, 0.4, 'crystal', () => {
-          g.spawn(new Ring(p.x, p.y, { r0: 3, r1: 20, life: 0.3, color: '#ffe680', width: 2 }));
-          g.marks.energy(p.x, p.y, 10, DARK, 6);
-          if (aimed) a.strike(0.5 / 4, { knockback: 60, stagger: 0.3 });
-        }, GOLD));
+    const gold = [255, 219, 118], dark = [56, 39, 79];
+    g.spawn(new ScreenDim(1.94, 0.59, '6,4,12'));
+    g.spawn(new Crescent(u.x <= 180 ? 71 : 289, 88, 23, 1.6, '#ffe680', gold));
+    a.anim('Charge', 0.85);
+    for (let i = 0; i < 4; i++) a.later(i * 0.105, () => {
+      g.spawn(new Ring(u.x, u.y, { z: u.bodyZ, layer: 'air', r0: 15 + i * 4, r1: 8, life: 0.35, color: '#e7be68', width: 2 }));
+      g.spawn(new Glow(u.x, u.y, u.headZ, 12, gold, 0.25));
+    });
+    sfx.zap(0.46);
+    a.later(0.48, () => {
+      a.anim('Shoot', 1.15);
+      const aim = u.aimAt(t), start = { x: u.x, y: u.y }, distance = Math.min(655, u.distTo(t) + 52);
+      let center;
+      for (let i = 0; i <= 15; i++) a.later(i * 0.036, () => {
+        const p = i / 15, x = start.x + Math.cos(aim) * distance * p, y = start.y + Math.sin(aim) * distance * p;
+        g.spawn(new Ring(x, y, { r0: 7, r1: 24 + i, life: 0.3, color: i % 2 ? '#c89c51' : '#65507d', width: 2 }));
+        if (center || !alive(t) || t.untouchable || Math.hypot(t.x - x, t.y - y) > 22 + t.radius) return;
+        center = { x, y };
+        g.spawn(new PsyDome(x, y, 49, 0.45, dark));
+        a.strike(0.5, { customArt: true, knockback: 45, stagger: 0.35 });
+        a.later(0.39, () => {
+          crater(a, g, x, y, { r: 43, rgb: gold, ring: '#ffe680', reach: 116, mark: (x, y, r) => g.marks.energy(x, y, r, dark, 6) });
+          if (Math.hypot(t.x - x, t.y - y) < 58 + t.radius) a.strike(0.5, { customArt: true, knockback: 260, stagger: 0.6 });
+        });
       });
-    }
-    a.later(1.35, () => {
-      g.spawn(new PsyDome(t.x, t.y, 90, 0.7, DARK));
-      let left = 0.3;
-      a.ticks.push(dt => { if ((left -= dt) > 0) inward(g, t.x, t.y, t.bodyZ, 4, 80, ['#1a1028', '#3a2a5a', '#ffe680']); });
+      sfx.pulse();
     });
-    a.later(1.7, () => {
-      crater(a, g, t.x, t.y, { r: 40, rgb: GOLD, ring: '#ffe680', mark: (x, y, r) => g.marks.energy(x, y, r, DARK, 6) });
-      a.strike(0.5, { knockback: 260, stagger: 0.6 });
-    });
-    a.end(2.2);
+    a.end(1.79);
   },
 
   // Psychic Prism (Espeon): the gem on its forehead flares, light splits into a ring of coloured orbs around the foe,

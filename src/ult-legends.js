@@ -4,6 +4,7 @@
 // Same rules as ult-choreo.js: wind-up, build-up, climax, aftermath; damage through `a.strike(frac)` with the
 // shares adding up to 1; and each keeps the mechanics its old beat script had (Sacred Fire and Blue Flare burn,
 // Bolt Strike paralyzes, Roar of Time slows, Geomancy raises Attack and Speed, Oblivion Wing heals).
+import { spawnStructure, structureField } from './arena-structures.js';
 import {
   Effect, rand, FIRE, FIRE_BLUE, Glow, Ring, Pillar, Spike, Missile, Beam, BeamLine, PsyDome, ScreenDim, Afterimage, EnergyAura,
   GroundMarker, Lightning, TidalWave, RainbowStreak, Ripple, dustCloud, debris, windBurst, electricBurst, waterSplash,
@@ -205,6 +206,7 @@ export const LEGEND_ULTS = {
   // Precipice Blades (Groudon): its markings glow, it stamps, three lines of magma blades race across the arena
   // through the foe, then a ring of blades erupts around it.
   precipiceBlades(a, g, u, t) {
+    const field = structureField(), rock = { style: 'magma', type: 'ground', damage: 0.045 };
     const MAGMA = [255, 110, 40], C = ['#ffd060', '#d05020', '#5a1a08'];
     g.spawn(new ScreenDim(2.4, 0.55, '40,10,2'));
     g.spawn(new EnergyAura(u, 0.6, false, { glow: MAGMA, rings: ['#ffd060', '#d05020'] }));
@@ -230,7 +232,8 @@ export const LEGEND_ULTS = {
         for (let i = 1; i <= steps; i++) {
           a.later(i * 0.045, () => {
             const k = i / steps, x = clampX(u.x + Math.cos(ang) * d * k), y = clampY(u.y + Math.sin(ang) * d * k);
-            g.spawn(new Spike(x, y, 'magma', 0.8));
+            if (i % 3 === 0) spawnStructure(g, u, field, x, y, rock);
+            else g.spawn(new Spike(x, y, 'magma', 0.8));
             g.marks.scorch(x, y, 8, 6);
             if (i % 2 === 0) dustCloud(g, x, y, 2, 4);
             if (i % 3 === 0) g.shake(2, 0.06);
@@ -245,9 +248,14 @@ export const LEGEND_ULTS = {
     });
     // The ring of blades.
     a.later(1.45, () => {
+      const center = { x: t.x, y: t.y };
       for (let k = 0; k < 10; k++) {
         const ang = (k / 10) * Math.PI * 2;
-        a.later(k * 0.02, () => g.spawn(new Spike(t.x + Math.cos(ang) * 40, t.y + Math.sin(ang) * 28, 'magma', 1)));
+        a.later(k * 0.02, () => {
+          const x = center.x + Math.cos(ang) * 40, y = center.y + Math.sin(ang) * 28;
+          if (k % 3 === 0) spawnStructure(g, u, field, x, y, rock);
+          else g.spawn(new Spike(x, y, 'magma', 1));
+        });
       }
       for (let k = 0; k < 4; k++) g.spawn(new Spike(t.x + rand(-10, 10), t.y + rand(-6, 6), 'magma', 1.1));
       a.erupt(t.x, t.y, FIRE, MAGMA, 300);
@@ -564,7 +572,7 @@ export const LEGEND_ULTS = {
   },
 
   // Oblivion Wing (Yveltal): it spreads its wings in a crimson X, fires a beam of destruction, drains the foe's life
-  // back into itself (heals 15%), and red lightning finishes it.
+  // back into itself (heals 15%).
   oblivionWing(a, g, u, t) {
     const RED = [210, 40, 70], C = ['#ffb0b0', '#c02040', '#200810'];
     g.spawn(new ScreenDim(2.3, 0.65, '30,4,10'));
@@ -584,7 +592,9 @@ export const LEGEND_ULTS = {
     a.later(0.5, () => {
       const ang = u.aimAt(t), m = a.mouth();
       a.anim('Shoot', 1);
-      g.spawn(new Beam(m.x, m.y - m.z, u.x + Math.cos(ang) * 720, u.y + Math.sin(ang) * 720 - 10, 0.6, { width: 30, colors: [C[2], C[1], '#ffffff'] }));
+      const reach = Math.hypot(t.x - m.x, t.y - t.bodyZ - m.y + m.z) || 1;
+      const dx = (t.x - m.x) / reach, dy = (t.y - t.bodyZ - m.y + m.z) / reach;
+      g.spawn(new Beam(m.x, m.y - m.z, m.x + dx * 690, m.y - m.z + dy * 690, 0.72, { width: 30, colors: [C[2], C[1], '#ffffff'] }));
       for (let d = 40; d < 700; d += 26) {
         const x = u.x + Math.cos(ang) * d, y = u.y + Math.sin(ang) * d;
         if (x < 0 || x > 360 || y < 60 || y > 640) break;
@@ -593,7 +603,14 @@ export const LEGEND_ULTS = {
       g.shake(9, 0.5);
       g.flash(0.08);
       sfx.beamFire();
-      a.strike(0.8, { knockback: 280, stagger: 0.5, dirX: Math.cos(ang), dirY: Math.sin(ang) });
+      a.later(0.12, () => {
+        if (!alive(t) || t.untouchable) return;
+        g.spawn(new Glow(t.x, t.y, t.bodyZ, 44, RED, 0.3));
+        spray(g, t.x, t.y, t.bodyZ, 20, C, { speed: 139, up: 86 });
+        g.spawn(new Ring(t.x, t.y, { z: t.bodyZ, r0: 5, r1: 46, life: 0.28, color: C[0], layer: 'air', width: 3 }));
+        g.hitstop(0.06);
+        a.strike(0.8, { customArt: true, knockback: 175, stagger: 0.5, dirX: Math.cos(ang), dirY: Math.sin(ang) });
+      });
     });
     // Its life flows back into Yveltal.
     a.later(0.75, () => {
@@ -610,17 +627,19 @@ export const LEGEND_ULTS = {
       g.heal(u, u.maxHp * 0.15);
       g.spawn(new Glow(u.x, u.y, u.bodyZ, 40, RED, 0.4));
     });
-    // Crimson lightning.
-    for (let i = 0; i < 4; i++) {
-      a.later(1.35 + i * 0.1, () => {
-        const onFoe = i % 2 === 0, p = onFoe ? t : a.spot();
-        g.spawn(new Lightning(p.x + rand(-5, 5), 60, p.x, p.y - 4, 0.3, { width: 3, branches: 4, glow: 'rgba(210,40,70,0.6)', core: '#ffb0b0' }));
-        g.marks.energy(p.x, p.y, 14, RED, 6);
-        g.shake(5, 0.2);
-        sfx.thunderbolt();
-        if (onFoe) a.strike(0.1, { knockback: 80, stagger: 0.3 });
+    a.later(1.24, () => {
+      if (!alive(t) || t.untouchable) return;
+      const x = t.x, y = t.y;
+      g.spawn(new Ring(x, y, { r0: 54, r1: 9, life: 0.25, color: '#ac3856', width: 3 }));
+      g.marks.energy(x, y, 27, RED, 5);
+      a.later(0.19, () => {
+        g.spawn(new Glow(x, y, 18, 33, RED, 0.25));
+        spray(g, x, y, 18, 13, C, { speed: 100, up: 46 });
+        if (t.untouchable || Math.hypot(t.x - x, t.y - y) > t.radius + 36) return;
+        sfx.pulse();
+        a.strike(0.2, { customArt: true, knockback: 80, stagger: 0.3 });
       });
-    }
+    });
     a.end(2.2);
   },
 };

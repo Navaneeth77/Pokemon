@@ -36,6 +36,7 @@
 //             (dodging at the right time avoids it); knockback and stagger as given
 // The move's mechanics (secondary effects, stat changes…) all resolve inside `hit` (combat.js),
 // so what the player sees and what happens can never drift apart.
+import { spawnStructure, structureField } from './arena-structures.js';
 import { applyHit } from './combat.js';
 import { rand, Glow, Ring, FloatText, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
@@ -263,9 +264,13 @@ export function scheduleSteps(action, steps, spot) {
       }
       if (step.spikes) {
         const s = step.spikes;
+        const field = s.structure ? (action.structureField ??= structureField()) : null;
         for (let i = 0; i < (s.n ?? 5); i++) {
-          const a = (i / (s.n ?? 5)) * Math.PI * 2, r = i ? rand(6, s.spread ?? 22) : 0;
-          g.spawn(new Spike(spot.x + Math.cos(a) * r, spot.y + Math.sin(a) * r * 0.6, s.style ?? 'rock', s.life ?? 0.7));
+          const a = (i / (s.n ?? 5)) * Math.PI * 2;
+          const r = i ? (field ? (s.spread ?? 22) * (i % 2 ? 0.92 : 0.7) : rand(6, s.spread ?? 22)) : 0;
+          const x = spot.x + Math.cos(a) * r, y = spot.y + Math.sin(a) * r * 0.6;
+          if (field) spawnStructure(g, user, field, x, y, { style: s.style, type: action.move.type });
+          else g.spawn(new Spike(x, y, s.style ?? 'rock', s.life ?? 0.7));
         }
         g.marks.fracture(spot.x, spot.y, (s.spread ?? 22) + 8, 6);
       }

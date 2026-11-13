@@ -91,6 +91,11 @@ export const sfx = {
     tone({ type: 'square', f0: heavy ? 180 : 320, f1: heavy ? 60 : 120, dur: 0.09, gain: 0.14 });
     noise({ dur: 0.08, filter: 'lowpass', f0: 2500, f1: 600, gain: 0.3 });
   },
+  drumBeat(beat) {
+    const pitch = [123, 103, 82][beat];
+    tone({ type: 'sine', f0: pitch, f1: pitch * 0.48, dur: 0.15 + beat * 0.045, gain: 0.36 });
+    noise({ dur: 0.09, filter: 'bandpass', f0: 780, f1: 390, q: 1.3, gain: 0.17 });
+  },
   beamCharge(dur) {
     tone({ type: 'sawtooth', f0: 90, f1: 520, dur, gain: 0.08, attack: 0.1 });
     return noise({ dur, filter: 'bandpass', f0: 400, f1: 2600, q: 4, gain: 0.18, attack: dur * 0.6, release: 0.1 });

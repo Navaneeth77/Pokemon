@@ -1,0 +1,35 @@
+.ultimate-demo-controls {
+  position: fixed;
+  z-index: 30;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 7px 12px 8px;
+  border: 1px solid #747e89;
+  border-radius: 7px;
+  background: #10151aeb;
+  color: #f7ecd3;
+  font: 700 14px "Pixelify Sans", sans-serif;
+  text-align: center;
+}
+.ultimate-demo-controls div {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+.ultimate-demo-controls button {
+  padding: 3px 8px;
+  border: 1px solid #536572;
+  border-radius: 4px;
+  background: #26323c;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ultimate-demo-controls button:hover { background: #3b4d5d; }
+.ultimate-demo-controls button:focus-visible { outline: 2px solid #f7d788; }
+.ultimate-demo-controls span { min-width: 22px; color: #a6d2cc; }

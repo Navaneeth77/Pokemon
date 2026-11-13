@@ -1,13 +1,65 @@
+import { drawChargedSphere } from './projectiles.js';
 // Legendary signature ultimates, batch 4: the mythicals (Jirachi, Deoxys, Shaymin, Victini, Keldeo, Genesect,
 // Diancie, Hoopa, Volcanion, Marshadow, Zeraora, Pecharunt). Same rules as ult-legends.js; mechanics kept from the
 // old beat scripts: Diamond Storm raises Defense, Steam Eruption burns, Plasma Fists paralyzes, Malignant Chain
 // poisons.
+import { bladeRun, TrackingShot } from './ult-species.js';
+import { spawnStructure, structureField } from './arena-structures.js';
 import {
-  rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, Beam, BeamLine, SlashArc, ScreenDim, Afterimage, EnergyAura,
+  Effect, rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, Beam, BeamLine, SlashArc, ScreenDim, Afterimage, EnergyAura,
   GroundMarker, Lightning, TidalWave, Tether, Ripple, dustCloud, electricBurst, leafBurst, waterSplash,
 } from './effects.js';
 import { sfx } from './audio.js';
-import { clampX, clampY, inward, spray, crater, charge, through } from './ult-choreo.js';
+import { clampX, clampY, inward, spray, crater, charge, glide, through } from './ult-choreo.js';
+
+class SuspendedWater extends Effect {
+  constructor(x, y, z, angle, mirror) {
+    super('air', 1.22);
+    Object.assign(this, { x, y, z, angle, mirror });
+  }
+
+  draw(ctx) {
+    const reveal = Math.min(1, this.age / 0.14);
+    ctx.save();
+    ctx.translate(this.x, this.y - this.z);
+    ctx.rotate(this.angle);
+    ctx.scale(1, this.mirror ? -1 : 1);
+    ctx.globalAlpha *= Math.min(1, (this.life - this.age) * 4) * reveal;
+    for (let i = 0; i < 14; i++) {
+      const p = i / 13;
+      if (p > reveal) break;
+      const x = -30 + 59 * p, y = 4 - Math.sin(p * Math.PI) * 12 + Math.sin(i * 2 + this.age * 14) * 2;
+      ctx.fillStyle = i % 3 ? '#94c5db' : '#e6f8ff';
+      ctx.fillRect(Math.round(x), Math.round(y), i % 3 ? 3 : 5, i % 3 ? 2 : 3);
+      if (i % 4 === 0) ctx.fillRect(Math.round(x + 3), Math.round(y - 6), 2, 2);
+    }
+    ctx.restore();
+  }
+}
+
+class SwordSurge extends Effect {
+  constructor(x, y, z, angle) {
+    super('air', 0.48);
+    Object.assign(this, { x, y, z, angle });
+  }
+
+  draw(ctx) {
+    const p = this.age / this.life;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    ctx.globalAlpha *= Math.min(1, (1 - p) * 3);
+    for (let i = 0; i < 19; i++) {
+      const drag = 1 - (1 - p) ** 2, distance = drag * (51 + i % 5 * 10);
+      const drift = Math.sin(i * 2.4) * (8 + drag * 21);
+      const drop = this.z * (1 - p) + Math.sin(p * Math.PI) * (7 + i % 4 * 5);
+      ctx.fillStyle = ['#4c92b5', '#8ec9dc', '#e6f8ff'][i % 3];
+      ctx.fillRect(Math.round(distance - i % 4 * 6), Math.round(drift - drop),
+        Math.max(2, (1 - p) * (4 + i % 5 * 2)), i % 3 === 0 ? 3 : 2);
+    }
+    ctx.restore();
+  }
+}
 
 const alive = t => t.alive && !t.hidden;
 const status = (g, u, t, name, dur) => { if (alive(t)) g.applyStatus(t, name, { source: u, dur }); };
@@ -17,21 +69,6 @@ const rays = (g, x, y, n, len, color, life = 0.4, width = 4) => {
     g.spawn(new BeamLine(x + Math.cos(ang) * 8, y + Math.sin(ang) * 8, x + Math.cos(ang) * len, y + Math.sin(ang) * len * 0.8, life, color, width));
   }
 };
-// A beam from the user's mouth through the foe to the arena edge, with marks along it.
-function bigBeam(a, g, u, t, { width, colors, rgb, life = 0.7, step = 26, mark = 'energy' }) {
-  const ang = u.aimAt(t), m = a.mouth();
-  a.anim('Shoot', 1);
-  g.spawn(new Beam(m.x, m.y - m.z, u.x + Math.cos(ang) * 720, u.y + Math.sin(ang) * 720 - 10, life, { width, colors }));
-  for (let d = 40; d < 700; d += step) {
-    const x = u.x + Math.cos(ang) * d, y = u.y + Math.sin(ang) * d;
-    if (x < 0 || x > 360 || y < 60 || y > 640) break;
-    if (mark === 'wet') g.marks.wet(x + rand(-5, 5), y + rand(-5, 5), rand(6, 10));
-    else g.marks.energy(x + rand(-5, 5), y + rand(-5, 5), rand(6, 10), rgb, 6);
-  }
-  g.shake(9, 0.5);
-  sfx.beamFire();
-  return ang;
-}
 // Lifts the foe on a tether and slams it down twice (Malignant Chain).
 function chainSlam(a, g, u, t, frac, color, colors, rgb, onSlam) {
   if (!alive(t)) return;
@@ -99,14 +136,12 @@ export const LEGEND_ULTS_4 = {
     const CORE = [255, 140, 110], C = ['#ffffff', '#ff8a6a', '#5a2a8a'];
     g.spawn(new ScreenDim(2.3, 0.65, '14,6,26'));
     g.spawn(new Glow(u.x, u.y, u.bodyZ, 20, [200, 120, 255], 0.65, true));
-    let helix = 0.65;
-    a.ticks.push(dt => {
-      if ((helix -= dt) <= 0) return;
-      for (const ph of [0, Math.PI]) {
-        const k = a.t * 9 + ph, h = (a.t * 120) % 70;
-        g.particles.spawn({ x: u.x + Math.cos(k) * 22, y: u.y + Math.sin(k) * 6, z: h, life: 0.35, size: 3, sizeEnd: 1, colors: ph ? ['#ff8a6a'] : ['#c090ff'], fade: true });
-      }
-    });
+    const focus = new Effect('air', 0.65);
+    focus.draw = ctx => {
+      const m = a.mouth(), p = focus.age / focus.life;
+      drawChargedSphere(ctx, m.x, m.y - m.z, 2 + 19 * p * p, focus.age, 'psychic');
+    };
+    if (!g.headless) g.spawn(focus);
     let gather = 0.65;
     a.ticks.push(dt => { if ((gather -= dt) > 0) a.converge(110, dt, C, 50); });
     sfx.beamCharge(0.65);
@@ -114,17 +149,22 @@ export const LEGEND_ULTS_4 = {
       const m = a.mouth();
       a.anim('Shoot', 1);
       sfx.pulse();
-      g.spawn(new Missile(m.x, m.y, t.x, t.y, Math.max(24, m.z), 0.55, 'orb', () => {
-        g.spawn(new Glow(t.x, t.y, t.bodyZ, 100, CORE, 0.5));
-        for (const [r1, c] of [[160, '#ffffff'], [110, '#ff8a6a'], [70, '#c090ff']]) g.spawn(new Ring(t.x, t.y, { z: t.bodyZ, r0: 6, r1, life: 0.45, color: c, width: 5, layer: 'air' }));
-        crater(a, g, t.x, t.y, { r: 50, rgb: CORE, ring: '#ffffff', mark: (x, y, r) => g.marks.energy(x, y, r, CORE, 6), shake: 15 });
-        a.strike(0.8, { knockback: 320, stagger: 0.6 });
-      }, CORE, 3.4));
-    });
-    a.later(1.6, () => {
-      g.spawn(new Ring(t.x, t.y, { r0: 10, r1: 480, life: 0.6, color: '#c090ff', width: 7 }));
-      g.shake(6, 0.3);
-      a.strike(0.2, { knockback: 200 });
+      g.spawn(new TrackingShot(u, t, {
+        origin: { x: m.x, y: m.y - m.z }, duration: 0.54, style: 'orb', color: CORE,
+        flight: { speed: 1050, range: 760, radius: 21, sphere: 'psychic' },
+      }, ({ x, y }) => {
+        const z = t.bodyZ, ground = y + z;
+        g.spawn(new Glow(x, ground, z, 69, CORE, 0.42));
+        for (const [r1, color] of [[83, '#fff1ed'], [59, '#ff8a6a'], [43, '#c090ff']]) {
+          g.spawn(new Ring(x, ground, { z, r0: 6, r1, life: 0.4, color, width: 4, layer: 'air' }));
+        }
+        crater(a, g, x, ground, { r: 40, rgb: CORE, ring: '#ffffff', shake: 10, reach: 120 });
+        a.strike(0.8, { customArt: true, knockback: 170, stagger: 0.6 });
+        a.later(0.17, () => {
+          g.spawn(new Ring(x, ground, { r0: 10, r1: 87, life: 0.4, color: '#c090ff', width: 4 }));
+          if (Math.hypot(t.x - x, t.y - ground) <= 87 + t.radius) a.strike(0.2, { customArt: true, knockback: 200 });
+        });
+      }));
     });
     a.end(2.2);
   },
@@ -186,28 +226,35 @@ export const LEGEND_ULTS_4 = {
         a.strike(0.4, { knockback: 160, stagger: 0.5, dirX: Math.cos(p.ang), dirY: Math.sin(p.ang) });
       }, '#ffd8a0');
     });
-    // The V carved into the foe.
-    for (const [i, s] of [[0, -1], [1, 1]]) {
-      a.later(0.9 + i * 0.15, () => {
-        a.anim('Swing', 2);
-        g.spawn(new BeamLine(t.x + s * 60, t.y - t.bodyZ - 70, t.x, t.y - t.bodyZ + 10, 0.4, '#ff5a1a', 10));
-        g.spawn(new BeamLine(t.x + s * 60, t.y - t.bodyZ - 70, t.x, t.y - t.bodyZ + 10, 0.3, '#fff0a0', 3));
-        g.flash(0.05);
-        sfx.slash();
-        a.strike(0.15, { knockback: 60, stagger: 0.4 });
-      });
-    }
-    // A V of flame pillars.
-    a.later(1.3, () => {
-      const pts = [[0, 0], [-22, -30], [22, -30], [-44, -60], [44, -60]];
-      pts.forEach(([dx, dy], i) => a.later(i * 0.05, () => {
-        const x = clampX(t.x + dx), y = clampY(t.y + dy * 0.7);
-        a.erupt(x, y, FIRE, FLAME, i ? 220 : 340);
-        g.marks.scorch(x, y, 14, 6);
-      }));
-      a.later(0.05, () => {
-        crater(a, g, t.x, t.y, { r: 44, rgb: FLAME, ring: '#fff0a0', mark: (x, y, r) => g.marks.scorch(x, y, r, 7) });
-        a.strike(0.3, { knockback: 260, stagger: 0.6 });
+    a.later(0.77, () => {
+      a.anim('Hop', 1.2);
+      const aim = u.aimAt(t), dist = u.distTo(t) + 18;
+      const x = clampX(u.x + Math.cos(aim) * dist), y = clampY(u.y + Math.sin(aim) * dist);
+      glide(a, g, u, { x, y }, 0.32, '#e78839', {
+        onStep(p) {
+          u.zOverride = Math.sin(p * Math.PI) * 47;
+          if (p < 1) return;
+          u.zOverride = null;
+          a.anim('Slam', 1.48);
+          const impact = { x: u.x, y: u.y };
+          g.marks.scorch(impact.x, impact.y, 36, 7);
+          crater(a, g, impact.x, impact.y, { r: 44, rgb: FLAME, ring: '#fff0a0', shake: 12, reach: 132 });
+          spray(g, impact.x, impact.y, 6, 18, FIRE, { speed: 141, up: 129 });
+          if (Math.hypot(t.x - impact.x, t.y - impact.y) <= 46 + t.radius) a.strike(0.3, { customArt: true, knockback: 123, stagger: 0.46 });
+          for (const side of [-1, 1]) a.later(side < 0 ? 0.07 : 0.15, () => {
+            const heading = aim + side * 0.68;
+            let hit = false;
+            for (let j = 1; j <= 4; j++) a.later(j * 0.043, () => {
+              const px = clampX(impact.x + Math.cos(heading) * j * 16), py = clampY(impact.y + Math.sin(heading) * j * 16);
+              a.erupt(px, py, FIRE, FLAME, 65 + j * 11);
+              g.marks.scorch(px, py, 13, 6);
+              if (!hit && Math.hypot(t.x - px, t.y - py) <= t.radius + 32) {
+                hit = true;
+                a.strike(0.15, { customArt: true, knockback: 58, stagger: 0.35 });
+              }
+            });
+          });
+        },
       });
     });
     a.end(2.2);
@@ -216,89 +263,113 @@ export const LEGEND_ULTS_4 = {
   // Secret Sword (Keldeo): its horn becomes a blade of water, three cuts flash across the foe, and a wave follows
   // through.
   secretSword(a, g, u, t) {
-    const AQUA = [150, 210, 255], C = ['#ffffff', '#9fd8ff', '#2a5aa8'];
-    g.spawn(new ScreenDim(2.4, 0.5, '4,14,34'));
-    for (let i = 1; i <= 5; i++) {
-      a.later(i * 0.06, () => {
-        const ang = u.aimAt(t);
-        g.spawn(new BeamLine(u.x, u.y - u.headZ, u.x + Math.cos(ang) * i * 8, u.y - u.headZ + Math.sin(ang) * i * 8 - i * 3, 0.5, '#9fd8ff', 4));
-      });
-    }
+    const aqua = [126, 201, 249], colors = ['#3f75af', '#dbf5ff'];
+    a.anim('Charge', 0.88);
+    g.spawn(new ScreenDim(1.77, 0.32, '7,20,36'));
+    let swing = 0;
+    const blade = new Effect('air', 1.49);
+    blade.draw = ctx => {
+      const aim = u.aimAt(t), size = Math.min(1, blade.age / 0.36);
+      ctx.save();
+      ctx.translate(u.x, u.y - u.headZ + 4);
+      ctx.rotate(aim + swing);
+      ctx.scale(Math.max(0.04, size), 1);
+      ctx.beginPath();
+      ctx.moveTo(2, -2); ctx.lineTo(27, -4); ctx.lineTo(47, -1); ctx.lineTo(29, 3); ctx.lineTo(2, 2); ctx.closePath();
+      ctx.fillStyle = '#6fb1d0'; ctx.fill();
+      ctx.strokeStyle = '#d9f4ff'; ctx.lineWidth = 1.3; ctx.stroke();
+      ctx.restore();
+    };
+    if (!g.headless) g.spawn(blade);
     sfx.clang();
-    for (let i = 0; i < 3; i++) {
-      a.later(0.45 + i * 0.17, () => {
-        const ang = [0.5, -0.6, 1.4][i], L = 280;
-        u.phasing = true;
-        g.spawn(new Afterimage(u, 0.3, '#9fd8ff'));
-        u.x = clampX(t.x - Math.cos(ang + Math.PI / 2) * 30);
-        u.y = clampY(t.y - Math.sin(ang + Math.PI / 2) * 22);
-        u.face(t.x, t.y);
-        a.anim('Swing', 2.5);
-        g.spawn(new BeamLine(t.x - Math.cos(ang) * L / 2, t.y - t.bodyZ - Math.sin(ang) * L / 2, t.x + Math.cos(ang) * L / 2, t.y - t.bodyZ + Math.sin(ang) * L / 2, 0.35, '#5aa6f0', 9));
-        g.spawn(new BeamLine(t.x - Math.cos(ang) * L / 2, t.y - t.bodyZ - Math.sin(ang) * L / 2, t.x + Math.cos(ang) * L / 2, t.y - t.bodyZ + Math.sin(ang) * L / 2, 0.25, '#ffffff', 3));
-        waterSplash(g, t.x, t.y);
-        g.shake(6, 0.15);
-        sfx.slash();
-        a.strike(0.7 / 3, { knockback: 80, stagger: 0.45 });
-      });
-    }
-    a.later(1.0, () => { u.phasing = false; });
-    a.later(1.15, () => {
-      const down = t.y > u.y, y0 = down ? 60 : 640, y1 = down ? 640 : 60, dur = 0.7;
-      g.spawn(new TidalWave(y0, y1, dur, AQUA, true));
-      sfx.hydro(dur);
-      a.later((Math.abs(t.y - y0) / 580) * dur, () => {
-        crater(a, g, t.x, t.y, { r: 36, rgb: AQUA, ring: '#ffffff', mark: (x, y, r) => g.marks.wet(x, y, r), stop: 0.08, shake: 9 });
-        a.strike(0.3, { dirX: 0, dirY: down ? 1 : -1, knockback: 260, stagger: 0.5 });
+    const sheets = [];
+    for (const [at, mirror, share] of [[0.43, false, 0.33], [0.79, true, 0.27], [1.16, false, 0.4]]) a.later(at, () => {
+      u.face(t.x, t.y);
+      a.anim(share === 0.4 ? 'Strike' : 'Swing', 1.55);
+      const aim = u.aimAt(t);
+      swing = share === 0.4 ? 0 : mirror ? -0.52 : 0.52;
+      bladeRun(a, g, u, t, 0.22, colors, mirror, share, share === 0.4 ? 251 : 22, share === 0.4 ? 1.23 : 0.95, 0, () => {
+        const { x, y, bodyZ } = t;
+        g.marks.wet(x, y, 18);
+        if (share !== 0.4) {
+          const shift = mirror ? 12 : -12;
+          const sheet = new SuspendedWater(x - Math.sin(aim) * shift, y + Math.cos(aim) * shift,
+            bodyZ + (mirror ? 2 : 11), aim + (mirror ? 0.67 : -0.67), mirror);
+          sheets.push(sheet);
+          if (!g.headless) g.spawn(sheet);
+          spray(g, x, y, bodyZ, 9, ['#e3f8ff', '#8dcce9'], { speed: 80, up: 45, life: [0.16, 0.29] });
+          return;
+        }
+        for (const sheet of sheets) {
+          sheet.dead = true;
+          spray(g, sheet.x, sheet.y, sheet.z, 13, ['#e1faff', '#87c2e8'], { speed: 127, up: 77 });
+        }
+        if (!g.headless) g.spawn(new SwordSurge(x, y, bodyZ, aim));
+        for (let i = 1; i <= 4; i++) a.later(i * 0.065, () => {
+          const px = clampX(x + Math.cos(aim) * i * 19), py = clampY(y + Math.sin(aim) * i * 19);
+          g.marks.wet(px, py, 12 + i * 2);
+          if (i === 4) waterSplash(g, px, py);
+          else spray(g, px, py, 4, 5, ['#e0faff', '#85c4e6'], { speed: 75, up: 48 });
+        });
+        g.spawn(new Glow(x, y, bodyZ, 29, aqua, 0.2));
+        g.hitstop(0.06);
+        g.shake(7, 0.28);
+        sfx.splash();
       });
     });
-    a.end(2.3);
+    a.end(1.95);
   },
 
   // Techno Blast (Genesect): a targeting reticle locks onto the foe, its back cannon charges and fires, then a
   // salvo of missiles follows up.
   technoBlast(a, g, u, t) {
-    const DRIVE = [200, 160, 255], C = ['#ffffff', '#c8a0ff', '#4a3a8a'];
-    g.spawn(new ScreenDim(2.2, 0.55, '14,8,30'));
-    const ret = g.spawn(new Ring(t.x, t.y, { r0: 34, r1: 34, life: 0.6, color: '#ff5a5a', width: 2, hold: true }));
-    a.ticks.push(() => { if (!ret.dead) Object.assign(ret, { x: t.x, y: t.y }); });
-    for (let i = 0; i < 4; i++) {
-      a.later(i * 0.12, () => {
-        const ang = (i / 4) * Math.PI * 2;
-        g.spawn(new BeamLine(t.x + Math.cos(ang) * 22, t.y + Math.sin(ang) * 22, t.x + Math.cos(ang) * 46, t.y + Math.sin(ang) * 46, 0.5, '#ff5a5a', 2));
-        sfx.denied();
+    const drive = [171, 132, 247], colors = ['#352858', '#a788f1', '#e8efff'];
+    const muzzle = () => {
+      const aim = u.aimAt(t);
+      return { x: u.x + Math.cos(aim) * 13, y: u.y - u.headZ + Math.sin(aim) * 15 };
+    };
+    u.face(t.x, t.y);
+    a.anim('Charge', 0.75);
+    g.spawn(new ScreenDim(1.8, 0.34, '17,12,34'));
+    const charge = new Effect('air', 0.73);
+    charge.draw = ctx => {
+      const { x, y } = muzzle();
+      const p = charge.age / charge.life;
+      drawChargedSphere(ctx, x, y, 2 + 12 * p, charge.age, 'psychic');
+      ctx.save();
+      ctx.strokeStyle = colors[1]; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 20 - p * 6, charge.age * 8, charge.age * 8 + 3.9); ctx.stroke();
+      ctx.restore();
+    };
+    if (!g.headless) g.spawn(charge);
+    sfx.beamCharge(0.73);
+    for (const [at, share] of [[0.74, 0.3], [1.01, 0.7]]) a.later(at, () => {
+      a.anim('Shoot', share > 0.5 ? 1.55 : 1.2);
+      const from = muzzle(), end = { x: t.x, y: t.y - t.bodyZ };
+      const duration = share > 0.5 ? 0.49 : 0.26;
+      const beam = g.spawn(new Beam(from.x, from.y, from.x, from.y, duration,
+        { width: share > 0.5 ? 31 : 16, colors, tapered: true }));
+      const time = Math.max(0.06, Math.hypot(end.x - from.x, end.y - from.y) / 2100);
+      a.ticks.push(() => {
+        if (beam.age > duration) return;
+        const p = Math.min(1, beam.age / time);
+        beam.set(from.x, from.y, from.x + (end.x - from.x) * p, from.y + (end.y - from.y) * p);
       });
-    }
-    let gather = 0.5;
-    a.ticks.push(dt => { if ((gather -= dt) > 0) a.converge(110, dt, C, 44); });
-    g.spawn(new Glow(u.x, u.y, u.headZ + 6, 22, DRIVE, 0.5, true));
-    sfx.beamCharge(0.5);
-    a.later(0.55, () => {
-      const ang = bigBeam(a, g, u, t, { width: 30, colors: [C[2], C[1], '#ffffff'], rgb: DRIVE });
-      a.later(0.05, () => {
-        g.spawn(new Ripple(t, '#ffffff'));
-        a.strike(0.7, { knockback: 260, stagger: 0.5, dirX: Math.cos(ang), dirY: Math.sin(ang) });
+      sfx.beamFire();
+      a.later(time + 0.018, () => {
+        if (!alive(t) || t.untouchable || Math.hypot(t.x - end.x, t.y - t.bodyZ - end.y) > t.radius + 17) return;
+        const y = end.y + t.bodyZ;
+        crater(a, g, end.x, y, { r: share > 0.5 ? 34 : 16, rgb: drive, ring: colors[2], shake: 8, reach: 88 });
+        a.strike(share, { customArt: true, knockback: share > 0.5 ? 260 : 70, stagger: 0.5 });
       });
     });
-    for (let i = 0; i < 6; i++) {
-      a.later(1.2 + i * 0.08, () => {
-        const m = a.mouth(), spread = (i - 2.5) * 0.35, ang = u.aimAt(t) + spread;
-        const x0 = u.x + Math.cos(ang) * 30, y0 = u.y + Math.sin(ang) * 30;
-        g.spawn(new Missile(x0, y0, t.x, t.y, Math.max(20, m.z), 0.3, 'bomb', () => {
-          g.spawn(new Glow(t.x, t.y, t.bodyZ, 30, [255, 200, 140], 0.25));
-          dustCloud(g, t.x, t.y, 4, 4);
-          sfx.explosion();
-          a.strike(0.05, { knockback: 60, stagger: 0.3 });
-        }, DRIVE));
-        sfx.whoosh();
-      });
-    }
-    a.end(2.1);
+    a.end(1.89);
   },
 
   // Diamond Storm (Diancie): its diamond flares (Defense up), crystal spikes burst out of the ground toward the foe,
   // and diamonds rain down in a glittering storm.
   diamondStorm(a, g, u, t) {
+    const field = structureField(), crystal = { style: 'crystal', damage: 0.03 };
     const PINK = [255, 190, 225], C = ['#ffffff', '#ffc0e0', '#c0508a'];
     g.spawn(new ScreenDim(2.4, 0.5, '30,10,24'));
     g.spawn(new Glow(u.x, u.y, u.headZ, 24, PINK, 0.5, true));
@@ -315,7 +386,8 @@ export const LEGEND_ULTS_4 = {
       for (let i = 1; i <= steps; i++) {
         a.later(i * 0.04, () => {
           const k = i / steps, x = clampX(u.x + Math.cos(ang) * d * k), y = clampY(u.y + Math.sin(ang) * d * k);
-          g.spawn(new Spike(x + rand(-8, 8), y + rand(-4, 4), 'crystal', 0.9));
+          if (i % 3 === 0) spawnStructure(g, u, field, x, y, crystal);
+          else g.spawn(new Spike(x + rand(-8, 8), y + rand(-4, 4), 'crystal', 0.9));
           if (i % 2 === 0) spray(g, x, y, 6, 3, C, { speed: 50, up: 80, size: [1.5, 2.5], life: [0.3, 0.5] });
           if (i % 3 === 0) sfx.shard();
           if (i === steps) {
@@ -331,7 +403,7 @@ export const LEGEND_ULTS_4 = {
         g.spawn(new Falling(p.x, p.y, 0.4, 'crystal', () => {
           spray(g, p.x, p.y, 4, 6, C, { speed: 80, up: 100, size: [1.5, 3] });
           g.marks.fracture(p.x, p.y, 10, 5);
-          if (aimed) a.strike(0.5 / 4, { knockback: 70, stagger: 0.3 });
+          if (aimed && Math.hypot(t.x - p.x, t.y - p.y) <= 34 + t.radius) a.strike(0.5 / 4, { knockback: 70, stagger: 0.3 });
         }, PINK));
       });
     }
@@ -392,6 +464,8 @@ export const LEGEND_ULTS_4 = {
   steamEruption(a, g, u, t) {
     const STEAM = [255, 220, 210], C = ['#ffffff', '#ffd0c0', '#5aa6f0'];
     g.spawn(new ScreenDim(2.4, 0.45, '26,14,12'));
+    a.anim('Charge', 0.85);
+    for (const side of [-1, 1]) g.spawn(new Glow(u.x + side * 15, u.y, u.headZ - 2, 17, [245, 105, 46], 0.66, true));
     let vent = 0.6;
     a.ticks.push(dt => {
       if ((vent -= dt) <= 0) return;
@@ -402,7 +476,9 @@ export const LEGEND_ULTS_4 = {
     for (let i = 0; i < 16; i++) {
       a.later(0.2 + i * 0.05, () => {
         const aimed = i % 4 === 0, p = aimed ? { x: t.x, y: t.y } : a.spot();
-        g.spawn(new Pillar(p.x, p.y, 0.6, STEAM, aimed ? 280 : 180));
+        g.spawn(new Pillar(p.x, p.y, 0.49, [91, 177, 231], aimed ? 145 : 75));
+        g.spawn(new Glow(p.x, p.y, 7, 18, [236, 117, 54], 0.32));
+        if (aimed) waterSplash(g, p.x, p.y);
         for (let k = 0; k < 4; k++) g.particles.spawn({ x: p.x + rand(-6, 6), y: p.y, z: rand(10, 60), vx: rand(-15, 15), vz: rand(30, 70), drag: 1, life: 0.9, size: rand(6, 10), sizeEnd: 16, colors: ['#ffffff'], alpha: 0.3, round: true });
         g.marks.wet(p.x, p.y, rand(10, 14));
         if (aimed) {
@@ -417,12 +493,15 @@ export const LEGEND_ULTS_4 = {
       a.anim('Shoot', 1);
       for (const s of [-1, 1]) {
         const x0 = u.x + nx * 16 * s, y0 = u.y - u.bodyZ + ny * 16 * s;
-        g.spawn(new Beam(x0, y0, t.x + nx * 6 * s, t.y - t.bodyZ + ny * 6 * s, 0.55, { width: 16, colors: [C[2], C[1], '#ffffff'] }));
+        g.spawn(new Beam(x0, y0, t.x + nx * 6 * s, t.y - t.bodyZ + ny * 6 * s, 0.55, { width: 16, colors: [s < 0 ? '#4b9ccd' : '#e89056', s < 0 ? '#aae7ff' : '#ffd2b0', '#ffffff'] }));
       }
       g.shake(8, 0.4);
       sfx.beamFire();
       a.later(0.05, () => {
         for (let k = 0; k < 10; k++) g.particles.spawn({ x: t.x + rand(-10, 10), y: t.y, z: t.bodyZ, vx: rand(-40, 40), vz: rand(40, 90), drag: 1, life: 0.8, size: rand(6, 10), sizeEnd: 16, colors: ['#ffffff'], alpha: 0.35, round: true });
+        waterSplash(g, t.x, t.y);
+        spray(g, t.x, t.y, t.bodyZ, 13, FIRE, { speed: 98, up: 85 });
+        g.marks.scorch(t.x, t.y, 18, 5);
         crater(a, g, t.x, t.y, { r: 36, rgb: STEAM, ring: '#ffffff', mark: (x, y, r) => g.marks.wet(x, y, r), stop: 0.08, shake: 10 });
         a.strike(0.4, { knockback: 260, stagger: 0.5, dirX: Math.cos(ang), dirY: Math.sin(ang) });
       });

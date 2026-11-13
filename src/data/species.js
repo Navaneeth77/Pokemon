@@ -3,7 +3,7 @@
 // species without them get values measured from their sprite when it loads (see measureDims).
 // `sprite` names a folder in public/sprites. Every Pokémon has four regular `moves`, an `ultimate`
 // and an `ability` (data/abilities.js). `mega` lists the forms it can Mega Evolve into (X/Y first).
-// Only Mega forms with their own SpriteCollab sheet are included.
+// Mega forms use their own battle sprites.
 
 import { KANTO_NEW, KANTO_EXISTING, KANTO_MEGAS, TYPE_ULT } from './kanto.js';
 import { isFinalSpecies, finalDescendants } from './roster-rules.js';
@@ -38,10 +38,10 @@ const LIST = [
     radius: 17, shadow: [18, 6], mouth: { z: 44, fwd: 14 }, bodyZ: 30, headZ: 58, fly: { height: 12, amp: 2, freq: 2.5 },
     faintAnim: null, mega: ['rayquazaMega'],
   }),
-  mon('gyarados', 'Gyarados', ['water', 'flying'], R, [1630, 66, 1.1, 1.05, 1.6], ['waterfall', 'crunch', 'iceFang', 'hyperBeam'], 'hydroPump', 'angerPoint', {
+  mon('gyarados', 'Gyarados', ['water', 'flying'], R, [1630, 66, 1.1, 1.05, 1.6], ['waterfall', 'crunch', 'iceFang', 'hyperBeam'], 'gyaradosHydroPump', 'angerPoint', {
     radius: 20, shadow: [20, 7], mouth: { z: 46, fwd: 12 }, bodyZ: 28, headZ: 62, faintAnim: null,
   }),
-  mon('sceptile', 'Sceptile', ['grass'], R, [1300, 104, 1, 0.95, 0.9], ['dragonPulse', 'leafStorm', 'leafBlade', 'aerialAce'], 'frenzyPlant', 'leafRush', {
+  mon('sceptile', 'Sceptile', ['grass'], R, [1300, 104, 1, 0.95, 0.9], ['dragonPulse', 'leafStorm', 'leafBlade', 'aerialAce'], 'sceptileLeafBlade', 'leafRush', {
     radius: 11, shadow: [10, 4], mouth: { z: 18, fwd: 8 }, bodyZ: 13, headZ: 32, faintAnim: null, mega: ['sceptileMega'],
   }),
   mon('articuno', 'Articuno', ['ice', 'flying'], L, [1400, 88, 1.05, 1.08, 1], ['iceBeam', 'airSlash', 'aerialAce', 'iceShard'], 'blizzard', 'glacialBuild', {
@@ -50,7 +50,7 @@ const LIST = [
   mon('lucario', 'Lucario', ['fighting', 'steel'], R, [1280, 106, 1.1, 1, 0.9], ['auraSphere', 'closeCombat', 'extremeSpeed', 'dragonPulse'], 'auraStorm', 'innerAura', { mega: ['lucarioMega'] }),
   mon('greninja', 'Greninja', ['water', 'dark'], R, [1220, 118, 1.05, 0.92, 0.8], ['nightSlash', 'iceBeam', 'quickAttack', 'darkPulse'], 'waterShurikenBarrage', 'proteanShadow'),
   mon('garchomp', 'Garchomp', ['dragon', 'ground'], R, [1500, 100, 1.12, 1.05, 1.3], ['dragonClaw', 'earthquake', 'flamethrower', 'dragonRush'], 'dracoMeteor', 'apexHunter'),
-  mon('gengar', 'Gengar', ['ghost', 'poison'], R, [1180, 108, 1.08, 0.92, 0.8], ['shadowBall', 'sludgeBomb', 'thunderbolt', 'darkPulse'], 'shadowBallBarrage', 'cursedBody', { mega: ['gengarMega'] }),
+  mon('gengar', 'Gengar', ['ghost', 'poison'], R, [1180, 108, 1.08, 0.92, 0.8], ['shadowBall', 'sludgeBomb', 'thunderbolt', 'darkPulse'], 'gengarShadowBall', 'cursedBody', { mega: ['gengarMega'] }),
   mon('blaziken', 'Blaziken', ['fire', 'fighting'], R, [1300, 98, 1.08, 0.97, 1], ['blazeKick', 'braveBird', 'flamethrower', 'quickAttack'], 'blazeKickOverdrive', 'speedBoost'),
   mon('mewtwo', 'Mewtwo', ['psychic'], L, [1650, 118, 1.3, 1.15, 1.25], ['psychic', 'shadowBall', 'auraSphere', 'iceBeam'], 'psystrike', 'pressure', {
     aura: ['#ffe6f6', '#ff9fe0', '#b060ff'], mega: ['mewtwoMegaY'],
@@ -158,15 +158,19 @@ for (const [dex, id] of Object.entries(KANTO_EXISTING)) LIST.find(s => s.id === 
 // Every other fully evolved Pokémon (national.js, generated): the same conversion, with physical and special
 // attack and defence kept apart so a Pokémon's better side really is better.
 const CLASS = { R, L, M };
-for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, cls, x] of NATIONAL) {
+// Eternal Flower Floette is a standalone form and does not evolve into Florges.
+const eternalFloette = [670, 'floetteEternal', 'Floette (Eternal Flower)', 'fairy',
+  [74, 65, 67, 125, 128, 92], 0.9, 'moonblastAtk energyBall calmMind wish', 'R',
+  { sprite: 'floette-eternal', hover: [7, 2, 3], ability: 'flowerVeil' }];
+for (const [dex, id, name, typeStr, [hp, at, df, sa, sd, sp], kg, moves, cls, x] of [...NATIONAL, eternalFloette]) {
   const types = typeStr.split('/'), bst = hp + at + df + sa + sd + sp;
   const stats = [
     Math.round(clamp(560 + 5 * hp + 0.9 * bst, 800, 1900) / 10) * 10, Math.round(clamp(46 + 0.55 * sp, 52, 124)),
     r2(0.85 + at / 400), r2(0.8 + df / 400), r2(clamp(0.45 + 0.35 * Math.log(1 + kg / 10), 0.5, 2.4)),
   ];
   const ult = types[0] === 'normal' && types[1] === 'flying' ? 'skyAttack' : TYPE_ULT[types[0]];
-  LIST.push(mon(id, name, types, CLASS[cls], stats, moves.split(' '), ult, null, {
-    spa: r2(0.85 + sa / 400), spdef: r2(0.8 + sd / 400), sprite: x.sprite, ...(x.hover && hover(...x.hover)),
+  LIST.push(mon(id, name, types, CLASS[cls], stats, moves.split(' '), ult, x.ability ?? null, {
+    dex, spa: r2(0.85 + sa / 400), spdef: r2(0.8 + sd / 400), sprite: x.sprite, ...(x.hover && hover(...x.hover)),
   }));
 }
 // Castform's weather forms (Forecast) are loaded with it.
@@ -213,10 +217,28 @@ for (const [move, ids] of Object.entries(FIELD_MOVES)) for (const id of ids) {
 // Official abilities for every fully evolved Pokémon: the one Smogon's sets play it with (Chlorophyll for
 // Venusaur, Rough Skin for Garchomp…), else its first official one the game implements (see abilities.js).
 for (const s of LIST) {
-  s.dex = DEX[s.id] ?? s.kanto;
+  s.dex = DEX[s.id] ?? s.dex ?? s.kanto;
   const smogon = SMOGON_ABILITIES[s.id]?.find(a => ABILITIES[a]);
   const pick = smogon ?? (OFFICIAL_ABILITIES[s.id] && officialAbility(OFFICIAL_ABILITIES[s.id]));
   if (pick) Object.assign(s, { ability: pick, abilities: OFFICIAL_ABILITIES[s.id] });
+}
+
+// Species whose established signature has its own ultimate choreography.
+const signatureUltimates = {
+  celebi: 'celebiForestSpiral',
+  florges: 'florgesPetalRay',
+  greninja: 'greninjaNightSlash',
+  cinderace: 'pyroBallUlt',
+  decidueye: 'spiritShackleUlt',
+  dragapult: 'dragonDartsUlt',
+  floetteEternal: 'lightOfRuinUlt',
+  inteleon: 'snipeShotUlt',
+  garganacl: 'saltCureUlt',
+  rillaboom: 'drumBeatingUlt',
+  tinkaton: 'gigatonHammerUlt',
+};
+for (const species of LIST) {
+  species.ultimate = signatureUltimates[species.id] ?? species.ultimate;
 }
 
 // Mega forms inherit everything from their base form and have their size re-measured from their own sheet.
@@ -239,7 +261,7 @@ const MEGAS = [
   ['darkrai', 'darkraiMega', 'Mega Darkrai', { sprite: 'darkrai-mega', atk: 1.32, def: 1.02, ability: 'badDreams', aura: ['#d8c8ff', '#6a3a8a', '#1a0f24'] }],
   ['zeraora', 'zeraoraMega', 'Mega Zeraora', { sprite: 'zeraora-mega', speed: 128, atk: 1.3, ability: 'voltAbsorb', aura: ['#fff8c0', '#ffe066', '#3a8ae8'] }],
   ...KANTO_MEGAS,
-  ...MORE_MEGAS, // data/more-megas.js: Slowbro to Tatsugiri, from complete SpriteCollab sheets
+  ...MORE_MEGAS,
 ];
 
 export const SPECIES = {};

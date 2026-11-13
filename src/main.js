@@ -2,6 +2,7 @@ import '@fontsource/pixelify-sans/500.css';
 import '@fontsource/pixelify-sans/700.css';
 import '@fontsource/luckiest-guy/400.css';
 import './style.css';
+import { preloadUltimateArt } from './ultimate-art.js';
 import { preloadImpactSprite } from './effects.js';
 import { loadSpecies } from './assets.js';
 import { DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
@@ -15,6 +16,7 @@ export async function main() {
   const [sprites] = await Promise.all([
     loadSpecies(first),
     preloadImpactSprite().catch(()=>{}),
+    preloadUltimateArt(),
     document.fonts.load('700 16px "Pixelify Sans"'),
     document.fonts.load('400 16px "Luckiest Guy"'),
   ]);
@@ -22,6 +24,16 @@ export async function main() {
   const ui = new UI();
   const game = new Game(document.getElementById('game'), sprites, ui);
   ui.bind(game);
+  if (import.meta.env.DEV) {
+    const params = new URLSearchParams(location.search);
+    const demo = params.get('ultimate-demo');
+    if (demo !== null) {
+      const { playRosterUltimates } = await import('../scripts/play-roster-ultimates.js');
+      playRosterUltimates(game, demo, params.get('species'));
+      requestAnimationFrame(() => document.documentElement.classList.remove('booting'));
+      return;
+    }
+  }
   const flow = new Flow(game, ui);
   game.resize();
   flow.begin();

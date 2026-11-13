@@ -1,3 +1,4 @@
+import { drawBeamRings } from './beam-rings.js';
 import { loadImage } from './assets.js';
 import { quality } from './quality.js';
 import { SHADOW_LUGIA, isShadowLugia } from './data/skins.js';
@@ -66,9 +67,9 @@ export function drawNaturalCharge(ctx, boss, age, power = 1, focused = false, al
 
 // A short, attached beam: the source follows the mouth instead of the floor or a stale position.
 export class LegendaryBeam {
-  constructor(boss, x, y, color, width = 20, life = .55, pulse = false) {
+  constructor(boss, x, y, color, width = 20, life = .55, pulse = false, rings = true) {
     if(isShadowLugia(boss))color=SHADOW_LUGIA.color;
-    Object.assign(this, { boss, x, y, color, width, life, pulse, age: 0, layer: 'air' });
+    Object.assign(this, { boss, x, y, color, width, life, pulse, rings, age: 0, layer: 'air' });
   }
   update(dt) { this.age += dt; return !this.dead && this.age < this.life && this.boss.alive && !this.boss.hidden; }
   draw(ctx) {
@@ -103,13 +104,7 @@ export class LegendaryBeam {
       }
       ctx.globalAlpha = fade;
     }
-    if ((this.pulse || this.boss.boss === 'mewtwo') && quality().particles > 500) {
-      ctx.strokeStyle = this.color; ctx.lineWidth = 1.5;
-      for (let i = 0; i < 4; i++) {
-        const t = (p * 2 + i / 4) % 1, cx = origin.x + dx * t, cy = origin.y + dy * t;
-        ctx.beginPath(); ctx.ellipse(cx, cy, width * .8, width * .18, Math.atan2(dy, dx) + Math.PI / 2, 0, Math.PI * 2); ctx.stroke();
-      }
-    }
+    if (this.rings) drawBeamRings(ctx, origin.x, origin.y, x, y, width, this.age, this.color, fade);
     drawRaidSigil(ctx, this.boss.boss, origin.x, origin.y, Math.min(44, 18 + width * .35), this.age * 5, .65);
     ctx.restore();
   }
@@ -136,6 +131,7 @@ export class PsychicBeam {
       ctx.beginPath();ctx.moveTo(x-24,side*w*.55);ctx.quadraticCurveTo(x,side*w*.9,x+32,side*w*.2);ctx.stroke();
     }
     ctx.restore();
+    drawBeamRings(ctx,this.x,this.y,this.x2,this.y2,w,this.age,'#dcb1ff',fade);
   }
 }
 
@@ -177,6 +173,8 @@ export class AeroblastBeam {
       ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(Math.min(length,x+25),y*.96);ctx.stroke();
     }
     ctx.restore();
+    drawBeamRings(ctx, o.x, o.y, o.x + dx * Math.min(1,this.age/.12), o.y + dy * Math.min(1,this.age/.12),
+      this.width * 0.76, this.age, shadow ? '#bc87df' : '#b9e8ef', fade);
   }
 }
 

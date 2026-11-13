@@ -23,7 +23,7 @@ export const MOVE_ANIMS = {
   stoneEdgeAtk: { seq: { aim: 'target', end: 0.95, steps: [
     { at: 0, anim: 'Attack' },
     { at: 0.15, telegraph: { r: 26, color: '#c8b080', life: 0.5 } },
-    { at: 0.65, spikes: { n: 9, style: 'rock', spread: 30 }, fx: 'debris', n: 18, shake: [8, 0.3], sound: 'quake' },
+    { at: 0.65, spikes: { n: 9, style: 'rock', spread: 30, structure: true }, fx: 'debris', n: 18, shake: [8, 0.3], sound: 'quake' },
     { at: 0.68, fx: 'dust', n: 12 },
     { at: 0.65, hit: { r: 28, knockback: 230, stagger: 0.5 } },
   ] } },
@@ -47,7 +47,7 @@ export const MOVE_ANIMS = {
   earthPower: { seq: { aim: 'target', end: 0.9, steps: [
     { at: 0, anim: 'Charge' },
     { at: 0.1, telegraph: { r: 30, color: '#e8b060', life: 0.5 }, glow: { at: 'spot', rgb: [230, 160, 80], r: 30 } },
-    { at: 0.6, pillar: { rgb: [230, 150, 70], height: 190, life: 0.5 }, burst: { colors: ['#f0d8a0', '#c89850', '#6a4a20'], n: 22 }, spikes: { n: 4, style: 'rock', spread: 18 }, mark: 'fracture', markSize: 30, shake: [8, 0.3], sound: 'quake' },
+    { at: 0.6, pillar: { rgb: [230, 150, 70], height: 190, life: 0.5 }, burst: { colors: ['#f0d8a0', '#c89850', '#6a4a20'], n: 22 }, spikes: { n: 4, style: 'rock', spread: 18, structure: true }, mark: 'fracture', markSize: 30, shake: [8, 0.3], sound: 'quake' },
     { at: 0.63, fx: 'debris', n: 14 },
     { at: 0.66, fx: 'dust', n: 10 },
     { at: 0.6, hit: { r: 32, knockback: 220 } },
@@ -145,7 +145,7 @@ const orb = (colors, rgb, o = {}) => {
 const erupt = (colors, rgb, o = {}) => ({ seq: { aim: 'target', end: (o.delay ?? 0.55) + 0.3, steps: [
   { at: 0, anim: o.anim ?? 'Charge' },
   { at: 0.1, telegraph: { r: o.r ?? 28, color: colors[1], life: (o.delay ?? 0.55) - 0.1 } },
-  { at: o.delay ?? 0.55, ...(o.pillar !== false && { pillar: { rgb, height: o.height ?? 170, life: 0.45 } }), burst: { colors, n: o.n ?? 20, up: o.up ?? 140 }, ...(o.spikes && { spikes: { n: 5, style: o.spikes, spread: o.r ?? 24 } }), ...(o.mark && { mark: o.mark, markRgb: rgb }), shake: o.shake ?? [7, 0.3], ...(o.sound && { sound: o.sound }) },
+  { at: o.delay ?? 0.55, ...(o.pillar !== false && { pillar: { rgb, height: o.height ?? 170, life: 0.45 } }), burst: { colors, n: o.n ?? 20, up: o.up ?? 140 }, ...(o.spikes && { spikes: { n: 5, style: o.spikes, spread: o.r ?? 24, structure: o.structure } }), ...(o.mark && { mark: o.mark, markRgb: rgb }), shake: o.shake ?? [7, 0.3], ...(o.sound && { sound: o.sound }) },
   { at: o.delay ?? 0.55, hit: { r: (o.r ?? 28) + 2, knockback: o.kb ?? 200, stagger: o.stagger ?? 0.45 } },
 ] } });
 // Rings of sound or power around the user.
@@ -207,7 +207,7 @@ Object.assign(MOVE_ANIMS, {
   whirlpool: erupt(['#ffffff', '#86ccff', '#3a8ae8'], [90, 160, 255], { r: 30, height: 80, delay: 0.45, mark: 'wet', kb: 80 }),
   endeavor: strike(['#ffffff', '#c8c8b0'], { fx: 'arc', lunge: 40 }),
   megaKick: strike(['#ffffff', '#ffe8a0'], { fx: 'punchT', lunge: 32, hits: [{ knockback: 240, stagger: 0.45, hitstop: 0.07 }] }),
-  thousandArrows: erupt(['#ffffff', '#c8f080', '#6a8a30'], [170, 210, 90], { r: 44, spikes: 'rock', delay: 0.5, sound: 'quake' }),
+  thousandArrows: erupt(['#ffffff', '#c8f080', '#6a8a30'], [170, 210, 90], { r: 44, spikes: 'rock', structure: true, delay: 0.5, sound: 'quake' }),
   gigatonHammer: erupt(['#ffffff', '#c8d0e0', '#5a6478'], [200, 210, 225], { r: 34, pillar: false, spikes: 'rock', anim: 'Attack', delay: 0.6, shake: [14, 0.45], kb: 280 }),
   makeItRain: erupt(['#fff8c0', '#ffd84a', '#c89a1a'], [255, 216, 74], { r: 44, height: 40, delay: 0.5, n: 34, up: 60 }),
 });
@@ -295,7 +295,7 @@ Object.assign(MOVE_ANIMS, {
   expandingForce: erupt([W, '#ff8ad0', '#c040a0'], [255, 120, 200], { r: 40, height: 120, delay: 0.5 }),
   auraWheel: rush('#fff27a', '#3a2050', { burst: 'electric', dist: 170 }),
   wickedBlow: strike(['#3a2050', '#ff7a5a'], { fx: 'punchT', lunge: 44, hits: [{ knockback: 230, hitstop: 0.07 }] }),
-  stoneAxe: erupt([W, '#e8dcc0', '#a08a60'], [210, 190, 150], { r: 24, pillar: false, spikes: 'rock', anim: 'Swing', delay: 0.45 }),
+  stoneAxe: erupt([W, '#e8dcc0', '#a08a60'], [210, 190, 150], { r: 24, pillar: false, spikes: 'rock', structure: true, anim: 'Swing', delay: 0.45 }),
   direClaw: strike(['#a848a8', '#f0c0ff'], { fx: 'claw', lunge: 46 }),
   flowerTrick: erupt([W, '#ffd0e8', '#62b947'], [255, 180, 210], { r: 22, height: 60, delay: 0.4, n: 18 }),
   torchSong: pulse([W, '#ffb070', '#ff5a2a'], 86, { n: 24, sound: 'flamethrower' }),
@@ -428,7 +428,6 @@ function volley(type, n, o = {}) {
 Object.assign(MOVE_ANIMS, {
   pinMissile: volley('bug', 5, { style: 'needle', rgb: [220, 240, 140], gap: 0.05, dur: 0.2, scale: 0.8 }),
   scaleShot: volley('dragon', 4, { style: 'scale', rgb: [170, 140, 255], gap: 0.06, dur: 0.22, scale: 0.9 }),
-  auraSphere: volley('fighting', 1, { style: 'orb', rgb: [90, 150, 255], scale: 1.7, charge: 0.35, orbit: true, glow: true, shake: [6, 0.25], sound: 'pulse', kb: 200 }),
   fireBlast: volley('fire', 1, { style: 'flame', rgb: [255, 120, 40], scale: 2.2, charge: 0.4, orbit: true, shake: [9, 0.35], sound: 'explosion', markSize: 30, kb: 220, r: 50 }),
   moonblastShot: volley('fairy', 1, { style: 'orb', rgb: [255, 180, 220], scale: 1.6, charge: 0.35, glow: true, dome: 36 }),
   airSlash: volley('flying', 2, { single: true, style: 'crystal', rgb: [235, 248, 255], gap: 0.09, dur: 0.2, scale: 1.5, sound: 'airSlash' }),
@@ -465,7 +464,7 @@ Object.assign(MOVE_ANIMS, {
     { at: 0, anim: 'Attack' },
     { at: 0.1, telegraph: { r: 24, color: '#e8dcc0', life: 0.45 } },
     { at: 0.2, meteors: { n: 3, style: 'rock', spread: 14, dur: 0.38 } },
-    { at: 0.58, spikes: { n: 4, style: 'rock', spread: 16 }, shake: [5, 0.2], hit: { r: 26, knockback: 120, stagger: 0.5 } },
+    { at: 0.58, spikes: { n: 4, style: 'rock', spread: 16, structure: true }, shake: [5, 0.2], hit: { r: 26, knockback: 120, stagger: 0.5 } },
   ] } },
   rockBlast: volley('rock', 3, { style: 'boulder', rgb: [200, 180, 140], gap: 0.1, dur: 0.26 }),
   ancientPower: volley('rock', 1, { style: 'boulder', rgb: [220, 190, 140], scale: 1.8, charge: 0.35, orbit: true, glow: true, shake: [6, 0.25] }),

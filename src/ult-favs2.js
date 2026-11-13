@@ -2,11 +2,65 @@
 // Milotic, Haxorus, Hydreigon and Porygon-Z. Same rules as ult-legends.js; mechanics kept from the old beat scripts:
 // Frozen Shadow Barrage freezes, Serene Tidal Tempest heals 12% and slows, Digital Distortion paralyzes.
 import {
-  rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura,
+  Effect, rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura,
   GroundMarker, Lightning, TidalWave, Tether, FloatingRock, RainbowStreak, Ripple, dustCloud, debris, iceShatter, electricBurst, waterSplash,
 } from './effects.js';
 import { sfx } from './audio.js';
-import { clampX, clampY, inward, crater, charge, through } from './ult-choreo.js';
+import { clampX, clampY, inward, crater, charge, glide, through, spray } from './ult-choreo.js';
+
+class PsychicHold extends Effect {
+  constructor(target, life) {
+    super('air', life);
+    this.target = target;
+  }
+
+  draw(ctx) {
+    const t = this.target, p = Math.min(1, this.age * 5), fade = Math.min(1, (this.life - this.age) * 6);
+    ctx.save();
+    ctx.translate(t.x, t.y - t.bodyZ);
+    ctx.globalAlpha *= fade * p;
+    for (const [angle, color] of [[-0.67, '#9661c6'], [0.42, '#f4a7e7'], [1.4, '#ffdef9']]) {
+      ctx.save();
+      ctx.rotate(angle + this.age * 0.24);
+      ctx.strokeStyle = color; ctx.lineWidth = 2.3;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 30 + Math.sin(this.age * 12 + angle) * 4, 13, 0, this.age * 2 + angle, this.age * 2 + angle + 4.6);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+
+class Whirlpool extends Effect {
+  constructor(x, y, size, life) {
+    super('ground', life);
+    Object.assign(this, { x, y, size });
+  }
+
+  draw(ctx) {
+    const p = Math.min(1, this.age / 0.24), fade = Math.min(1, (this.life - this.age) * 4);
+    const size = this.size * (0.6 + p * 0.4);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.globalAlpha *= fade * p;
+    ctx.fillStyle = '#315f7b80';
+    ctx.beginPath(); ctx.ellipse(0, 0, size, size * 0.48, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.lineCap = 'round';
+    for (let arm = 0; arm < 3; arm++) {
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const k = i / 24, angle = k * 4.3 + arm * Math.PI * 2 / 3 + this.age * 7;
+        const x = Math.cos(angle) * size * k, y = Math.sin(angle) * size * k * 0.49;
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      for (const [color, width] of [['#3b719b', 7], ['#87c9de', 4], ['#e0f4f1', 1.4]]) {
+        ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+}
 
 const alive = t => t.alive && !t.hidden;
 const status = (g, u, t, name, dur) => { if (alive(t)) g.applyStatus(t, name, { source: u, dur }); };
@@ -114,47 +168,49 @@ export const FAV_ULTS_2 = {
   // Tidal Earthquake (Swampert): it pounds the ground, the earth cracks as a muddy wave rolls over the arena, then
   // stone spikes burst up under the foe.
   tidalEarthquake(a, g, u, t) {
-    const MUD = [120, 150, 190];
-    g.spawn(new ScreenDim(2.6, 0.5, '14,18,20'));
-    a.anim('Attack', 1);
-    a.later(0.15, () => {
-      for (let i = 0; i < 10; i++) {
-        const p = a.spot();
-        g.marks.fracture(p.x, p.y, rand(16, 28), 7);
-        dustCloud(g, p.x, p.y, 4, 4);
-      }
-      g.marks.fracture(u.x, u.y, 40, 7.5);
-      g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 300, life: 0.5, color: '#c8a070', width: 6 }));
-      g.shake(14, 0.7);
-      sfx.quake();
-      a.strike(0.35, { knockback: 160, stagger: 0.6 });
-    });
-    a.later(0.5, () => {
-      const down = t.y > u.y, y0 = down ? 60 : 640, y1 = down ? 640 : 60, dur = 0.9;
-      const w = g.spawn(new TidalWave(y0, y1, dur, [110, 140, 120], true));
-      a.ticks.push(() => {
-        if (w.age >= w.life) return;
-        for (let i = 0; i < 3; i++) g.particles.spawn({ x: rand(0, 360), y: w.y, z: rand(0, 14), vx: rand(-20, 20), vy: (down ? 1 : -1) * rand(40, 90), vz: rand(40, 120), gz: 300, life: 0.45, size: rand(2, 4), colors: ['#c8d8e0', '#8aa0a8', '#6a5a40'] });
-        if (Math.random() < 0.3) g.marks.wet(rand(20, 340), w.y, rand(8, 14));
+    const mud = [123, 111, 84], colors = ['#d1bc91', '#8d7654', '#5d776f'];
+    g.spawn(new ScreenDim(2.08, 0.29, '18,19,13'));
+    a.anim('Charge', 0.85);
+    dustCloud(g, u.x, u.y, 12, 5);
+    a.later(0.28, () => {
+      a.anim('Attack', 1.27);
+      const from = { x: u.x, y: u.y }, aim = u.aimAt(t), distance = u.distTo(t);
+      const steps = Math.max(6, Math.ceil(distance / 29));
+      let hit = false;
+      g.marks.fracture(from.x, from.y, 28, 6);
+      for (let i = 1; i <= steps; i++) a.later(i * 0.39 / steps, () => {
+        const x = from.x + Math.cos(aim) * distance * i / steps, y = from.y + Math.sin(aim) * distance * i / steps;
+        g.marks.fracture(x, y, 12, 6);
+        g.marks.wet(x, y, 13);
+        spray(g, x, y, 2, 4, colors, { speed: 75, up: 78 });
+        if (hit || !alive(t) || Math.hypot(t.x - x, t.y - y) > t.radius + 22) return;
+        hit = true;
+        a.strike(0.35, { customArt: true, knockback: 55, stagger: 0.39 });
       });
-      sfx.hydro(dur);
-      a.later((Math.abs(t.y - y0) / 580) * dur, () => {
-        waterSplash(g, t.x, t.y);
-        g.shake(8, 0.35);
-        a.strike(0.4, { dirX: 0, dirY: down ? 1 : -1, knockback: 260, stagger: 0.5 });
+      sfx.quake();
+    });
+    a.later(0.71, () => {
+      const land = { x: t.x, y: t.y };
+      a.anim('Hop', 1.05);
+      glide(a, g, u, land, 0.45, '#677f91', {
+        onStep(p) {
+          u.zOverride = Math.sin(p * Math.PI) * 35;
+          if (p < 1) return;
+          u.zOverride = null;
+          waterSplash(g, u.x, u.y);
+          crater(a, g, u.x, u.y, { r: 44, rgb: mud, ring: '#ddc29b', shake: 12, reach: 127 });
+          g.marks.wet(u.x, u.y, 44);
+          g.marks.fracture(u.x, u.y, 36, 6);
+          if (u.distTo(t) <= t.radius + u.radius + 18) a.strike(0.4, { customArt: true, knockback: 160, stagger: 0.5 });
+          a.later(0.24, () => {
+            const center = { x: land.x, y: land.y };
+            g.spawn(new Ring(center.x, center.y, { r0: 9, r1: 97, life: 0.41, color: '#a8946e', width: 4 }));
+            if (Math.hypot(t.x - center.x, t.y - center.y) <= 98 + t.radius) a.strike(0.25, { customArt: true, knockback: 200, stagger: 0.6 });
+          });
+        },
       });
     });
-    a.later(1.65, () => {
-      for (let k = 0; k < 8; k++) {
-        const ang = (k / 8) * Math.PI * 2;
-        a.later(k * 0.02, () => g.spawn(new Spike(t.x + Math.cos(ang) * 30, t.y + Math.sin(ang) * 20, 'stone', 0.9)));
-      }
-      for (let k = 0; k < 3; k++) g.spawn(new Spike(t.x + rand(-8, 8), t.y + rand(-4, 4), 'stone', 1));
-      crater(a, g, t.x, t.y, { r: 46, rgb: MUD, ring: '#e8d0a0', shake: 13 });
-      sfx.quake();
-      a.strike(0.25, { knockback: 200, stagger: 0.6 });
-    });
-    a.end(2.6);
+    a.end(1.94);
   },
 
   // Frozen Shadow Barrage (Weavile): it vanishes into shadow and slashes from every side with ice claws, ice
@@ -255,107 +311,124 @@ export const FAV_ULTS_2 = {
   // Psychic Cataclysm (Alakazam): its spoons glow, rocks tear out of the ground and orbit, the foe is seized and
   // slammed, the rocks and a ring of orbs bombard it, and a dome of psychic force bursts.
   psychicCataclysm(a, g, u, t) {
-    const PSY = [255, 150, 220], C = ['#ffffff', '#ffb0e0', '#a04aa0'];
-    g.spawn(new ScreenDim(3, 0.6, '26,8,30'));
-    for (const s of [-1, 1]) g.spawn(new Glow(u.x + s * 14, u.y, u.bodyZ + 4, 10, PSY, 0.8, true));
+    const rgb = [209, 133, 240], colors = ['#fff0fa', '#eb9cdf', '#8961ba'];
+    g.spawn(new ScreenDim(2.16, 0.46, '25,14,36'));
+    a.anim('Charge', 0.85);
+    u.face(t.x, t.y);
+    for (const side of [-1, 1]) a.later(side < 0 ? 0.04 : 0.15, () => {
+      g.spawn(new Glow(u.x + side * 12, u.y, u.bodyZ + 6, 13, rgb, 0.59, true));
+      g.spawn(new Ring(u.x + side * 12, u.y, { z: u.bodyZ + 6, r0: 22, r1: 5, life: 0.34, color: colors[1], layer: 'air', width: 2 }));
+    });
     sfx.ascend();
-    a.rocks = [];
-    for (let i = 0; i < 6; i++) {
-      a.later(0.1 + i * 0.05, () => {
-        const p = a.spot();
-        a.rocks.push(g.spawn(new FloatingRock(p.x, p.y, rand(6, 10))));
-        g.marks.fracture(p.x, p.y, 10, 5);
-        dustCloud(g, p.x, p.y, 4, 3);
-      });
-    }
-    // Seize and slam.
-    a.later(0.45, () => {
-      if (!alive(t)) return;
+    a.later(0.37, () => {
+      if (!alive(t) || t.untouchable) return;
       a.anim('Shoot', 1);
-      g.spawn(new Tether(u, t, 1.1, PSY));
-      a.lift(t, { x: t.x, y: t.y, z: 60 }, 0.35, 0, null, '#ffb0e0', C, true);
-      sfx.zap(0.6);
-    });
-    a.later(0.95, () => {
-      if (!alive(t)) return;
-      sfx.whoosh();
-      a.lift(t, { x: clampX(t.x + 50), y: clampY(t.y + rand(-20, 20)), z: 0 }, 0.28, 70, () => {
-        g.spawn(new PsyDome(t.x, t.y, 50, 0.4, PSY));
-        g.marks.fracture(t.x, t.y, 26, 6.5);
-        g.shake(9, 0.3);
-        sfx.quake();
-        a.strike(0.35, { knockback: 0, stagger: 0.6 });
-      }, '#ffb0e0', C);
-    });
-    // Rocks and orbs.
-    for (let i = 0; i < 6; i++) {
-      a.later(1.4 + i * 0.07, () => {
-        const r = a.rocks[i];
-        if (!r || r.dead) return;
-        r.throwAt(t, 0.2, () => {
-          debris(g, t.x, t.y, 5, 110);
-          a.strike(0.15 / 6, { knockback: 30, stagger: 0.25 });
-        });
+      const x = t.x, y = t.y, side = x < 180 ? 1 : -1;
+      const hold = g.spawn(new PsychicHold(t, 1.43));
+      const rubble = [];
+      for (let i = 0; i < 4; i++) {
+        const angle = (i + 0.5) * Math.PI / 2;
+        const px = clampX(x + Math.cos(angle) * 30), py = clampY(y + Math.sin(angle) * 19);
+        g.marks.fracture(px, py, 10, 4);
+        dustCloud(g, px, py, 4, 3);
+        const rock = new FloatingRock(px, py, 5 + i % 2 * 2);
+        if (!g.headless) {
+          g.spawn(rock);
+          rubble.push(rock);
+        }
+      }
+      a.owned.push(...rubble);
+      a.ticks.push(() => {
+        if (hold.dead) return;
+        for (const [i, rock] of rubble.entries()) {
+          const angle = a.t * 4.2 + i * Math.PI / 2;
+          rock.x = t.x + Math.cos(angle) * 39;
+          rock.y = t.y + Math.sin(angle) * 18;
+          rock.z = Math.max(10, t.lift * 0.72) + Math.sin(angle * 2) * 6;
+        }
       });
-    }
-    for (let i = 0; i < 8; i++) {
-      a.later(1.5 + i * 0.07, () => {
-        const ang = (i / 8) * Math.PI * 2, x = clampX(t.x + Math.cos(ang) * 100), y = clampY(t.y + Math.sin(ang) * 75);
-        g.spawn(new Glow(x, y, 14, 16, PSY, 0.25));
-        g.spawn(new Missile(x, y, t.x, t.y, 14, 0.25, 'orb', () => {
-          g.spawn(new Ring(t.x, t.y, { z: t.bodyZ, r0: 4, r1: 22, life: 0.25, color: '#ffb0e0', width: 3, layer: 'air' }));
-          a.strike(0.2 / 8, { knockback: 30, stagger: 0.25 });
-        }, PSY));
-        sfx.shard();
+      a.owned.push(hold);
+      const shadow = g.spawn(new Ring(x, y, { r0: 16, r1: 28, life: 1.44, color: '#a36cb9', width: 2 }));
+      a.ticks.push(() => Object.assign(shadow, { x: t.x, y: t.y }));
+      a.lift(t, { x, y, z: 48 }, 0.38, 12, () => {
+        g.spawn(new Glow(t.x, t.y, t.bodyZ, 39, rgb, 0.27));
+        spray(g, t.x, t.y, t.bodyZ, 16, colors, { speed: 88, up: 38 });
+        sfx.pulse();
+        a.strike(0.25, { customArt: true, knockback: 0, stagger: 0.25 });
+      }, colors[1], colors, true);
+      a.later(0.41, () => {
+        if (!alive(t)) return;
+        a.anim('Swing', 1.05);
+        a.lift(t, { x: clampX(x + 69 * side), y: clampY(y + 26), z: 61 }, 0.35, 12, () => {
+          g.spawn(new Glow(t.x, t.y, t.bodyZ, 31, rgb, 0.25));
+          spray(g, t.x, t.y, t.bodyZ, 13, colors, { speed: 87, up: 55 });
+          sfx.zap(0.2);
+          a.strike(0.24, { customArt: true, knockback: 0, stagger: 0.22 });
+        }, colors[1], colors, true);
       });
-    }
-    a.later(2.3, () => {
-      g.spawn(new PsyDome(t.x, t.y, 120, 0.6, PSY));
-      crater(a, g, t.x, t.y, { r: 46, rgb: PSY, ring: '#ffffff', mark: (x, y, r) => g.marks.energy(x, y, r, PSY, 6) });
-      a.strike(0.3, { knockback: 280, stagger: 0.6 });
+      a.later(0.89, () => {
+        if (!alive(t)) return;
+        a.anim('Slam', 1.3);
+        sfx.whoosh();
+        a.lift(t, { x: clampX(x + 39 * side), y: clampY(y + 21), z: 0 }, 0.23, 0, () => {
+          hold.dead = true;
+          for (const rock of rubble) {
+            rock.dead = true;
+            debris(g, rock.x, rock.y, 4, 110);
+          }
+          const px = t.x, py = t.y;
+          g.spawn(new Glow(px, py, 14, 53, rgb, 0.3));
+          spray(g, px, py, 12, 23, colors, { speed: 139, up: 110 });
+          crater(a, g, px, py, { r: 38, rgb, ring: colors[1], shake: 9, reach: 105 });
+          a.strike(0.51, { customArt: true, knockback: 250, stagger: 0.6, hitstop: 0.06 });
+        }, colors[1], colors);
+      });
     });
-    a.end(2.9);
+    a.end(2.03);
   },
 
   // Serene Tidal Tempest (Milotic): it coils as a whirlpool forms around the foe, a shimmering wave washes over the
   // arena and restores it (heals 12%), and the water closes around the foe. Slows.
   sereneTidalTempest(a, g, u, t) {
-    const AQUA = [150, 220, 255], C = ['#ffffff', '#9fe8ff', '#f080b0'];
-    g.spawn(new ScreenDim(2.4, 0.45, '8,20,30'));
-    for (let i = 0; i < 5; i++) a.later(i * 0.1, () => g.spawn(new RainbowStreak(u.x - 30 + i * 15, u.y - u.bodyZ - 10, u.x - 30 + i * 15, u.y - u.bodyZ - 50, 0.5)));
-    a.later(0.1, () => {
-      let left = 0.7;
-      a.ticks.push(dt => {
-        if ((left -= dt) <= 0) return;
-        for (let i = 0; i < 4; i++) {
-          const ang = a.t * 8 + (i / 4) * Math.PI * 2, r = 50 - (0.7 - left) * 40;
-          g.particles.spawn({ x: t.x + Math.cos(ang) * r, y: t.y + Math.sin(ang) * r * 0.6, z: 6, vx: -Math.sin(ang) * 80, vy: Math.cos(ang) * 50, life: 0.3, size: rand(2, 4), colors: ['#ffffff', '#9fe8ff'] });
-        }
-      });
-      sfx.hydro(0.7);
+    const aqua = [139, 211, 247], colors = ['#e7f8f8', '#9edbe9', '#d59cb7'];
+    g.spawn(new ScreenDim(2.13, 0.29, '10,24,32'));
+    a.anim('Charge', 0.85);
+    u.face(t.x, t.y);
+    sfx.waterRise();
+    const center = { x: t.x, y: t.y };
+    a.later(0.29, () => {
+      a.anim('Shoot', 1.07);
+      g.spawn(new Whirlpool(center.x, center.y, 60, 1.13));
+      g.marks.wet(center.x, center.y, 41);
+      sfx.hydro(0.83);
     });
-    a.later(0.8, () => a.strike(0.25, { knockback: 0, stagger: 0.5 }));
-    a.later(0.9, () => {
-      const down = t.y > u.y, y0 = down ? 60 : 640, y1 = down ? 640 : 60, dur = 0.8;
-      g.spawn(new TidalWave(y0, y1, dur, AQUA, true));
-      sfx.hydro(dur);
-      a.later((Math.abs(t.y - y0) / 580) * dur, () => {
-        waterSplash(g, t.x, t.y);
-        a.strike(0.45, { dirX: 0, dirY: down ? 1 : -1, knockback: 220, stagger: 0.5 });
-      });
+    const within = r => alive(t) && !t.untouchable && Math.hypot(t.x - center.x, t.y - center.y) <= r + t.radius;
+    a.later(0.58, () => {
+      if (!within(60)) return;
+      spray(g, t.x, t.y, 7, 13, colors, { speed: 94, up: 83 });
+      a.strike(0.25, { customArt: true, knockback: 0, stagger: 0.35 });
     });
-    a.later(1.0, () => {
+    a.later(0.81, () => {
       g.heal(u, u.maxHp * 0.12);
-      g.spawn(new Glow(u.x, u.y, u.bodyZ, 40, [255, 190, 220], 0.5));
-      for (let i = 0; i < 8; i++) g.particles.spawn({ x: u.x + rand(-14, 14), y: u.y, z: u.bodyZ, vz: rand(40, 80), life: 0.6, size: 3, colors: ['#ffd0ec', '#ffffff'] });
+      g.spawn(new Glow(u.x, u.y, u.bodyZ, 31, aqua, 0.46));
+      const down = t.y >= u.y, y0 = u.y, y1 = down ? 650 : 45;
+      const wave = g.spawn(new TidalWave(y0, y1, 0.64, aqua, true));
+      let hit = false;
+      a.ticks.push(() => {
+        if (hit || wave.age >= wave.life || !alive(t) || t.untouchable || Math.abs(wave.y - t.y) > t.radius + 14) return;
+        hit = true;
+        waterSplash(g, t.x, t.y);
+        sfx.splash();
+        a.strike(0.45, { customArt: true, knockback: 85, stagger: 0.35 });
+      });
     });
-    a.later(1.8, () => {
-      for (let i = 0; i < 3; i++) g.spawn(new Ring(t.x, t.y, { r0: 70 - i * 15, r1: 4, life: 0.25 + i * 0.05, color: C[i], width: 3 }));
-      crater(a, g, t.x, t.y, { r: 40, rgb: AQUA, ring: '#ffffff', mark: (x, y, r) => g.marks.wet(x, y, r) });
-      a.strike(0.3, { knockback: 220, stagger: 0.5 });
+    a.later(1.35, () => {
+      g.spawn(new Glow(center.x, center.y, 13, 35, aqua, 0.33));
+      waterSplash(g, center.x, center.y);
+      g.spawn(new Ring(center.x, center.y, { r0: 7, r1: 71, life: 0.44, color: colors[0], width: 4 }));
+      if (within(71) && a.strike(0.3, { customArt: true, knockback: 220, stagger: 0.5, hitstop: 0.055 })) status(g, u, t, 'slow', 3);
     });
-    a.later(1.9, () => status(g, u, t, 'slow', 3));
-    a.end(2.4);
+    a.end(1.96);
   },
 
   // Dragon Axe Cataclysm (Haxorus): its tusks gleam like axes, it charges through the foe twice, swings two giant

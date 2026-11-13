@@ -319,6 +319,28 @@ test('ultimate audit: every roster ultimate finishes its existing choreography w
  assert.ok(seen.size >= 91);
 });
 
+test('Dark Void still deals both hits and ends in sleep without a lightning effect', () => {
+ const g = battle();
+ g.selection = ['darkrai', 'pikachu', 'blastoise'];
+ g.opponentSelection = ['snorlax', 'gyarados', 'rayquaza'];
+ g.start(); g.showcase = null; g.state = 'fighting';
+ for (const mon of [g.player, g.opponent]) Object.assign(mon, { hidden: false, appear: 0, hp: 100000, item: null });
+ let damageFrames = 0;
+ let hp = g.opponent.hp;
+ g.startUltCutscene(g.player, MOVES.darkVoid);
+ for (let frame = 0; frame < 300; frame++) {
+  if (g.cinematic) g.updateUltCutscene(1 / 60);
+  else g.player.action?.update(1 / 60);
+  assert.ok(!g.effects.some(effect => effect.constructor.name === 'Lightning'));
+  if (g.opponent.hp < hp) { damageFrames++; hp = g.opponent.hp; }
+  g.updateEffects(1 / 60);
+  if (g.player.action?.done) break;
+ }
+ assert.equal(damageFrames, 2);
+ assert.ok(g.opponent.status.sleep > 0);
+ assert.equal(g.player.action?.done, true);
+});
+
 import { evolveRaidBoss } from '../src/bosses.js';
 test('raid Mega evolution: exact half HP trigger, health preservation and idempotent co-op state', () => {
  for(const id of ['rayquaza','mewtwo','lugia']) {
@@ -479,4 +501,114 @@ test('Mewtwo raid throws draw one target and one shadow through capture and retu
  }
  assert.ok(heldFrames>50);assert.ok(returnFrames>5);assert.equal(g.presentedActor(player),player);
  assert.equal(player.hp,hp);assert.equal(player.held,false);assert.equal(player.zOverride,null);
+});
+
+import { spawnStructure, structureField } from '../src/arena-structures.js';
+
+test('arena structures deal one hit on entry, skip high jumps and remote opponents, and expire', () => {
+  const g = battle(), owner = g.player, foe = g.opponent;
+  g.headless = true;
+  Object.assign(foe, { x: 112, y: 280, z: 0, dodgeInv: 0 });
+  const field = structureField();
+  const stone = spawnStructure(g, owner, field, 150, 280);
+  spawnStructure(g, owner, field, 154, 280);
+  assert.ok(g.effects.includes(stone), 'the authoritative simulation keeps arena structures');
+  const tick = dt => { g.time += dt; g.updateEffects(dt); };
+  tick(0.24);
+  const full = foe.hp;
+  foe.x = 181;
+  tick(0.04);
+  const damaged = foe.hp;
+  assert.ok(damaged < full, 'moving across both structures triggers one contact even with no overlap at the endpoint');
+  assert.ok(damaged > full - foe.maxHp * 0.08);
+  foe.x = 150;
+  tick(0.04);
+  tick(0.7);
+  assert.equal(foe.hp, damaged, 'standing on the rocks does not repeat the hit');
+  Object.assign(foe, { x: 112, z: 35 });
+  tick(0.04);
+  foe.x = 150;
+  tick(0.04);
+  assert.equal(foe.hp, damaged);
+  Object.assign(foe, { z: 0, remote: true });
+  tick(0.04);
+  assert.equal(foe.hp, damaged);
+  foe.remote = false;
+  tick(0.04);
+  assert.ok(foe.hp < damaged);
+  tick(5.5);
+  assert.ok(!g.effects.includes(stone));
+});
+
+test('Stone Edge leaves damaging spikes after the move ends, then they sink', () => {
+  const g = battle();
+  const { player, opponent } = g;
+  g.headless = true;
+  Object.assign(player, { x: 180, y: 450, item: null });
+  Object.assign(opponent, { x: 180, y: 280, item: null });
+  assert.ok(g.useMove(player, 'stoneEdgeAtk', 0, true));
+  const tick = (frames, onFrame = () => {}) => {
+    for (let frame = 0; frame < frames; frame++) {
+      g.time += 1 / 60;
+      player.action?.update(1 / 60);
+      if (player.action?.done) player.action = null;
+      onFrame();
+      g.updateEffects(1 / 60);
+    }
+  };
+  tick(85, () => { opponent.x = 310; });
+  const spikes = g.effects.filter(effect => effect.field?.lastContact);
+  assert.equal(spikes.length, 9);
+  assert.ok(!player.action);
+  const spike = spikes[0], hp = opponent.hp;
+  opponent.x = spike.x;
+  opponent.y = spike.y;
+  tick(1);
+  assert.ok(opponent.hp < hp, 'the persistent hitbox deals damage after the attack ends');
+  const hurtHp = opponent.hp;
+  tick(60);
+  assert.equal(opponent.hp, hurtHp, 'staying on a spike does not deal repeated damage');
+  tick(360);
+  assert.ok(!g.effects.includes(spike));
+});
+
+test('a spike that arms under a grounded foe registers one contact', () => {
+  const g = battle();
+  const { player, opponent } = g;
+  const spike = spawnStructure(g, player, structureField(), opponent.x, opponent.y);
+  const hp = opponent.hp;
+  g.updateEffects(0.1);
+  assert.equal(opponent.hp, hp);
+  g.updateEffects(0.11);
+  assert.ok(opponent.hp < hp);
+  const hurtHp = opponent.hp;
+  g.updateEffects(0.8);
+  assert.equal(opponent.hp, hurtHp);
+  assert.equal(spike.life, 6);
+});
+
+test('Aura Sphere charges before launching a bounded homing projectile', () => {
+  const g = battle();
+  const { player, opponent } = g;
+  Object.assign(player, { x: 180, y: 450, item: null });
+  Object.assign(opponent, { x: 180, y: 265, item: null });
+  const hp = opponent.hp;
+  assert.ok(g.useMove(player, 'auraSphere', 0, true));
+  const tick = () => {
+    player.action?.update(1 / 60);
+    g.updateEffects(1 / 60);
+  };
+  for (let i = 0; i < 52; i++) tick();
+  assert.ok(!g.effects.some(e => e.move?.id === 'auraSphere'));
+  let orb;
+  for (let i = 0; i < 45 && !orb; i++) {
+    tick();
+    orb = g.effects.find(e => e.move?.id === 'auraSphere');
+  }
+  assert.ok(orb?.isProjectile);
+  assert.equal(opponent.hp, hp);
+  Object.assign(opponent, { x: 310, y: 87 });
+  for (let i = 0; i < 100; i++) tick();
+  assert.equal(opponent.hp, hp);
+  assert.ok(!g.effects.includes(orb));
 });

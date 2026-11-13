@@ -1,8 +1,76 @@
 import { applyHit } from './combat.js';
-import { rand, Ring, Glow, iceShatter, leafBurst } from './effects.js';
+import { rand, Ring, Glow, iceShatter, leafBurst, debris, dustCloud } from './effects.js';
 import { BOUNDS } from './arena.js';
 import { skyLegend, PressureWave } from './legendary-effects.js';
 import { showShotTrail } from './move-presentation.js';
+
+const SPHERE_COLORS = {
+  aura: ['#112751', '#3287ed', '#b3edff', '92,173,255'],
+  moon: ['#48264f', '#c77ab7', '#fff0f5', '245,166,228'],
+  mist: ['#3b254a', '#ce81bb', '#ffdef1', '229,156,207'],
+  psychic: ['#37164b', '#a24bd2', '#ffae9b', '188,104,237'],
+  nature: ['#253e22', '#6ca942', '#e3ffaa', '155,222,84'],
+};
+
+export function drawChargedSphere(ctx, x, y, r, age, style = 'aura', angle) {
+  const [core, shell, light, rgb] = SPHERE_COLORS[style];
+  ctx.save();
+  ctx.translate(x, y);
+  if (angle !== undefined) {
+    ctx.save();
+    ctx.rotate(angle);
+    for (let i = 3; i > 0; i--) {
+      ctx.globalAlpha = 0.23 - i * 0.046;
+      ctx.fillStyle = i % 2 ? shell : light;
+      ctx.beginPath();
+      ctx.ellipse(-r * i * 0.74, Math.sin(age * 27 + i * 2.1) * r * 0.34, r * (1 - i * 0.15), r * (0.58 - i * 0.1), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  const halo = ctx.createRadialGradient(0, 0, r * 0.54, 0, 0, r * 1.6);
+  halo.addColorStop(0, `rgba(${rgb},0.71)`);
+  halo.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = halo;
+  ctx.fillRect(-r * 1.6, -r * 1.6, r * 3.2, r * 3.2);
+  const shading = ctx.createRadialGradient(-r * 0.29, -r * 0.28, r * 0.08, 0, 0, r);
+  shading.addColorStop(0, core);
+  shading.addColorStop(0.63, core);
+  shading.addColorStop(0.87, shell);
+  shading.addColorStop(1, light);
+  ctx.fillStyle = shading;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * (0.96 + Math.sin(age * 20) * 0.04), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+export function sphereContact(g, x, y, z, moon = false, size = 1) {
+  const color = moon ? '#ffd1ee' : '#b8edff';
+  const rgb = moon ? [255, 143, 219] : [93, 171, 255];
+  g.spawn(new Glow(x, y, z, 39 * size, rgb, 0.35));
+  for (const [radius, life] of [[25, 0.19], [48, 0.36]]) {
+    g.spawn(new Ring(x, y, { z, r0: 4, r1: radius * size, life, color, width: 3, layer: 'air' }));
+  }
+  if (!moon) {
+    g.marks.fracture(x, y, 26 * size, 5);
+    debris(g, x, y, 8, 130);
+  } else g.marks.energy(x, y, 26 * size, rgb, 5);
+}
+
+export function drawOrbCore(ctx, x, y, style, age, scale = style.scale ?? 1) {
+  const pulse = (1 + Math.sin(age * 30) * 0.12) * scale;
+  const [r, g, b] = style.glow;
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, 15 * pulse);
+  halo.addColorStop(0, `rgba(${r},${g},${b},0.95)`);
+  halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  ctx.fillStyle = halo;
+  ctx.fillRect(x - 16 * pulse, y - 16 * pulse, 32 * pulse, 32 * pulse);
+  ctx.fillStyle = style.core;
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5 * scale, 0, Math.PI * 2);
+  ctx.fill();
+}
 
 class Projectile {
   constructor(game, user, move, x, y, z, angle, speed, maxDist, radius) {
@@ -123,7 +191,7 @@ export const ORBS = {
     trail: ['#ffffff', '#c8f2ff'], mark: (g, x, y) => g.marks.frost(x, y, 7),
   },
   aura: {
-    speed: 290, radius: 9, glow: [90, 150, 255], core: '#eef6ff', knockback: 150,
+    speed: 290, radius: 9, sphere: true, glow: [90, 150, 255], core: '#eef6ff', knockback: 200,
     trail: ['#dff0ff', '#6aa8ff', '#2a5ad8'], mark: (g, x, y) => g.marks.energy(x, y, 13, [90, 150, 255]),
   },
   ghost: {
@@ -198,7 +266,8 @@ export class Orb extends Projectile {
     }
     // Charged shots fly bigger and hit harder (power is already scaled on the move itself).
     const k = 1 + 0.6 * (move.chargeLevel ?? 0);
-    super(game, user, move, x, y, z, angle, s.speed, move.range, s.radius * k);
+    const sphere = s.sphere ? move.targeting : null;
+    super(game, user, move, x, y, z, angle, sphere?.speed ?? s.speed, sphere?.range ?? move.range, (sphere?.hitbox ?? s.radius) * k);
     this.s = k > 1 ? { ...s, scale: (s.scale ?? 1) * k, knockback: s.knockback * k } : s;
     this.power = move.power;
     this.elem = STYLE_ELEM[style] ?? move.type;
@@ -221,6 +290,11 @@ export class Orb extends Projectile {
 
   trail() {
     const s = this.s, back = this.angle + Math.PI;
+    if (s.sphere && !this.game.headless && this.traveled - (this.lastFracture ?? 0) >= 27) {
+      this.lastFracture = this.traveled;
+      this.game.marks.fracture(this.x, this.y, 9, 4);
+      dustCloud(this.game, this.x, this.y, 3, 3);
+    }
     const count = s.shard || (s.leaves && this.move.id !== 'leafStorm') ? 1 : 2;
     for (let i = 0; i < count; i++) {
       this.game.particles.spawn({
@@ -248,11 +322,13 @@ export class Orb extends Projectile {
     }
     if (s.leaves) leafBurst(g, this.x, this.y, z, 10);
     s.mark(g, this.x, this.y);
+    if (hit && s.sphere) sphereContact(g, this.x, this.y, z);
     if (hit) applyHit(g, this.user, this.target, this.move, this.hitOpts({ knockback: s.knockback, stagger: 0.3, hitstop: 0.03 }));
   }
 
   draw(ctx) {
     const s = this.s, cy = this.y - this.z;
+    if (s.sphere) return drawChargedSphere(ctx, this.x, cy, 13, this.age, 'aura', this.angle);
     if (s.leaves && this.move.id !== 'leafStorm' && (s.homing || this.move.presentation === 'volley')) {
       this.drawLeaf(ctx, cy);
       return;
@@ -279,17 +355,7 @@ export class Orb extends Projectile {
       ctx.restore();
       return;
     }
-    const pulse = (1 + Math.sin(this.age * 30) * 0.12) * (s.scale ?? 1);
-    const [R, G, B] = s.glow;
-    const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, 15 * pulse);
-    g.addColorStop(0, `rgba(${R},${G},${B},0.95)`);
-    g.addColorStop(1, `rgba(${R},${G},${B},0)`);
-    ctx.fillStyle = g;
-    ctx.fillRect(this.x - 16 * pulse, cy - 16 * pulse, 32 * pulse, 32 * pulse);
-    ctx.fillStyle = s.core;
-    ctx.beginPath();
-    ctx.arc(this.x, cy, 4.5 * (s.scale ?? 1), 0, Math.PI * 2);
-    ctx.fill();
+    drawOrbCore(ctx, this.x, cy, s, this.age);
   }
 
   drawLeaf(ctx, cy) {

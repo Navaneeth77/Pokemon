@@ -14,7 +14,7 @@ Open http://localhost:5173. For two local players use separate browsers, or two 
 
 ## Modes and expansion
 
-- **Roster:** all 527 fully evolved Pokémon with complete PMD SpriteCollab sheets (no middle stages), with real base stats and their official abilities. `scripts/build-national.py` regenerates `src/data/national.js` and the sprites; `scripts/fetch-cries.py` fetches the cries.
+- **Roster:** 528 playable Pokémon, including Eternal Flower Floette, with real base stats and their official abilities. `scripts/build-national.py` regenerates `src/data/national.js` and the sprites; `scripts/fetch-cries.py` fetches the cries.
 - **Abilities:** official abilities adapted to real time. Every activation shows the games' ability banner, a flare and its effect (stat arrows, ripples, Intimidate's glare…).
 - **Kits:** each Pokémon's held item (about 50), Tera type and shiny switch, set in the team builder and used in every mode. Press **M** to Mega Evolve or, for Pokémon without a Mega form, Terastallize (one per team per battle).
 - **Field:** weather (rain, sun, sandstorm, snow) and terrains from abilities and moves; entry hazards (Stealth Rock, Spikes, Toxic Spikes, Sticky Web; Rapid Spin clears them); a telegraphed arena event every 22s (avalanche, falling trees, eruption, tidal surge, lightning).
@@ -123,7 +123,7 @@ Raid bosses alone use the supplied **Shadow Lugia, Armored Mewtwo and Dark Rayqu
 
 ## Asset credits
 
-- Sprites and portraits: [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab), **CC BY-NC 4.0**, by its contributing artists, under `public/sprites`.
+- Sprites and portraits: [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab), **CC BY-NC 4.0**, by its contributing artists, under `public/sprites`. See [Mega sprite credits](docs/MEGA-SPRITE-CREDITS.md) for the added forms.
 - Rayquaza: PMD2/PMD1 rips by Redblueyellow and MR.C; Dark Night repaint by Dialga22239. Playable Rayquaza retains the green recolor; raid bosses use the supplied dark palette.
 - Shadow Lugia: supplied sheet by **LaPokefanatica**. Armored Mewtwo: user-supplied sheet, artist not identified in the supplied image. These are imported pixel assets, not newly generated SpriteCook characters.
 - Trainer sprites and arenas are drawn in code. Sound effects and music are synthesized in code. The server skips arena textures, ground decoration, ambient particles and HUD animation while preserving gameplay callbacks.

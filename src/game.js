@@ -956,6 +956,7 @@ export class Game {
   }
 
   ultColors(c) {
+    if (c.move.cutsceneColors) return c.move.cutsceneColors;
     return c.move.type === 'fire' && c.mon.species.flame === 'blue' ? ['#6cc8ff', '#1f4cc0'] : TYPE_COLORS[c.move.type];
   }
 

@@ -7,6 +7,7 @@
 //
 // `a` is the Ultimate action (moves.js): later(dt, fn), strike(frac, opts), boom(mag), erupt(), spot(), converge(),
 // mouth(), anim(), lift() and the per-frame `ticks` list. Effects that never end on their own go in `a.owned`.
+import { spawnStructure, structureField } from './arena-structures.js';
 import { BOUNDS } from './arena.js';
 import {
   rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura,
@@ -35,10 +36,10 @@ export function spray(g, x, y, z, n, colors, { speed = 110, up = 160, size = [2,
 }
 
 // The big landing every climax shares: layered shockwave rings, a crater, flying rock and dust, and a hit-pause.
-export function crater(a, g, x, y, { r = 50, rgb, ring = '#ffffff', mark, stop = 0.12, shake = 14 } = {}) {
-  g.spawn(new Ring(x, y, { r0: 8, r1: 440, life: 0.6, color: ring, width: 8 }));
-  g.spawn(new Ring(x, y, { r0: 8, r1: 260, life: 0.5, color: css(rgb), width: 5 }));
-  g.spawn(new Ring(x, y, { r0: 4, r1: 120, life: 0.35, color: '#ffffff', width: 3 }));
+export function crater(a, g, x, y, { r = 50, rgb, ring = '#ffffff', mark, stop = 0.12, shake = 14, reach = 440 } = {}) {
+  g.spawn(new Ring(x, y, { r0: 8, r1: reach, life: 0.6, color: ring, width: 8 }));
+  g.spawn(new Ring(x, y, { r0: 8, r1: reach * 260 / 440, life: 0.5, color: css(rgb), width: 5 }));
+  g.spawn(new Ring(x, y, { r0: 4, r1: reach * 120 / 440, life: 0.35, color: '#ffffff', width: 3 }));
   g.spawn(new Glow(x, y, 12, r * 1.8, rgb, 0.5));
   g.marks.fracture(x, y, r, 7.5);
   mark?.(x, y, r * 0.8);
@@ -51,15 +52,16 @@ export function crater(a, g, x, y, { r = 50, rgb, ring = '#ffffff', mark, stop =
 
 // Moves the user in a straight line to `to` over `dur`, trailing afterimages (and speed lines, given a colour).
 // `onStep(k)` runs every frame with the progress 0…1.
-export function glide(a, g, u, to, dur, ghost, { lines, onStep } = {}) {
+export function glide(a, g, u, to, dur, ghost, { lines, onStep, ease } = {}) {
   const from = { x: u.x, y: u.y }, ang = Math.atan2(to.y - from.y, to.x - from.x);
   let k = 0;
   u.phasing = true;
   a.ticks.push(dt => {
     if (k >= 1) return;
     k = Math.min(1, k + dt / dur);
-    u.x = from.x + (to.x - from.x) * k;
-    u.y = from.y + (to.y - from.y) * k;
+    const p = ease ? ease(k) : k;
+    u.x = from.x + (to.x - from.x) * p;
+    u.y = from.y + (to.y - from.y) * p;
     g.spawn(new Afterimage(u, 0.3, ghost));
     if (lines) speedLines(g, u, ang, lines);
     onStep?.(k);
@@ -386,6 +388,8 @@ export const TYPE_ULTS = {
   // Fissure: the user stamps, a crack races across the arena to the foe, the ground gapes open around it with rock
   // jutting from the rim, and the earth slams shut.
   fissure(a, g, u, t) {
+    const field = structureField();
+    const rock = { type: 'ground', damage: 0.03 };
     const EARTH = [200, 160, 80];
     g.spawn(new ScreenDim(2.4, 0.5, '30,20,8'));
     a.anim('Attack', 1);
@@ -401,10 +405,10 @@ export const TYPE_ULTS = {
       const ang = u.aimAt(t), d = u.distTo(t) + 50, steps = Math.max(6, Math.round(d / 18));
       for (let i = 1; i <= steps; i++) {
         a.later(i * 0.035, () => {
-          const k = i / steps, x = clampX(u.x + Math.cos(ang) * d * k + rand(-5, 5)), y = clampY(u.y + Math.sin(ang) * d * k + rand(-5, 5));
+          const k = i / steps, x = clampX(u.x + Math.cos(ang) * d * k), y = clampY(u.y + Math.sin(ang) * d * k);
           g.marks.fracture(x, y, rand(10, 15), 7);
           dustCloud(g, x, y, 2, 4);
-          if (i % 3 === 0) g.spawn(new Spike(x + rand(-14, 14), y + rand(-6, 6), 'stone', 0.6));
+          if (i % 3 === 0) spawnStructure(g, u, field, x, y, rock);
           g.shake(2, 0.06);
           if (i === steps) {
             debris(g, t.x, t.y, 12, 120);
