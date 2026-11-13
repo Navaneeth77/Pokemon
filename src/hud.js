@@ -11,10 +11,12 @@ import { statusPills, buffPills, stagePills } from './status.js';
 import { ROLES, roleOf } from './roles.js';
 
 const BAR_W = 116;
+const PANEL_H = 46;
 
 export class Hud {
   constructor(game) {
     this.game = game;
+    this.panelLayers = [];
     this.reset();
   }
 
@@ -97,6 +99,48 @@ export class Hud {
   }
 
   drawPanel(ctx, mon, team, right) {
+    const types = typesOf(mon), statuses = statusPills(mon).slice(0, 2);
+    const ability = abilityOf(mon), role = roleOf(mon.species);
+    const bust = !right && this.game.playerBust;
+    const frameColor = bust && this.game.cosmetics?.frame?.color;
+    const hp = Math.ceil(mon.hp), ratio = mon.shownHp / mon.maxHp;
+    const hpWidth = Math.round(BAR_W * ratio), trailWidth = Math.round(BAR_W * mon.trailHp / mon.maxHp);
+    const hpColor = ratio > 0.5 ? '#46d36b' : ratio > 0.2 ? '#f4c430' : '#ec4b3c';
+    const ultWidth = Math.round(BAR_W * Math.min(1, mon.ult / 100));
+    const ready = mon.ult >= 100, blink = ready && Math.floor(performance.now() / 160) % 2;
+    const key = JSON.stringify([
+      mon.species.name, role, mon.isMega, mon.alive, types, statuses,
+      mon.trainer.name, ability.name, frameColor, team.index,
+      team.members.map(member => member.isMega ? 'mega' : member.alive),
+      hp, hpWidth, trailWidth, hpColor, ultWidth, ready, blink,
+    ]);
+    const index = Number(right), scale = this.game.k;
+    let layer = this.panelLayers[index];
+    if (!layer) {
+      const canvas = document.createElement('canvas');
+      layer = this.panelLayers[index] = { canvas, ctx: canvas.getContext('2d') };
+    }
+    if (layer.scale !== scale || layer.key !== key || layer.portrait !== mon.portrait || layer.bust !== bust) {
+      const { canvas, ctx: paint } = layer;
+      if (layer.scale !== scale) {
+        canvas.width = Math.ceil(WORLD_W * scale);
+        canvas.height = Math.ceil(PANEL_H * scale);
+      }
+      paint.setTransform(scale, 0, 0, scale, 0, 0);
+      paint.clearRect(0, 0, canvas.width / scale, canvas.height / scale);
+      this.drawPanelArt(paint, mon, team, right, {
+        types, statuses, ability, role, bust, frameColor, hp, hpWidth, trailWidth, hpColor, ultWidth, ready, blink,
+      });
+      Object.assign(layer, { scale, key, portrait: mon.portrait, bust });
+    }
+    const { canvas } = layer;
+    ctx.drawImage(canvas, 0, 0, canvas.width / scale, canvas.height / scale);
+
+    const glow = this.glow[right ? 'opponent' : 'player'];
+    if (glow > 0) roundRect(ctx, right ? WORLD_W / 2 + 4 : 2, 2, WORLD_W / 2 - 6, 44, 6, `rgba(255,255,255,${0.35 * glow})`);
+  }
+
+  drawPanelArt(ctx, mon, team, right, art) {
     const W = WORLD_W, align = right ? 'right' : 'left';
     const px = right ? W - 37 : 5;
     roundRect(ctx, px - 1, 4, 34, 34, 4, '#10131a');
@@ -110,11 +154,11 @@ export class Hud {
     const name = mon.species.name.toUpperCase();
     outlinedText(ctx, name, tx, 14, { size: name.length > 12 ? 9.5 : 11, align, lw: 2.5 });
 
-    const pills = typesOf(mon).map(t => [t.toUpperCase(), TYPE_COLORS[t][0]]);
+    const pills = art.types.map(t => [t.toUpperCase(), TYPE_COLORS[t][0]]);
     if (mon.isMega) pills.push(['MEGA', '#c44fd8']);
-    const R = ROLES[roleOf(mon.species)];
+    const R = ROLES[art.role];
     pills.push([R.short.slice(0, 4), R.color]); // PHYS / SPEC / SUPP
-    pills.push(...statusPills(mon).slice(0, 2));
+    pills.push(...art.statuses);
     ctx.font = '700 5.5px "Pixelify Sans"';
     let cx = tx;
     for (const [label, color] of pills) {
@@ -129,24 +173,23 @@ export class Hud {
     roundRect(ctx, bx - 1, by - 1, BAR_W + 2, bh + 2, 2, '#0b0e14');
     ctx.fillStyle = '#2a313d';
     ctx.fillRect(bx, by, BAR_W, bh);
-    const fill = (ratio, color) => {
-      const w = Math.max(0, Math.round(BAR_W * ratio));
+    const fill = (width, color) => {
+      const w = Math.max(0, width);
       ctx.fillStyle = color;
       ctx.fillRect(right ? bx + BAR_W - w : bx, by, w, bh);
     };
-    const r = mon.shownHp / mon.maxHp;
-    fill(mon.trailHp / mon.maxHp, '#f3f3f3');
-    fill(r, r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
+    fill(art.trailWidth, '#f3f3f3');
+    fill(art.hpWidth, art.hpColor);
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.fillRect(bx, by, BAR_W, 2);
-    outlinedText(ctx, String(Math.ceil(mon.hp)), right ? bx + BAR_W - 3 : bx + 3, by + 7, { size: 7, family: 'Luckiest Guy', weight: 400, align, lw: 2 });
+    outlinedText(ctx, String(art.hp), right ? bx + BAR_W - 3 : bx + 3, by + 7, { size: 7, family: 'Luckiest Guy', weight: 400, align, lw: 2 });
 
     // Ultimate meter: fills from damage dealt and taken; glows when ready.
-    const ready = mon.ult >= 100, uw = Math.round(BAR_W * Math.min(1, mon.ult / 100));
+    const { ready, ultWidth } = art;
     ctx.fillStyle = '#0b0e14';
     ctx.fillRect(bx - 1, by + bh + 1, BAR_W + 2, 4);
-    ctx.fillStyle = ready ? (Math.floor(performance.now() / 160) % 2 ? '#ffffff' : '#ffd84a') : '#d89a1a';
-    ctx.fillRect(right ? bx + BAR_W - uw : bx, by + bh + 2, uw, 2);
+    ctx.fillStyle = ready ? (art.blink ? '#ffffff' : '#ffd84a') : '#d89a1a';
+    ctx.fillRect(right ? bx + BAR_W - ultWidth : bx, by + bh + 2, ultWidth, 2);
 
     // Team roster: one ball per member (grey once fainted), the active one ringed.
     team.members.forEach((m, i) => {
@@ -163,10 +206,10 @@ export class Hud {
     });
     // Trainer name after the team balls (3 or 6 of them); the player's chosen portrait sits in front.
     let nx = 46 + team.members.length * 8 + 2;
-    const bust = !right && this.game.playerBust;
+    const { bust, frameColor } = art;
     if (bust) {
       ctx.drawImage(bust, nx - 1, 36.5, 9, 9);
-      if (this.game.cosmetics?.frame) { ctx.strokeStyle=this.game.cosmetics.frame.color;ctx.lineWidth=1;ctx.strokeRect(nx-2,35.5,11,11); }
+      if (frameColor) { ctx.strokeStyle=frameColor;ctx.lineWidth=1;ctx.strokeRect(nx-2,35.5,11,11); }
       nx += 10;
     }
     nx = right ? W - nx : nx;
@@ -175,12 +218,9 @@ export class Hud {
     });
     ctx.font = '700 6px "Pixelify Sans"';
     const tw = ctx.measureText(mon.trainer.name.toUpperCase()).width;
-    const abName = abilityOf(mon).name.toUpperCase();
+    const abName = art.ability.name.toUpperCase();
     outlinedText(ctx, right ? `${abName} ·` : `· ${abName}`, right ? nx - tw - 4 : nx + tw + 4, 44.5, { size: 6, align, color: '#e8e0c8', lw: 2 });
     if (ready) outlinedText(ctx, 'ULT READY', right ? bx : bx + BAR_W, by + bh + 8.5, { size: 5.5, align: right ? 'left' : 'right', color: '#ffd84a', lw: 1.5 });
-
-    const glow = this.glow[right ? 'opponent' : 'player'];
-    if (glow > 0) roundRect(ctx, right ? W / 2 + 4 : 2, 2, W / 2 - 6, 44, 6, `rgba(255,255,255,${0.35 * glow})`);
   }
 
   // Stat changes under each panel, always in view: stages (ATK +2, SPE −1) and timed boosts (ATK ×1.3 4s),
