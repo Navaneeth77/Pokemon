@@ -2,6 +2,7 @@ export const QUALITY = {
   high: { label: 'HIGH', particles: 1200, ratio: 2 },
   balanced: { label: 'BALANCED', particles: 600, ratio: 1.5 },
   performance: { label: 'PERFORMANCE', particles: 220, ratio: 1 },
+  highFps: { label: '100 FPS', particles: 150, ratio: 1 },
 };
 let selected = 'balanced';
 try { const saved = localStorage.getItem('msb.quality'); if (Object.hasOwn(QUALITY, saved)) selected = saved; } catch {}
@@ -26,10 +27,13 @@ export function observeFrame(costMs, frameMs) {
     frameBudget = Math.min(1000 / 60, cadence[9]);
     cadence.length = 0;
   }
+  if (selected === 'highFps') return false;
   const overBudget = costMs > frameBudget * 0.78 || (costMs > frameBudget * 0.45 && frameMs > frameBudget * 1.4);
   pressure = Math.max(0, pressure + (overBudget ? 1 : -0.5));
-  if (pressure < 24 || selected === 'performance') return false;
-  selected = selected === 'high' ? 'balanced' : 'performance';
+  if (pressure < 24) return false;
+  // On 60 Hz displays keep the normal quality ladder. Faster displays can step down further.
+  if (selected === 'performance' && frameBudget > 11) return false;
+  selected = selected === 'high' ? 'balanced' : selected === 'balanced' ? 'performance' : 'highFps';
   pressure = 0;
   return true;
 }

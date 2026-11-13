@@ -1,3 +1,4 @@
+import { qualityName } from './quality.js';
 import { GroundFX } from './groundfx.js';
 import { RAID_ARENAS, paintRaidFloor, drawRaidBackdrop, drawRaidAtmosphere } from './raid-environments.js';
 export { RAID_ARENAS } from './raid-environments.js';
@@ -319,7 +320,10 @@ export class Arena {
 
   drawSnow(ctx) {
     const kind = this.theme.ambient.kind;
-    for (const f of this.flakes) {
+    // Ambient particles are scenery. Keep the full animation for attacks and arena hazards.
+    const stride = qualityName() === 'highFps' ? 3 : 1;
+    for (let i = 0; i < this.flakes.length; i += stride) {
+      const f = this.flakes[i];
       ctx.globalAlpha = kind === 'sparkle' ? Math.max(0, Math.sin(this.t * 3 + f.ph)) * f.a : f.a;
       ctx.fillStyle = f.c;
       if(kind==='rain'||kind==='wind'){ctx.strokeStyle=f.c;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(f.x+(kind==='rain'?-2:9),f.y+(kind==='rain'?10:-1));ctx.stroke();}

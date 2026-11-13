@@ -7,6 +7,22 @@ export function structureField() {
   return { lastContact: new WeakMap() };
 }
 
+const shadows = new Map();
+
+function spikeShadow(magma) {
+  if (shadows.has(magma)) return shadows.get(magma);
+  const sprite = document.createElement('canvas');
+  sprite.width = 56;
+  sprite.height = 20;
+  const ctx = sprite.getContext('2d');
+  ctx.fillStyle = magma ? 'rgba(130,53,29,0.37)' : 'rgba(42,36,50,0.23)';
+  ctx.beginPath();
+  ctx.ellipse(28, 10, 28, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  shadows.set(magma, sprite);
+  return sprite;
+}
+
 class ArenaStructure extends Spike {
   constructor(game, owner, field, x, y, { style = 'stone', type = 'rock', damage = 0.035 } = {}) {
     super(Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, x)), Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, y)), style, 6, true);
@@ -42,14 +58,11 @@ class ArenaStructure extends Spike {
   }
 
   draw(ctx) {
-    ctx.save();
+    const alpha = ctx.globalAlpha;
     const glow = Math.min(1, this.age / 0.13, (this.life - this.age) / this.sinkFor);
-    ctx.globalAlpha *= glow;
-    ctx.fillStyle = this.style === 'magma' ? 'rgba(130,53,29,0.37)' : 'rgba(42,36,50,0.23)';
-    ctx.beginPath();
-    ctx.ellipse(this.x, this.y + 1, 14, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    ctx.globalAlpha = alpha * glow;
+    ctx.drawImage(spikeShadow(this.style === 'magma'), this.x - 14, this.y - 4, 28, 10);
+    ctx.globalAlpha = alpha;
     super.draw(ctx);
   }
 
