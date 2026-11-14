@@ -105,15 +105,49 @@ async function redis(cmd) {
 // Ordered writes. Giving up on a slow request doesn't stop Redis from running it later, so a timed-out old
 // write could otherwise land after a newer one. Every value is stored with a revision in a `rev:<field>`
 // field of the same hash, and this script (atomic inside Redis) only writes a value whose revision is
-// newer than the stored one: a late old write is ignored, and repeating a write is harmless.
-const CAS_SCRIPT = "for i=1,#ARGV,3 do local r=tonumber(ARGV[i+2]) local cur=tonumber(redis.call('HGET',KEYS[1],'rev:'..ARGV[i]) or '-1') "
-  + "if r>cur then redis.call('HSET',KEYS[1],ARGV[i],ARGV[i+1],'rev:'..ARGV[i],ARGV[i+2]) end end return 1";
-// Revisions are microsecond timestamps that never repeat or go backwards within this process, so they also keep
-// increasing across restarts and redeploys. They assume one server process writes (multi-instance is unsupported).
-let lastRev = 0;
-const nextRev = () => (lastRev = Math.max(lastRev + 1, Date.now() * 1000));
-// entries: [field, value, revision] triples written to one hash.
-const writeNewer = (key, entries) => redis(['EVAL', CAS_SCRIPT, '1', key, ...entries.flatMap(([f, v, r]) => [f, v, String(r)])]);
+// newer than the stored one: a late old write is ignored, and repeating a write is harmless. It answers per
+// entry: 1 = stored, 0 = this exact revision was already stored (a retry), -1 = refused, the stored one is newer.
+const CAS_SCRIPT = "local out={} for i=1,#ARGV,3 do local r=tonumber(ARGV[i+2]) local cur=tonumber(redis.call('HGET',KEYS[1],'rev:'..ARGV[i]) or '-1') "
+  + "if r>cur then redis.call('HSET',KEYS[1],ARGV[i],ARGV[i+1],'rev:'..ARGV[i],ARGV[i+2]) out[#out+1]=1 elseif r==cur then out[#out+1]=0 else out[#out+1]=-1 end end return out";
+// Revisions don't use the clock. Every server start takes the next number from a Redis counter (its epoch), and
+// its revisions are REV_BASE + epoch * REV_SPAN + a running count. So a later start always outranks everything an
+// earlier one wrote, even if the clock went backwards, and a late write from a previous process is refused.
+// REV_BASE sits above the microsecond-timestamp revisions an earlier version stored. One writer at a time is
+// still assumed: two processes running together (multi-instance) is unsupported.
+const REV_BASE = 2e15, REV_SPAN = 1e9, EPOCH_KEY = process.env.REV_EPOCH_KEY || 'chaos-arena:writer-epoch';
+let epoch = null, revCount = 0;
+function nextRev() {
+  if (epoch == null) throw Error('ordered storage is not available');
+  if (++revCount >= REV_SPAN) throw Error('revision space used up; restart the server');
+  return REV_BASE + epoch * REV_SPAN + revCount;
+}
+// entries: [field, value, revision] triples written to one hash; resolves to one status per entry (see above).
+async function writeNewer(key, entries) {
+  const out = await redis(['EVAL', CAS_SCRIPT, '1', key, ...entries.flatMap(([f, v, r]) => [f, v, String(r)])]);
+  if (!Array.isArray(out) || out.length !== entries.length) throw Error('unexpected reply from the ordered-write script');
+  return out.map(Number);
+}
+if (REDIS) {
+  try {
+    epoch = Number(await redis(['INCR', EPOCH_KEY]));
+    if (!Number.isInteger(epoch) || epoch < 1 || REV_BASE + (epoch + 1) * REV_SPAN > Number.MAX_SAFE_INTEGER) throw Error(`bad epoch ${epoch}`);
+    // Runs the real ordered-write script once on a key of its own, so a broken script shows up now, not on a purchase.
+    const [check] = await writeNewer(`${EPOCH_KEY}:check`, [['probe', String(epoch), nextRev()]]);
+    if (check !== 1) throw Error(`ordered-write check answered ${check}`);
+  } catch (err) {
+    epoch = null;
+    storageError = `ordered writes unavailable: ${err.message}`;
+    console.error('ordered Redis writes are unavailable:', err.message);
+  }
+}
+// Wallet saving as it happens (shown on /health): a write that failed or was refused keeps economy.ok false
+// until that wallet is stored.
+const walletHealth = { lastOkAt: null, lastError: null, lastErrorAt: null };
+let walletQueue = () => ({ count: 0, oldest: 0 });
+function economyHealth() {
+  const q = walletQueue(), unsaved = economy.unsaved.size, error = economy.error ?? walletHealth.lastError;
+  return { ok: !error && !unsaved, error: error ?? undefined, unsaved, pending: q.count, oldestPendingMs: q.oldest ? Date.now() - q.oldest : 0, lastOkAt: walletHealth.lastOkAt };
+}
 
 const keep = (pid, r) => {
   if (PID_RE.test(pid) && r) records.set(pid, { name: safeName(r.name), w: r.w | 0, l: r.l | 0, d: r.d | 0, rating: Number.isFinite(r.rating) ? Math.round(r.rating) : START_RATING, streak: r.streak | 0 });
@@ -124,7 +158,7 @@ try {
     for (let i = 0; i + 1 < flat.length; i += 2) {
       try { keep(flat[i], JSON.parse(flat[i + 1])); } catch { /* skip a damaged entry */ }
     }
-    storageError = null;
+    if (epoch != null) storageError = null; // keeps an "ordered writes unavailable" error visible
   } else for (const [pid, r] of Object.entries(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')))) keep(pid, r);
 } catch (err) {
   if (REDIS) {
@@ -156,26 +190,50 @@ if (REDIS) {
     const batch = [...pending];
     pending.clear();
     try {
-      await writeNewer(WALLET_KEY, batch.map(([pid, e]) => [pid, JSON.stringify(e.record), e.rev]));
-      for (const [, e] of batch) for (const w of e.waiters) w.resolve();
+      const results = await writeNewer(WALLET_KEY, batch.map(([pid, e]) => [pid, JSON.stringify(e.record), e.rev]));
+      batch.forEach(([pid, e], k) => {
+        if (results[k] === -1) {
+          economy.refused(pid);
+          // Storage holds a newer version than this server's: never report this one as saved.
+          walletHealth.lastError = 'a wallet write was refused because storage holds a newer version (is a second server writing?)';
+          walletHealth.lastErrorAt = Date.now();
+          console.error(`wallet write refused as stale for one player (revision ${e.rev})`);
+          for (const w of e.waiters) w.reject(Error('Your wallet changed somewhere else, so this change was not saved. Please reload.'));
+          return;
+        }
+        for (const w of e.waiters) w.resolve();
+        economy.stored(pid, e.record);
+      });
+      walletHealth.lastOkAt = Date.now();
       writing = false;
       if (pending.size) schedule(WALLET_WRITE_MS);
+      else if (!economy.unsaved.size) walletHealth.lastError = null; // everything is stored again
     } catch (err) {
       console.error('could not save wallets to Redis:', err.message);
-      for (const [, e] of batch) for (const w of e.waiters) w.reject(Error('Your wallet change could not be saved yet. Please try again in a moment.'));
+      walletHealth.lastError = `wallet save failed: ${err.message}`;
+      walletHealth.lastErrorAt = Date.now();
+      for (const [pid, e] of batch) {
+        economy.refused(pid);
+        for (const w of e.waiters) w.reject(Error('Your wallet change could not be saved yet. Please try again in a moment.'));
+      }
       // Retry later, unless a newer version of that wallet is already waiting (it supersedes this one).
-      for (const [pid, e] of batch) if (!pending.has(pid)) pending.set(pid, { record: e.record, rev: e.rev, waiters: [] });
+      for (const [pid, e] of batch) if (!pending.has(pid)) pending.set(pid, { record: e.record, rev: e.rev, since: e.since, waiters: [] });
       writing = false;
       schedule(10_000);
     }
   };
+  walletQueue = () => {
+    let oldest = 0;
+    for (const e of pending.values()) if (!oldest || e.since < oldest) oldest = e.since;
+    return { count: pending.size, oldest };
+  };
   try {
-    // Ordered writes need Lua scripting; without it the wallet refuses changes rather than risk stale writes.
-    await redis(['EVAL', 'return 1', '0']);
+    // Ordered writes are required; without them the wallet refuses changes rather than risk stale writes.
+    if (epoch == null) throw Error('ordered writes unavailable');
     const flat = (await redis(['HGETALL', WALLET_KEY])) ?? [];
     economy.load(Array.from({ length: flat.length >> 1 }, (_, i) => { try { return [flat[2 * i], JSON.parse(flat[2 * i + 1])]; } catch { return []; } }));
     economy.sink = (pid, record) => new Promise((resolve, reject) => {
-      const e = pending.get(pid) ?? { waiters: [] };
+      const e = pending.get(pid) ?? { waiters: [], since: Date.now() };
       e.record = record;
       e.rev = nextRev(); // taken as the change happens, so a newer wallet always has a higher revision
       e.waiters.push({ resolve, reject });
@@ -206,8 +264,10 @@ async function flushRecords() {
     recordsWriting = true;
     try {
       const rev = nextRev();
-      await writeNewer(REDIS_KEY, pids.map(p => [p, JSON.stringify(records.get(p)), rev]));
-      storageError = null;
+      const results = await writeNewer(REDIS_KEY, pids.map(p => [p, JSON.stringify(records.get(p)), rev]));
+      const refused = results.filter(r => r === -1).length;
+      storageError = refused ? `${refused} leaderboard write(s) refused: storage holds newer data (is a second server writing?)` : null;
+      if (refused) console.error(storageError);
     } catch (err) {
       storageError = `save failed: ${err.message}`;
       for (const p of pids) dirty.add(p); // try again shortly
@@ -1149,7 +1209,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/health' || req.url === '/ready') {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, economy: { ok: !economy.error }, keepAwake: KEEP_AWAKE_ENABLED, load }));
+    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, economy: economyHealth(), keepAwake: KEEP_AWAKE_ENABLED, load }));
     return;
   }
   res.writeHead(404).end();

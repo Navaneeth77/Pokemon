@@ -122,6 +122,14 @@ export class EconomyStore {
 
   // Resolves when every change made so far to this player's wallet is in storage; rejects if the latest
   // write failed (it is retried in the background, and wallet operations are idempotent by id).
+  // Storage now holds this wallet's current version (a write or background retry landed): no longer unsaved.
+  // Called as soon as the write result is known, so health checks never see a stale state.
+  stored(pid, record) {
+    if (this.data.players[pid] === record) this.unsaved.delete(pid);
+  }
+  // Storage refused this wallet's write: it stays unsaved (and is saved again before anything is confirmed).
+  refused(pid) { this.unsaved.add(pid); }
+
   // A wallet whose last save failed is saved again (its newest version) before anything is confirmed.
   committed(pid) {
     const inFlight = this.commits.get(pid);

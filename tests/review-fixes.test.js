@@ -140,55 +140,70 @@ test('F03: the journal file is fsynced and reloads after a restart', () => {
 });
 
 // ── Match server ──
-// A fake Upstash endpoint: writes can be delayed or made to fail, and the last value per wallet is kept.
+// A fake Upstash endpoint: wallet writes can be delayed or made to fail. Hashes are kept per key.
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
-const ECO_PID = 'redis-order-player', ECO_SECRET = 'a1'.repeat(32);
-const redisMock = { store: new Map(), writes: [], delays: [], fail: false };
-{
-  const w = freshWallet(ECO_PID, Date.now());
+const ECO_PID = 'redis-order-player', ECO_SECRET = 'a1'.repeat(32), STALE_PID = 'redis-stale-player', STALE_SECRET = 'b2'.repeat(32);
+const WALLETS = 'chaos-arena:wallets', hashes = new Map(), counters = new Map();
+const hashOf = key => hashes.get(key) ?? hashes.set(key, new Map()).get(key);
+const redisMock = { store: hashOf(WALLETS), writes: [], delays: [], fail: false };
+for (const [pid, secret, rev] of [
+  // Stored by the earlier version with a microsecond-timestamp revision: new revisions must outrank it.
+  [ECO_PID, ECO_SECRET, Date.now() * 1000],
+  // Storage already holds a newer revision than this server can produce (as if another server wrote it).
+  [STALE_PID, STALE_SECRET, 9e15],
+]) {
+  const w = freshWallet(pid, Date.now());
   w.owned.push('frame-amethyst', 'frame-ember');
-  redisMock.store.set(ECO_PID, JSON.stringify({ credential: hash(ECO_SECRET), wallet: w }));
+  redisMock.store.set(pid, JSON.stringify({ credential: hash(secret), wallet: w })).set(`rev:${pid}`, String(rev));
 }
 const mock = http.createServer((req, res) => {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
-    const cmd = JSON.parse(body);
-    if (cmd[0] === 'HGETALL') return res.end(JSON.stringify({ result: cmd[1].includes('wallet') ? [...redisMock.store].flat() : [] }));
-    if (cmd[0] === 'EVAL' && cmd[2] === '0') return res.end(JSON.stringify({ result: 1 })); // the startup scripting check
+    const cmd = JSON.parse(body), reply = result => res.writableEnded ? undefined : res.end(JSON.stringify({ result }));
+    if (cmd[0] === 'HGETALL') return reply([...hashOf(cmd[1])].flat());
+    if (cmd[0] === 'INCR') { counters.set(cmd[1], (counters.get(cmd[1]) ?? 0) + 1); return reply(counters.get(cmd[1])); }
     // The revision-checked write (CAS_SCRIPT in server/index.js), emulated: a value is only stored when its
-    // revision is newer than the stored one. Like real Redis, a write the client gave up on still runs later.
+    // revision is newer; the reply says per entry 1 stored / 0 same revision / -1 refused. Like real Redis,
+    // a write the client gave up on still runs later.
     if (cmd[0] === 'EVAL') {
-      if (cmd[3].includes('wallet')) {
+      const key = cmd[3], h = hashOf(key), args = cmd.slice(4), out = [];
+      if (key === WALLETS) {
         const delay = redisMock.delays.shift() ?? 0;
         if (delay) await new Promise(r => setTimeout(r, delay));
         if (redisMock.fail) { res.statusCode = 500; return res.end(JSON.stringify({ error: 'down' })); }
-        const args = cmd.slice(4);
-        for (let i = 0; i < args.length; i += 3) {
-          const [field, value, rev] = args.slice(i, i + 3);
-          if (Number(rev) > Number(redisMock.store.get(`rev:${field}`) ?? -1)) redisMock.store.set(field, value).set(`rev:${field}`, rev);
-        }
         redisMock.writes.push(cmd);
       }
-      return res.writableEnded ? undefined : res.end(JSON.stringify({ result: 1 }));
+      for (let i = 0; i < args.length; i += 3) {
+        const [field, value, rev] = args.slice(i, i + 3), cur = Number(h.get(`rev:${field}`) ?? -1);
+        if (Number(rev) > cur) { h.set(field, value).set(`rev:${field}`, rev); out.push(1); } else out.push(Number(rev) === cur ? 0 : -1);
+      }
+      return reply(out);
     }
-    res.end(JSON.stringify({ result: null }));
+    reply(null);
   });
 });
 mock.listen(0);
 await once(mock, 'listening');
 
-const port = 18897, dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chaos-review-'));
-const server = spawn(process.execPath, ['server/index.js'], {
-  env: { ...process.env, PORT: String(port), LEADERBOARD_FILE: path.join(dataDir, 'records.json'), ECONOMY_FILE: path.join(dataDir, 'economy.json'),
-    UPSTASH_REDIS_REST_URL: `http://127.0.0.1:${mock.address().port}`, UPSTASH_REDIS_REST_TOKEN: 'test', REDIS_TIMEOUT_MS: '1000', BOT_AFTER_MS: '0', MAX_MATCHES: '8' },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chaos-review-'));
+async function startServer(p) {
+  const proc = spawn(process.execPath, ['server/index.js'], {
+    env: { ...process.env, PORT: String(p), LEADERBOARD_FILE: path.join(dataDir, `records-${p}.json`), ECONOMY_FILE: path.join(dataDir, `economy-${p}.json`),
+      UPSTASH_REDIS_REST_URL: `http://127.0.0.1:${mock.address().port}`, UPSTASH_REDIS_REST_TOKEN: 'test', REDIS_TIMEOUT_MS: '1000', BOT_AFTER_MS: '0', MAX_MATCHES: '8' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const out = { proc, logs: '' };
+  proc.stderr.on('data', b => out.logs += b);
+  // Fails fast (instead of hanging) if the server can't start, e.g. the port is taken.
+  await Promise.race([once(proc.stdout, 'data'), once(proc, 'exit').then(([code]) => { throw Error(`server exited (${code}): ${out.logs}`); })]);
+  return out;
+}
+const port = 18897, first = await startServer(port), server = first.proc;
 let logs = '';
 server.stderr.on('data', b => logs += b);
-// Fails fast (instead of hanging) if the server can't start, e.g. the port is taken.
-await Promise.race([once(server.stdout, 'data'), once(server, 'exit').then(([code]) => { throw Error(`server exited (${code}): ${logs}`); })]);
-test.after(() => { server.kill(); mock.close(); });
+const extraServers = [];
+test.after(() => { server.kill(); for (const s of extraServers) s.kill(); mock.close(); });
 
 function client(pid) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}`), messages = [];
@@ -206,8 +221,8 @@ function client(pid) {
     async hello(extra = {}) { await once(ws, 'open'); this.send({ t: 'hello', v: 2, pid, name: 'Test', ...extra }); await this.wait('welcome'); },
   };
 }
-const health = async () => (await fetch(`http://127.0.0.1:${port}/health`)).json();
-const wallet = (op, id) => fetch(`http://127.0.0.1:${port}/economy`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pid: ECO_PID, credential: ECO_SECRET, op, id }) });
+const health = async (p = port) => (await fetch(`http://127.0.0.1:${p}/health`)).json();
+const wallet = (op, id, { pid = ECO_PID, credential = ECO_SECRET, p = port } = {}) => fetch(`http://127.0.0.1:${p}/economy`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pid, credential, op, id }) });
 
 test('F01: a malformed team closes only that connection; the server and other players carry on', async () => {
   const bad = client('malformed-team-a'), good = client('malformed-team-b');
@@ -303,4 +318,58 @@ test('F04: a write that timed out and runs late in Redis cannot replace a newer 
   const view = await (await wallet('view')).json();
   assert.equal(view.wallet.equipped.frame, stored());
   assert.equal((await health()).economy.ok, true, '/health reports the wallet store as working');
+});
+
+test('a write refused as stale is reported as failed, and /health shows it until that wallet is stored', async () => {
+  const stale = { pid: STALE_PID, credential: STALE_SECRET };
+  const r = await wallet('equip', 'frame-ember', stale);
+  assert.equal(r.status, 503, 'never answered as saved');
+  assert.match((await r.json()).error, /not saved/);
+  let h = (await health()).economy;
+  assert.equal(h.ok, false);
+  assert.equal(h.unsaved, 1);
+  assert.match(h.error, /refused/);
+  // Once storage accepts it again (the newer revision is gone), the retry stores it and health recovers.
+  redisMock.store.set(`rev:${STALE_PID}`, '0');
+  assert.equal((await wallet('view', null, stale)).status, 200);
+  h = (await health()).economy;
+  assert.equal(h.ok, true);
+  assert.equal(h.unsaved, 0);
+  assert.equal(JSON.parse(redisMock.store.get(STALE_PID)).wallet.equipped.frame, 'frame-ember');
+});
+
+test('a failed wallet save turns /health red until a retry stores it', async () => {
+  redisMock.fail = true;
+  assert.equal((await wallet('equip', 'frame-ember')).status, 503);
+  const h = (await health()).economy;
+  assert.equal(h.ok, false);
+  assert.match(h.error, /save failed/);
+  assert.ok(h.pending >= 1 || h.unsaved >= 1);
+  redisMock.fail = false;
+  assert.equal((await wallet('view')).status, 200);
+  assert.equal((await health()).economy.ok, true);
+});
+
+// Kept last: it stops the first server.
+test('after a restart, a late write from the previous server process cannot replace newer data', async () => {
+  const stored = () => JSON.parse(redisMock.store.get(ECO_PID)).wallet.equipped.frame ?? null;
+  if (!stored()) assert.equal((await wallet('equip', 'frame-amethyst')).status, 200);
+  const before = stored(), target = before === 'frame-ember' ? 'frame-amethyst' : 'frame-ember';
+  // The old process's write is held in "Redis"; the process then dies.
+  redisMock.delays.push(2500);
+  const late = wallet('equip', target).catch(() => null);
+  await new Promise(r => setTimeout(r, 300));
+  server.kill();
+  await late;
+  // A new process starts (new epoch), loads storage and saves a different choice.
+  const next = await startServer(18898);
+  extraServers.push(next.proc);
+  // A real change (unequip), so the new process really writes.
+  const b = await wallet('unequip', before, { p: 18898 });
+  assert.equal(b.status, 200);
+  const confirmed = stored();
+  assert.equal(confirmed, null);
+  await new Promise(r => setTimeout(r, 2500)); // the old process's write finally runs
+  assert.equal(stored(), confirmed, 'the new process\'s confirmed write is still what is stored');
+  assert.equal((await health(18898)).economy.ok, true);
 });
