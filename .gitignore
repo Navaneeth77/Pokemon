@@ -3,3 +3,6 @@ dist
 .DS_Store
 server/data/
 scripts/.guild-earned.json
+
+# Python virtualenv for the asset tools (scripts/requirements.txt)
+.venv-tools/

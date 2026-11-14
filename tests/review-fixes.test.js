@@ -155,15 +155,22 @@ const mock = http.createServer((req, res) => {
   req.on('end', async () => {
     const cmd = JSON.parse(body);
     if (cmd[0] === 'HGETALL') return res.end(JSON.stringify({ result: cmd[1].includes('wallet') ? [...redisMock.store].flat() : [] }));
-    if (cmd[0] === 'HSET') {
-      if (cmd[1].includes('wallet')) {
+    if (cmd[0] === 'EVAL' && cmd[2] === '0') return res.end(JSON.stringify({ result: 1 })); // the startup scripting check
+    // The revision-checked write (CAS_SCRIPT in server/index.js), emulated: a value is only stored when its
+    // revision is newer than the stored one. Like real Redis, a write the client gave up on still runs later.
+    if (cmd[0] === 'EVAL') {
+      if (cmd[3].includes('wallet')) {
         const delay = redisMock.delays.shift() ?? 0;
         if (delay) await new Promise(r => setTimeout(r, delay));
         if (redisMock.fail) { res.statusCode = 500; return res.end(JSON.stringify({ error: 'down' })); }
-        for (let i = 2; i < cmd.length; i += 2) redisMock.store.set(cmd[i], cmd[i + 1]);
+        const args = cmd.slice(4);
+        for (let i = 0; i < args.length; i += 3) {
+          const [field, value, rev] = args.slice(i, i + 3);
+          if (Number(rev) > Number(redisMock.store.get(`rev:${field}`) ?? -1)) redisMock.store.set(field, value).set(`rev:${field}`, rev);
+        }
         redisMock.writes.push(cmd);
       }
-      return res.end(JSON.stringify({ result: 1 }));
+      return res.writableEnded ? undefined : res.end(JSON.stringify({ result: 1 }));
     }
     res.end(JSON.stringify({ result: null }));
   });
@@ -174,7 +181,7 @@ await once(mock, 'listening');
 const port = 18897, dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chaos-review-'));
 const server = spawn(process.execPath, ['server/index.js'], {
   env: { ...process.env, PORT: String(port), LEADERBOARD_FILE: path.join(dataDir, 'records.json'), ECONOMY_FILE: path.join(dataDir, 'economy.json'),
-    UPSTASH_REDIS_REST_URL: `http://127.0.0.1:${mock.address().port}`, UPSTASH_REDIS_REST_TOKEN: 'test', BOT_AFTER_MS: '0', MAX_MATCHES: '8' },
+    UPSTASH_REDIS_REST_URL: `http://127.0.0.1:${mock.address().port}`, UPSTASH_REDIS_REST_TOKEN: 'test', REDIS_TIMEOUT_MS: '1000', BOT_AFTER_MS: '0', MAX_MATCHES: '8' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let logs = '';
@@ -279,4 +286,21 @@ test('F03/F04: wallet changes are answered only once stored, and an older write 
   const r4 = await wallet('equip', 'frame-amethyst');
   assert.equal(r4.status, 200);
   assert.equal(JSON.parse(redisMock.store.get(ECO_PID)).wallet.equipped.frame, 'frame-amethyst');
+});
+
+test('F04: a write that timed out and runs late in Redis cannot replace a newer wallet', async () => {
+  const stored = () => JSON.parse(redisMock.store.get(ECO_PID)).wallet.equipped.frame;
+  // Write A is held well past the server's Redis timeout (1 s in this test), then still lands.
+  redisMock.delays.push(2500);
+  const a = await wallet('equip', 'frame-ember');
+  assert.equal(a.status, 503, 'A was not confirmed');
+  const b = await wallet('equip', 'frame-amethyst');
+  assert.equal(b.status, 200, 'B was confirmed');
+  assert.equal(stored(), 'frame-amethyst');
+  await new Promise(r => setTimeout(r, 2500)); // A finally runs in "Redis"
+  assert.equal(stored(), 'frame-amethyst', 'the late, older write was ignored');
+  // After a restart the server would load what is stored: still the newest confirmed choice.
+  const view = await (await wallet('view')).json();
+  assert.equal(view.wallet.equipped.frame, stored());
+  assert.equal((await health()).economy.ok, true, '/health reports the wallet store as working');
 });

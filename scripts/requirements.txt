@@ -1,0 +1,5 @@
+# Python asset tools (scripts/*.py). Not needed to run or build the game.
+#   python3 -m venv .venv-tools && .venv-tools/bin/pip install -r scripts/requirements.txt
+# The scripts use only basic Pillow APIs (Image, ImageOps, crop, getbbox, getchannel).
+Pillow>=10,<13
+# scripts/fetch-cries.py also needs ffmpeg on PATH (macOS: brew install ffmpeg).

@@ -4,7 +4,11 @@ as a small mono MP3 in public/cries/<dex>.mp3, which every browser can play. Nee
 
 Usage: scripts/fetch-cries.py
 """
-import concurrent.futures as cf, json, os, re, subprocess, tempfile, urllib.request
+import concurrent.futures as cf, json, os, re, shutil, subprocess, sys, tempfile, urllib.request
+
+# Checked before downloading anything: without ffmpeg every cry would silently fail to convert.
+if not shutil.which('ffmpeg'):
+    sys.exit('ffmpeg is required (macOS: brew install ffmpeg; Debian/Ubuntu: sudo apt install ffmpeg).')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = 'https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/{}.ogg'
