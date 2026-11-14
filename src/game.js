@@ -2093,6 +2093,7 @@ export class Game {
         last = null;
         return;
       }
+      this.performanceOverlay?.sample(frameMs);
       // The opening has its own animation loop. Team/title menus only need a static arena behind them.
       if (this.state === 'menu' || this.state === 'select') {
         if (this.menuRenderDirty || this.lastRenderedState !== this.state) {

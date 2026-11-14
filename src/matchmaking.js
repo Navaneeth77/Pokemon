@@ -172,6 +172,7 @@ export class Matchmaker {
       let ws;
       try { ws = new WebSocket(this.url); } catch (err) { return reject(err); }
       this.ws = ws;
+      this.lastPongAt = this.lastSnapshotAt = this.lastCorrectionMagnitude = null;
       this.cancelConnect = () => { clearTimeout(timer); reject(Object.assign(new Error('cancelled'), { code: 'cancelled' })); };
       this.lastSeen = performance.now();
       const timer = setTimeout(() => {
@@ -416,6 +417,7 @@ export class Matchmaker {
     if (this.flow.expansion?.onMessage(m)) return;
     switch (m.t) {
       case 'pong': {
+        this.lastPongAt = performance.now();
         // Round-trip time: the median of the last few, so one slow reply doesn't throw it off.
         const rtt = performance.now() - m.ts;
         this.rtts = [...(this.rtts ?? []).slice(-6), rtt];
@@ -648,6 +650,7 @@ export class Matchmaker {
   }
 
   begin() {
+    this.lastSnapshotAt = this.lastCorrectionMagnitude = null;
     this.lastIn = null;
     this.inAt = 0;
     this.inSeq = 0;
@@ -820,6 +823,7 @@ export class Matchmaker {
     if (!mine || !theirs) return;
     this.snap = { player: mine, opponent: theirs };
     const now = performance.now();
+    this.lastSnapshotAt = now;
     if (this.match?.tag) this.tagTurn(mine.ow === this.match.tag.me);
     if (typeof ts === 'number' && this.foeBuf) {
       this.trackClock(ts, now);
@@ -844,6 +848,7 @@ export class Matchmaker {
   // moves first, so the server's position is compared with where we were when it got our input, not
   // with where we are now (which would drag us backwards on every update).
   measureDrift(s, now) {
+    this.lastCorrectionMagnitude = null;
     const g = this.game, mon = g.playerTeam.active;
     // Tag Battle, partner's turn: our side's Pokémon simply follows the server.
     if (this.match?.tag && !this.inControl) {
@@ -855,6 +860,7 @@ export class Matchmaker {
     const at = sent ? sent + s.q[1] : now - (this.rtt ?? 120) - 25;
     const tx = this.fx(s.x), ty = this.fy(s.y), past = this.pastPos(at) ?? mon;
     const ex = tx - past.x, ey = ty - past.y;
+    this.lastCorrectionMagnitude = Math.hypot(ex, ey);
     this.corr = Math.hypot(ex, ey) > 120 ? { snap: true, x: tx, y: ty } : { x: ex, y: ey };
   }
 

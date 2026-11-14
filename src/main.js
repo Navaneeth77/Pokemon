@@ -9,6 +9,7 @@ import { DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
 import { Game, prepareSprites } from './game.js';
 import { UI } from './ui.js';
 import { Flow } from './flow.js';
+import { PerformanceOverlay } from './performance-overlay.js';
 
 export async function main() {
   // Only the default team and the opponent's are loaded up front; other picks load when a battle starts.
@@ -35,6 +36,8 @@ export async function main() {
     }
   }
   const flow = new Flow(game, ui);
+  game.performanceOverlay = new PerformanceOverlay(game);
+  if (import.meta.hot) import.meta.hot.dispose(() => game.performanceOverlay.destroy());
   game.resize();
   flow.begin();
   game.run();

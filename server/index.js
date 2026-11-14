@@ -9,6 +9,7 @@
 //   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated)
 import './shim.js';
 import { EconomyStore } from './economy-store.js';
+import { sendQueued } from './outbox.js';
 import { cleanKit } from '../src/data/items.js';
 import { SHINY } from '../src/data/national-dims.js';
 import { botEntry } from './bots.js';
@@ -124,7 +125,7 @@ function nextRev() {
 // entries: [field, value, revision] triples written to one hash; resolves to one status per entry (see above).
 async function writeNewer(key, entries) {
   const out = await redis(['EVAL', CAS_SCRIPT, '1', key, ...entries.flatMap(([f, v, r]) => [f, v, String(r)])]);
-  if (!Array.isArray(out) || out.length !== entries.length) throw Error('unexpected reply from the ordered-write script');
+  if (!Array.isArray(out) || out.length !== entries.length || out.some(r => ![-1, 0, 1].includes(Number(r)))) throw Error('unexpected reply from the ordered-write script');
   return out.map(Number);
 }
 if (REDIS) {
@@ -143,10 +144,11 @@ if (REDIS) {
 // Wallet saving as it happens (shown on /health): a write that failed or was refused keeps economy.ok false
 // until that wallet is stored.
 const walletHealth = { lastOkAt: null, lastError: null, lastErrorAt: null };
-let walletQueue = () => ({ count: 0, oldest: 0 });
+let walletQueue = () => ({ count: 0, oldest: 0, unresolvedSince: 0 });
 function economyHealth() {
   const q = walletQueue(), unsaved = economy.unsaved.size, error = economy.error ?? walletHealth.lastError;
-  return { ok: !error && !unsaved, error: error ?? undefined, unsaved, pending: q.count, oldestPendingMs: q.oldest ? Date.now() - q.oldest : 0, lastOkAt: walletHealth.lastOkAt };
+  const age = since => since ? Math.max(0, Date.now() - since) : 0;
+  return { ok: !error && !unsaved, error: error ?? undefined, unsaved, pending: q.count, oldestPendingMs: age(q.oldest), oldestUnstoredMs: age(q.unresolvedSince), lastOkAt: walletHealth.lastOkAt, lastErrorAt: walletHealth.lastErrorAt };
 }
 
 const keep = (pid, r) => {
@@ -175,6 +177,7 @@ try {
 // A wallet request is only answered "done" once its write has landed (see /economy below).
 if (REDIS) {
   const WALLET_KEY = process.env.WALLET_KEY || 'chaos-arena:wallets', pending = new Map(); // pid → { record, waiters }
+  const inFlight = new Map(), unresolvedSince = new Map();
   let timer = null, timerDue = 0, writing = false;
   // Never postpones a write already due sooner; a new change pulls a slow retry (after a failure) forward.
   const schedule = ms => {
@@ -188,9 +191,11 @@ if (REDIS) {
     if (writing || !pending.size) return;
     writing = true;
     const batch = [...pending];
+    for (const [pid, entry] of batch) inFlight.set(pid, entry);
     pending.clear();
     try {
       const results = await writeNewer(WALLET_KEY, batch.map(([pid, e]) => [pid, JSON.stringify(e.record), e.rev]));
+      let accepted = false;
       batch.forEach(([pid, e], k) => {
         if (results[k] === -1) {
           economy.refused(pid);
@@ -201,10 +206,12 @@ if (REDIS) {
           for (const w of e.waiters) w.reject(Error('Your wallet changed somewhere else, so this change was not saved. Please reload.'));
           return;
         }
+        accepted = true;
         for (const w of e.waiters) w.resolve();
         economy.stored(pid, e.record);
+        if (economy.data.players[pid] === e.record) unresolvedSince.delete(pid);
       });
-      walletHealth.lastOkAt = Date.now();
+      if (accepted) walletHealth.lastOkAt = Date.now();
       writing = false;
       if (pending.size) schedule(WALLET_WRITE_MS);
       else if (!economy.unsaved.size) walletHealth.lastError = null; // everything is stored again
@@ -220,12 +227,19 @@ if (REDIS) {
       for (const [pid, e] of batch) if (!pending.has(pid)) pending.set(pid, { record: e.record, rev: e.rev, since: e.since, waiters: [] });
       writing = false;
       schedule(10_000);
+    } finally {
+      inFlight.clear();
     }
   };
   walletQueue = () => {
-    let oldest = 0;
-    for (const e of pending.values()) if (!oldest || e.since < oldest) oldest = e.since;
-    return { count: pending.size, oldest };
+    const wallets = new Set();
+    let oldest = 0, unresolved = 0;
+    for (const [pid, e] of [...inFlight, ...pending]) {
+      wallets.add(pid);
+      if (!oldest || e.since < oldest) oldest = e.since;
+    }
+    for (const since of unresolvedSince.values()) if (!unresolved || since < unresolved) unresolved = since;
+    return { count: wallets.size, oldest, unresolvedSince: unresolved };
   };
   try {
     // Ordered writes are required; without them the wallet refuses changes rather than risk stale writes.
@@ -233,7 +247,8 @@ if (REDIS) {
     const flat = (await redis(['HGETALL', WALLET_KEY])) ?? [];
     economy.load(Array.from({ length: flat.length >> 1 }, (_, i) => { try { return [flat[2 * i], JSON.parse(flat[2 * i + 1])]; } catch { return []; } }));
     economy.sink = (pid, record) => new Promise((resolve, reject) => {
-      const e = pending.get(pid) ?? { waiters: [], since: Date.now() };
+      if (!unresolvedSince.has(pid)) unresolvedSince.set(pid, Date.now());
+      const e = pending.get(pid) ?? { waiters: [], since: unresolvedSince.get(pid) };
       e.record = record;
       e.rev = nextRev(); // taken as the change happens, so a newer wallet always has a higher revision
       e.waiters.push({ resolve, reject });
@@ -337,7 +352,7 @@ function whereAll() {
 }
 
 function send(ws, msg) {
-  if (ws?.readyState === 1) { if(ws.bufferedAmount>262144){ws.close(1013,'slow connection');return;} ws.send(JSON.stringify(msg)); }
+  sendQueued(ws, msg);
 }
 
 function sendTo(player, msg) {
@@ -507,7 +522,7 @@ class Match {
     const data = JSON.stringify(msg);
     for (const p of [this.side.A.player, this.side.B.player, ...this.spectators]) {
       const ws = p.ws;
-      if (ws?.readyState === 1) {if(ws.bufferedAmount>262144)ws.close(1013,'slow connection');else ws.send(data);}
+      sendQueued(ws, msg, data);
     }
   }
 
@@ -785,7 +800,7 @@ class TagMatch extends Match {
     const data = JSON.stringify(msg);
     for (const p of [...this.everyone(), ...this.spectators]) {
       const ws = p.ws;
-      if (ws?.readyState === 1) { if (ws.bufferedAmount > 262144) ws.close(1013, 'slow connection'); else ws.send(data); }
+      sendQueued(ws, msg, data);
     }
   }
 

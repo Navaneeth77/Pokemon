@@ -322,6 +322,7 @@ test('F04: a write that timed out and runs late in Redis cannot replace a newer 
 
 test('a write refused as stale is reported as failed, and /health shows it until that wallet is stored', async () => {
   const stale = { pid: STALE_PID, credential: STALE_SECRET };
+  const lastOkAt = (await health()).economy.lastOkAt;
   const r = await wallet('equip', 'frame-ember', stale);
   assert.equal(r.status, 503, 'never answered as saved');
   assert.match((await r.json()).error, /not saved/);
@@ -329,12 +330,16 @@ test('a write refused as stale is reported as failed, and /health shows it until
   assert.equal(h.ok, false);
   assert.equal(h.unsaved, 1);
   assert.match(h.error, /refused/);
+  assert.equal(h.lastOkAt, lastOkAt, 'a rejected batch is not a successful save');
+  assert.ok(h.lastErrorAt > 0);
+  assert.ok(h.oldestUnstoredMs > 0);
   // Once storage accepts it again (the newer revision is gone), the retry stores it and health recovers.
   redisMock.store.set(`rev:${STALE_PID}`, '0');
   assert.equal((await wallet('view', null, stale)).status, 200);
   h = (await health()).economy;
   assert.equal(h.ok, true);
   assert.equal(h.unsaved, 0);
+  assert.equal(h.oldestUnstoredMs, 0);
   assert.equal(JSON.parse(redisMock.store.get(STALE_PID)).wallet.equipped.frame, 'frame-ember');
 });
 
@@ -348,6 +353,25 @@ test('a failed wallet save turns /health red until a retry stores it', async () 
   redisMock.fail = false;
   assert.equal((await wallet('view')).status, 200);
   assert.equal((await health()).economy.ok, true);
+});
+
+test('wallet health includes in-flight saves and retains age when a newer version is queued', async () => {
+  redisMock.delays.push(700);
+  const firstWrite = wallet('equip', 'frame-amethyst');
+  await new Promise(r => setTimeout(r, 350)); // batching delay elapsed; storage is still waiting
+  const inFlight = (await health()).economy;
+  assert.equal(inFlight.pending, 1);
+  assert.ok(inFlight.oldestPendingMs >= 200);
+  const secondWrite = wallet('equip', 'frame-ember');
+  await new Promise(r => setTimeout(r, 100));
+  const queued = (await health()).economy;
+  assert.equal(queued.pending, 1, 'one wallet, even with both an active and queued version');
+  assert.ok(queued.oldestPendingMs >= inFlight.oldestPendingMs);
+  assert.deepEqual((await Promise.all([firstWrite, secondWrite])).map(r => r.status), [200, 200]);
+  const done = (await health()).economy;
+  assert.equal(done.pending, 0);
+  assert.equal(done.oldestPendingMs, 0);
+  assert.equal(done.oldestUnstoredMs, 0);
 });
 
 // Kept last: it stops the first server.
