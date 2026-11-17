@@ -1,8 +1,8 @@
 import { CATALOG, ECONOMY, itemById } from './economy.js';
-import { Ring } from './effects.js';
+import { Ring, drawSparkleStar } from './effects.js';
 import { SPECIES } from './data/species.js';
 import { AnimatedSprite } from './sprite.js';
-import { loadSpecies } from './assets.js';
+import { loadSpecies, shinyPortraitUrl } from './assets.js';
 import { drawBust, lookById } from './trainers.js';
 import { drawCosmeticAura, CosmeticStarburst } from './economy-art.js';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
@@ -59,7 +59,7 @@ export class EconomyUI {
   const q=(this.shinyQuery??'').toLowerCase();
   const shown=items.filter(i=>(this.category==='all'?i.kind!=='shiny'||collection:i.kind===this.category)&&(i.kind!=='shiny'||!q||i.name.toLowerCase().includes(q))).slice(0,this.category==='shiny'?120:Infinity);
   if(!shown.some(i=>i.id===this.selected))this.selected=shown[0]?.id;
-  this.content.innerHTML=`<div class="shop-tabs" aria-label="Cosmetic categories"><button data-category="all" aria-pressed="${this.category==='all'}">${collection?'ALL OWNED':'FEATURED'}</button>${kinds.map(k=>`<button data-category="${k}" aria-pressed="${this.category===k}">${labels[k].toUpperCase()}</button>`).join('')}</div>${this.category==='shiny'?`<input class="shiny-search" type="search" placeholder="Search Pokémon…" aria-label="Search shiny Pokémon" value="${esc(this.shinyQuery??'')}">`:''}<div class="shop-layout"><div class="shop-gallery">${shown.map(i=>{const owned=w.owned.includes(i.id),equipped=w.equipped[i.kind]===i.id;return `<button class="shop-tile ${i.id===this.selected?'selected':''}" data-item="${i.id}" style="--item-color:${i.color}"><div class="item-symbol item-${i.kind}">${i.kind==='frame'?`<canvas width="24" height="24" data-frame-art aria-label="Trainer frame preview"></canvas>`:i.kind==='title'?`<b>${esc(i.name)}</b>`:i.kind==='shiny'?`<img src="${portrait(i.species)}" alt="" loading="lazy"><em class="shiny-star">✦</em>`:`<img src="${portrait('charizard')}" alt="">`}</div><small>${i.rarity.toUpperCase()} · ${labels[i.kind].toUpperCase()}</small><b>${i.name}</b><span>${equipped?'EQUIPPED':owned?'OWNED':coin+i.price}</span></button>`;}).join('')||`<div class="chaos-empty"><img src="${portrait('dragonite')}" alt="Dragonite"><h2>Your collection starts here</h2><p>Earn coins on the mission board, then choose your first signature cosmetic.</p><button class="px-btn" data-browse>BROWSE THE SHOP</button></div>`}</div><aside class="shop-detail"></aside></div>`;
+  this.content.innerHTML=`<div class="shop-tabs" aria-label="Cosmetic categories"><button data-category="all" aria-pressed="${this.category==='all'}">${collection?'ALL OWNED':'FEATURED'}</button>${kinds.map(k=>`<button data-category="${k}" aria-pressed="${this.category===k}">${labels[k].toUpperCase()}</button>`).join('')}</div>${this.category==='shiny'?`<input class="shiny-search" type="search" placeholder="Search Pokémon…" aria-label="Search shiny Pokémon" value="${esc(this.shinyQuery??'')}">`:''}<div class="shop-layout"><div class="shop-gallery">${shown.map(i=>{const owned=w.owned.includes(i.id),equipped=w.equipped[i.kind]===i.id;return `<button class="shop-tile ${i.id===this.selected?'selected':''}" data-item="${i.id}" style="--item-color:${i.color}"><div class="item-symbol item-${i.kind}">${i.kind==='frame'?`<canvas width="24" height="24" data-frame-art aria-label="Trainer frame preview"></canvas>`:i.kind==='title'?`<b>${esc(i.name)}</b>`:i.kind==='shiny'?`<img src="${(shinyPortraitUrl(SPECIES[i.species].sprite)??portrait(i.species))}" alt="" loading="lazy"><em class="shiny-star">✦</em>`:`<img src="${portrait('charizard')}" alt="">`}</div><small>${i.rarity.toUpperCase()} · ${labels[i.kind].toUpperCase()}</small><b>${i.name}</b><span>${equipped?'EQUIPPED':owned?'OWNED':coin+i.price}</span></button>`;}).join('')||`<div class="chaos-empty"><img src="${portrait('dragonite')}" alt="Dragonite"><h2>Your collection starts here</h2><p>Earn coins on the mission board, then choose your first signature cosmetic.</p><button class="px-btn" data-browse>BROWSE THE SHOP</button></div>`}</div><aside class="shop-detail"></aside></div>`;
   this.content.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{this.category=b.dataset.category;this.shop(w,collection);});
   this.content.querySelectorAll('[data-item]').forEach(b=>b.onclick=()=>{this.selected=b.dataset.item;this.shop(w,collection);if(innerWidth<720)this.content.querySelector('.shop-detail').scrollIntoView({block:'start',behavior:'smooth'});});
   this.content.querySelector('[data-browse]')?.addEventListener('click',()=>this.open('shop'));
@@ -82,7 +82,9 @@ export class EconomyUI {
   const draw=now=>{if(!canvas.isConnected)return;ctx.imageSmoothingEnabled=false;ctx.fillStyle='#111627';ctx.fillRect(0,0,240,190);
    const dt=Math.min(.05,(now-last)/1000);last=now;normal.update(dt);shiny.update(dt);
    ctx.globalAlpha=.55;normal.draw(ctx,64,140,0,{scale:1.6});ctx.globalAlpha=1;shiny.draw(ctx,166,140,0,{scale:2});
-   ctx.fillStyle='#ffe066';for(let i=0;i<5;i++){const a=(now/700+i*1.26)%6.28;ctx.fillRect(166+Math.cos(a)*34,100+Math.sin(a)*22,2,2);}
+   // The same twinkling stars a shiny has in battle (drawn at the sprite's 2x scale), each reappearing somewhere new.
+   for(let i=0;i<8;i++){const c=now/1000+i*.29,t=(c%1.2)/.5;if(t>=1)continue;const k=Math.sqrt(Math.sin(t*Math.PI)),a=i*.79+Math.floor(c/1.2)*2.3;
+    ctx.save();ctx.translate(Math.round(166+Math.cos(a)*34),Math.round(104+Math.sin(a)*30));ctx.scale(2,2);ctx.globalAlpha=Math.min(1,k*1.6);drawSparkleStar(ctx,0,0,Math.round(k*(i%3?3:4)));ctx.restore();}
    ctx.font='10px "Pixelify Sans"';ctx.textAlign='center';ctx.fillStyle='#9aa4c0';ctx.fillText('USUAL',64,176);ctx.fillStyle='#ffe066';ctx.fillText('✦ SHINY',166,176);
    requestAnimationFrame(draw);};
   requestAnimationFrame(draw);

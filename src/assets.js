@@ -128,6 +128,14 @@ function recolor(img, palette) {
   return c;
 }
 
+// Species with SpriteCollab's real shiny portrait (public/sprites/<id>/portrait-shiny.png). Recolouring the
+// normal portrait through the sprite palette barely changes it, since portraits use other shades.
+const SHINY_PORTRAITS = new Set(['gyarados', 'rayquaza', 'rayquaza-mega']); // Mega Rayquaza's is generated (no official one exists)
+// Mega forms with a shiny palette of their own, so a shiny Pokémon stays shiny when it Mega Evolves. Mega Rayquaza
+// uses exactly the same four greens as Rayquaza, so it shares Rayquaza's measured palette.
+export const SHINY_FORMS = new Set(['rayquaza-mega']);
+export const shinyPortraitUrl = sprite => SHINY_PORTRAITS.has(sprite) ? `/sprites/${sprite}/portrait-shiny.png` : null;
+
 async function loadShinySet(id) {
   const [set, res] = await Promise.all([loadSpriteSet(id), fetch(`/sprites/${id}/shiny.json`)]);
   if (!res.ok) throw new Error(`No shiny colours for ${id}`);
@@ -138,6 +146,7 @@ async function loadShinySet(id) {
     anims[name] = { ...a, image: sheets.get(a.image) };
   }
   // The portrait is shown in <img> tags too, so it stays an image.
+  if (SHINY_PORTRAITS.has(id)) return { anims, portrait: await loadImage(`/sprites/${id}/portrait-shiny.png`) };
   const portrait = new Image();
   portrait.src = recolor(set.portrait, palette).toDataURL();
   try { await portrait.decode?.(); } catch {}

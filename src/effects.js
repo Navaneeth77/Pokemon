@@ -101,6 +101,48 @@ export class Effect {
   }
 }
 
+// One pixel-art four-point star, as drawn by shiny sparkles: a dark-gold outline (so it reads on snowy and sandy
+// arenas too), gold arms and a white centre.
+export function drawSparkleStar(ctx, x, y, arm) {
+  if (arm < 1) return;
+  x = Math.round(x); y = Math.round(y);
+  const cross = (n, w) => { ctx.fillRect(x - n, y - (w >> 1), n * 2 + 1, w); ctx.fillRect(x - (w >> 1), y - n, w, n * 2 + 1); };
+  ctx.fillStyle = '#9a6400';
+  cross(arm + 1, 3);
+  ctx.fillStyle = '#ffd23f';
+  cross(arm, 1);
+  if (arm >= 2) ctx.fillRect(x - 1, y - 1, 3, 3);
+  ctx.fillStyle = '#ffffff';
+  cross(Math.ceil(arm / 2), 1);
+}
+
+// Shiny sparkle: small stars that twinkle (grow, then shrink) around a shiny Pokémon and move with it. Visual
+// only: no flash or pause, and the stars stay small and around the body so the Pokémon itself stays visible.
+export class ShinySparkle extends Effect {
+  constructor(mon, { count = 1, spread = 0, life = 0.45, size = 2 } = {}) {
+    super('air', spread + life);
+    const r = (mon.radius ?? 14) + 4, h = (mon.species.headZ ?? 28) + 6;
+    Object.assign(this, { mon, starLife: life, size });
+    this.stars = Array.from({ length: count }, (_, i) => ({
+      at: count > 1 ? (i / count) * spread : 0, big: count > 1 && i % 3 === 0,
+      dx: (Math.random() * 2 - 1) * r, dz: 2 + Math.random() * h,
+    }));
+  }
+
+  draw(ctx) {
+    const m = this.mon;
+    if (m.hidden) return;
+    for (const s of this.stars) {
+      const t = (this.age - s.at) / this.starLife;
+      if (t <= 0 || t >= 1) continue;
+      const k = Math.sqrt(Math.sin(t * Math.PI)), arm = Math.round(k * (s.big ? this.size + 1 : this.size)); // grows fast, holds, shrinks
+      ctx.globalAlpha = Math.min(1, k * 1.4);
+      drawSparkleStar(ctx, m.x + s.dx, m.y - m.lift - s.dz, arm);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
 let ultimateImpactImage = null;
 export async function preloadImpactSprite() {
   ultimateImpactImage = await loadImage('/art/ultimate-impact.png');

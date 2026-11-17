@@ -18,7 +18,7 @@ import { comboRole, soften, grounded } from './combat.js';
 import { typeMultiplier } from './data/types.js';
 import { Showcase, Finale } from './cinema.js';
 import { outlinedText } from './draw.js';
-import { loadSpecies, measureDims } from './assets.js';
+import { loadSpecies, measureDims, SHINY_FORMS } from './assets.js';
 import { WINGS } from './data/wings.js';
 import { addFlapAnim } from './flap.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -33,8 +33,7 @@ import { Hud } from './hud.js';
 import {
   ItemFly,
   ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst, Telegraph, TidalWave, Lightning, leafBurst,
-  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble,
-} from './effects.js';
+  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble, ShinySparkle } from './effects.js';
 import { initAudio, sfx, playCry } from './audio.js';
 import { EMOTES } from './social.js';
 import { music, ARENA_TRACK, RAID_TRACKS } from './music.js';
@@ -216,9 +215,12 @@ export class Game {
     this.practice = false;
   }
 
-  // Shiny Pokémon (in either side's kits) also get their recoloured sheets.
+  // Shiny Pokémon (in either side's kits) also get their recoloured sheets, and their Mega forms' where those
+  // have a shiny palette (SHINY_FORMS).
   async ensureSprites(ids, bossId) {
-    const shiny = ids.filter(id => SPECIES[id] && (this.kits?.[id]?.shiny || this.foeKits?.[id]?.shiny)).map(id => `${SPECIES[id].sprite}~shiny`);
+    const shinyIds = ids.filter(id => SPECIES[id] && (this.kits?.[id]?.shiny || this.foeKits?.[id]?.shiny));
+    const megas = shinyIds.flatMap(id => SPECIES[id].mega ?? []).map(f => SPECIES[f]?.sprite).filter(sp => SHINY_FORMS.has(sp));
+    const shiny = [...shinyIds.map(id => SPECIES[id].sprite), ...megas].map(sp => `${sp}~shiny`);
     const need = [...new Set([...spritesFor(ids), ...shiny, ...bossSpritesFor(bossId)])].filter(k => !this.sprites[k]);
     if (!need.length) return;
     Object.assign(this.sprites, await loadSpecies(need));
@@ -335,6 +337,23 @@ export class Game {
     });
   }
 
+  // The sheets a Pokémon uses in a new form: a shiny keeps its shiny colours when that form has them.
+  formSprites(mon, form) {
+    return (mon.shiny && this.sprites[`${form.sprite}~shiny`]) || this.sprites[form.sprite];
+  }
+
+  // Shiny Pokémon on the field keep twinkling: a little cluster of two or three stars every second and a half or so
+  // (visual only).
+  shinyTwinkles(dt) {
+    if (this.headless) return;
+    for (const m of [this.player, this.opponent]) {
+      if (!m?.shiny || m.hidden || !m.alive) continue;
+      if ((m.twinkleT = (m.twinkleT ?? 1) - dt) > 0) continue;
+      m.twinkleT = 1.2 + Math.random() * 0.8;
+      this.spawn(new ShinySparkle(m, { count: 2 + (Math.random() < 0.5 ? 1 : 0), spread: 0.35, size: 3 }));
+    }
+  }
+
   release(mon) {
     this.recordCombat('entered',mon);
     if (mon.side === 'player' && this.cosmetics?.effect) {
@@ -343,6 +362,8 @@ export class Game {
     mon.hidden = false;
     mon.appear = 1;
     mon.enteredAt = this.time;
+    // A shiny Pokémon arrives in a burst of sparkles, like in the main games.
+    if (mon.shiny && !this.headless) { this.spawn(new ShinySparkle(mon, { count: 12, spread: 1, size: 3, life: 0.5 })); mon.twinkleT = 1.6; }
     this.lastUsed[mon.side] = null;
     if (!this.headless) playCry(mon.baseSpecies.dex);
     sendOutBurst(this, mon.x, mon.y, mon.species.bodyZ);
@@ -1130,7 +1151,7 @@ export class Game {
     this.netSend(mon, { t: 'mega', c: mon.megaChoice });
     if (this.raid || this.raidState || this.online?.server || this.online?.authority) {
       const id=mon.species.mega.includes(mon.megaChoice)?mon.megaChoice:mon.species.mega[0], form=SPECIES[id];
-      mon.megaEvolve(form,this.sprites[form.sprite]);mon.ab={};abilityOf(mon).onEnter?.(this,mon);
+      mon.megaEvolve(form,this.formSprites(mon,form));mon.ab={};abilityOf(mon).onEnter?.(this,mon);
       this.spawn(new MegaAura(mon,1.1));rainbowBurst(this,mon.x,mon.y,mon.bodyZ);this.hud.callout(mon.side,form.name);sfx.megaBurst();return true;
     }
     this.cinematic = { mon, t: 0, swapped: false };
@@ -1163,7 +1184,7 @@ export class Game {
         c.swapped = true;
         const baseName = m.species.name;
         const mega = SPECIES[m.species.mega.includes(m.megaChoice) ? m.megaChoice : m.species.mega[0]];
-        m.megaEvolve(mega, this.sprites[mega.sprite]);
+        m.megaEvolve(mega, this.formSprites(m, mega));
         m.ab = {};
         m.form = null;
         abilityOf(m).onEnter?.(this, m);
@@ -1458,6 +1479,7 @@ export class Game {
     this.opponent.update(dt, this);
     if (puppet) this.online.afterPuppet(dt, puppet);
     this.separate();
+    this.shinyTwinkles(dt);
     this.updateEffects(dt);
     this.updateClashes();
     if(!this.headless)this.particles.update(dt);

@@ -949,7 +949,7 @@ export class Matchmaker {
     if (s.mu) team.megaUsed = true;
     const mon = team.members[s.i];
     if (mon && s.sp && s.sp !== mon.species.id && SPECIES[s.sp]?.megaOf === mon.baseSpecies.id) {
-      const form=SPECIES[s.sp];mon.megaEvolve(form,g.sprites[form.sprite]);
+      const form=SPECIES[s.sp];mon.megaEvolve(form,g.formSprites(mon,form));
     }
     if (mon && s.te && !mon.tera && !g.terastallize(mon, true)) mon.tera = s.te;
     if (mon && 'it' in s) mon.item = s.it || null;
