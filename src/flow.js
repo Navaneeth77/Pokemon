@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { EconomyClient } from './economy-client.js';
 import { EconomyUI } from './economy-ui.js';
 import { ExpansionUI } from './expansion-ui.js';
@@ -404,7 +405,7 @@ export class Flow {
           const sp = SPECIES[id], [c1, c2] = TYPE_COLORS[sp.types[0]], [d1] = TYPE_COLORS[sp.types[1] ?? sp.types[0]];
           return `<button class="dex-card c-${sp.class}" data-id="${id}" style="--t1:${c1};--t2:${c2};--t3:${d1}">`
             + `<span class="no">#${String(i + 1).padStart(3, '0')}</span>${sp.mega?.length ? '<span class="mg">MEGA</span>' : ''}`
-            + `<span class="ball"><img loading="lazy" src="/sprites/${sp.sprite}/portrait.png" alt=""></span><b>${sp.name}</b>`
+            + `<span class="ball"><img loading="lazy" src="${assetUrl(`/sprites/${sp.sprite}/portrait.png`)}" alt=""></span><b>${sp.name}</b>`
             + `<span class="tp">${sp.types.map(t => `<i style="background:${TYPE_COLORS[t][1]}">${t}</i>`).join('')}</span></button>`;
         }).join('')}</div></div>
       </section>`;
@@ -636,7 +637,7 @@ export class Flow {
     $('#intro').classList.add('hidden');
     this.ui.setBuilder(null);
     const page = $('#teams-screen'), list = this.ui.loadTeams();
-    const img = id => `<img src="/sprites/${SPECIES[id].sprite}/portrait.png" alt="${SPECIES[id].name}" title="${SPECIES[id].name}">`;
+    const img = id => `<img src="${assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`)}" alt="${SPECIES[id].name}" title="${SPECIES[id].name}">`;
     const card = (t, k) => {
       const ids = t.team.filter(id => SPECIES[id]);
       return `<div class="tb-card"><div class="tb-top"><b>${escapeHtml(t.name)}</b><span class="tb-fmt">${t.format} VS ${t.format}</span></div>

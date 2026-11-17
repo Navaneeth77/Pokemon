@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { economyCredential } from './economy-client.js';
 import { appendBattleEvents } from './event-buffer.js';
 import { summaryHtml } from './results.js';
@@ -37,7 +38,7 @@ const PRED_MS = 700; // our own predicted attack waits at least this long for th
 const INTERP_MIN_MS = 35, INTERP_MAX_MS = 180;
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
+const portrait = id => assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`);
 
 // An anonymous random id this browser keeps, so the server can tell players apart (and never pairs
 // a player with themselves). In development ?pid=… lets two tabs act as two different players.

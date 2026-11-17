@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { summaryHtml } from './results.js';
 import { resultSummary, saveSummary } from './mastery.js';
 import { MOVES } from './moves.js';
@@ -31,7 +32,7 @@ const TEAMS_KEY = 'msb.teams';
 const KITS_KEY = 'msb.kits'; // each Pokémon's held item, Tera type, chosen moves and shiny switch, by species
 const SHINY_SET = new Set(SHINY);
 const hpColor = r => (r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
-const portrait = s => `/sprites/${s.sprite}/portrait.png`;
+const portrait = s => assetUrl(`/sprites/${s.sprite}/portrait.png`);
 const typeChips = types => types.map(t => `<i style="background:${TYPE_COLORS[t][0]}">${t}</i>`).join('');
 const esc = str => str.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 

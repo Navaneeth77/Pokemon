@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 // Synthesised sound effects (no audio files needed).
 let ac = null;
 let master = null;
@@ -188,7 +189,7 @@ const cries = new Map();
 export function playCry(dex, { rate = 1, gain = 0.55 } = {}) {
   if (!ac || !dex || muted) return;
   if (!cries.has(dex)) {
-    cries.set(dex, fetch(`/cries/${dex}.mp3`).then(r => (r.ok ? r.arrayBuffer() : Promise.reject())).then(b => ac.decodeAudioData(b)).catch(() => null));
+    cries.set(dex, fetch(assetUrl(`/cries/${dex}.mp3`)).then(r => (r.ok ? r.arrayBuffer() : Promise.reject())).then(b => ac.decodeAudioData(b)).catch(() => null));
   }
   cries.get(dex).then(buffer => {
     if (!buffer || muted) return;

@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { readMastery, level, MASTERY_THRESHOLDS, BADGES, earnedBadges, profileStats, setTitle, COSMETICS, unlockedCosmetics, equipCosmetic, cosmeticLoadout } from './mastery.js';
 import { MOVES } from './moves.js';
 import { ARENAS } from './arena.js';
@@ -9,7 +10,7 @@ import { music } from './music.js';
 import { initAudio, isMuted, setMuted } from './audio.js';
 import { preloadRaidArt } from './raid-art.js';
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
+const portrait = id => assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`);
 export class ExpansionUI {
   constructor(flow) { this.flow = flow; this.mm = flow.mm; this.timer = null; }
   open(title, html) {
@@ -173,7 +174,7 @@ export class ExpansionUI {
   }
 
   guide() {
-    this.open('ELEMENTAL REACTIONS', `<img class="element-crest" src="/art/element-crest.png" alt="Elemental crest"><p>Land two compatible elements within 4 seconds. A reaction consumes the aura. Shields and dodges prevent priming.</p><div class="reaction-grid">${HIT_REACTIONS.map(r => `<article style="--accent:${r.color}"><b>${r.label}</b><span>${r.pair.join(' + ').toUpperCase()}</span><small>${r.cleanse ? 'Clears burn and frost' : r.status ? `Applies ${r.status}, respecting immunity` : r.ground ? 'Clears paralysis and charge' : 'Bonus damage; up to two nearby wet enemies'}</small></article>`).join('')}</div><p>Reaction cooldown: 1.5s. Freeze protection: 6s after thawing. Chains never hit allies. Ground types resist conduction.</p>`);
+    this.open('ELEMENTAL REACTIONS', `<img class="element-crest" src="${assetUrl('/art/element-crest.png')}" alt="Elemental crest"><p>Land two compatible elements within 4 seconds. A reaction consumes the aura. Shields and dodges prevent priming.</p><div class="reaction-grid">${HIT_REACTIONS.map(r => `<article style="--accent:${r.color}"><b>${r.label}</b><span>${r.pair.join(' + ').toUpperCase()}</span><small>${r.cleanse ? 'Clears burn and frost' : r.status ? `Applies ${r.status}, respecting immunity` : r.ground ? 'Clears paralysis and charge' : 'Bonus damage; up to two nearby wet enemies'}</small></article>`).join('')}</div><p>Reaction cooldown: 1.5s. Freeze protection: 6s after thawing. Chains never hit allies. Ground types resist conduction.</p>`);
   }
   // Pokémon Mastery: the trainer profile, badges (choose one as your title), every species you've
   // used with its level and records, and recent matches.

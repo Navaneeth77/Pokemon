@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 // Social: watching live battles, friends (by friend code) with room invites, and quick chat in online
 // battles. Friend codes come from the match server; the friend list itself lives in this browser.
 import { SPECIES } from './data/species.js';
@@ -6,7 +7,7 @@ import { safeName } from './names.js';
 const FRIENDS_KEY = 'msb.friends';
 export const EMOTES = ['Good luck!', 'Nice move!', 'Wow!', 'Oops!', 'So close!', 'Well played!', 'Thanks!', 'Rematch?'];
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const portrait = id => (SPECIES[id] ? `/sprites/${SPECIES[id].sprite}/portrait.png` : '');
+const portrait = id => (SPECIES[id] ? assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`) : '');
 
 export class Social {
   constructor(flow) {

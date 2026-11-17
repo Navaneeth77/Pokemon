@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 // Survival: endless waves of computer trainers with one team of three. HP and knock-outs carry over
 // between waves; after each cleared wave you pick one of three upgrades. Foes get sharper and stronger
 // every wave (legendaries join from wave 5). The best wave reached is kept in this browser.
@@ -8,7 +9,7 @@ import { sfx } from './audio.js';
 
 const BEST_KEY = 'msb.survival.best';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
+const portrait = id => assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`);
 const pick = (list, n) => [...list].sort(() => Math.random() - 0.5).slice(0, n);
 
 // Upgrades offered between waves; `ok` hides ones that would do nothing.

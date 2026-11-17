@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 // PMD SpriteCollab sheets: one column per frame, one row per facing direction.
 // Durations are in 1/60 s game ticks.
 export const TICK = 1 / 60;
@@ -35,7 +36,7 @@ export function loadImage(src) {
     const img = new Image();
     img.onload = async () => { try { await img.decode?.(); } catch {} resolve(img); };
     img.onerror = () => reject(new Error(`Failed to load ${src}`));
-    img.src = src;
+    img.src = assetUrl(src);
   }).catch(err=>{imageCache.delete(src);throw err;});
   imageCache.set(src,pending);return pending;
 }
@@ -60,7 +61,7 @@ function parseAnimData(xml) {
 
 async function loadSpriteSet(id) {
   const base = `/sprites/${id}`;
-  const res = await fetch(`${base}/AnimData.xml`);
+  const res = await fetch(assetUrl(`${base}/AnimData.xml`));
   if (!res.ok) throw new Error(`Missing sprite data for ${id}`);
   const defs = parseAnimData(await res.text());
   const wanted = defs.filter(d => USED.has(d.name));
@@ -90,7 +91,7 @@ export async function addExtraAnims(id, set) {
   if (!set || set.extrasLoaded) return;
   set.extrasLoaded = true;
   try {
-    const defs = parseAnimData(await (await fetch(`/sprites/${id}/AnimData.xml`)).text()), byName = Object.fromEntries(defs.map(d => [d.name, d]));
+    const defs = parseAnimData(await (await fetch(assetUrl(`/sprites/${id}/AnimData.xml`))).text()), byName = Object.fromEntries(defs.map(d => [d.name, d]));
     await Promise.all(defs.filter(d => EXTRA.has(d.name) && !set.anims[d.name]).map(async d => {
       const src = byName[d.copyOf ?? d.name];
       if (!src) return;
@@ -134,10 +135,10 @@ const SHINY_PORTRAITS = new Set(['gyarados', 'rayquaza', 'rayquaza-mega']); // M
 // Mega forms with a shiny palette of their own, so a shiny Pokémon stays shiny when it Mega Evolves. Mega Rayquaza
 // uses exactly the same four greens as Rayquaza, so it shares Rayquaza's measured palette.
 export const SHINY_FORMS = new Set(['rayquaza-mega']);
-export const shinyPortraitUrl = sprite => SHINY_PORTRAITS.has(sprite) ? `/sprites/${sprite}/portrait-shiny.png` : null;
+export const shinyPortraitUrl = sprite => SHINY_PORTRAITS.has(sprite) ? assetUrl(`/sprites/${sprite}/portrait-shiny.png`) : null;
 
 async function loadShinySet(id) {
-  const [set, res] = await Promise.all([loadSpriteSet(id), fetch(`/sprites/${id}/shiny.json`)]);
+  const [set, res] = await Promise.all([loadSpriteSet(id), fetch(assetUrl(`/sprites/${id}/shiny.json`))]);
   if (!res.ok) throw new Error(`No shiny colours for ${id}`);
   const palette = new Map(Object.entries(await res.json()).map(([a, b]) => [parseInt(a, 16), parseInt(b, 16)]));
   const sheets = new Map(), anims = {};

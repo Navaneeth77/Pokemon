@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { SPECIES, isPlayable, eligibleReplacement, normalizeTeam } from './data/species.js';
 import { KANTO_LINES } from './data/kanto.js';
 import { TYPE_COLORS, typeMultiplier } from './data/types.js';
@@ -13,7 +14,7 @@ import { sfx } from './audio.js';
 const SAVE_KEY = 'msb.story';
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
+const portrait = id => assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`);
 const typeChip = t => `<i style="background:${TYPE_COLORS[t][1]}">${t}</i>`;
 
 export const STARTERS = ['bulbasaur', 'charmander', 'squirtle'];

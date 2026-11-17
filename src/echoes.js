@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { Cutscene } from './cutscene.js';
 import { SCENES, BATTLES, CHAPTERS, CAST, STARTER_LINES, RIVAL_OF } from './data/echoes.js';
 import { SPECIES, isPlayable, eligibleReplacement, normalizeTeam } from './data/species.js';
@@ -13,7 +14,7 @@ import { sfx } from './audio.js';
 const SAVE_KEY = 'msb.echoes';
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const portrait = id => `/sprites/${SPECIES[id].sprite}/portrait.png`;
+const portrait = id => assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`);
 const NODES = CHAPTERS.flatMap((c, ch) => c.nodes.map(n => ({ ...n, ch })));
 const LAST_I = Math.max(...Object.values(BATTLES).map(b => b.i));
 

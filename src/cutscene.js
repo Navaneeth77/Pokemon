@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { AnimatedSprite, dirFromVector } from './sprite.js';
 import { Trainer } from './trainer.js';
 import { drawBust, frontPalette, backPalette } from './trainers.js';
@@ -550,8 +551,8 @@ export class Cutscene {
     }
     const img = this.close.querySelector('img'), id = this.species(who), sp = SPECIES[id];
     if (sp) {
-      img.onerror = () => { img.onerror = null; img.src = `/sprites/${sp.sprite}/portrait.png`; };
-      img.src = `/sprites/${sp.sprite}/portrait${emotion ? `-${emotion}` : ''}.png`;
+      img.onerror = () => { img.onerror = null; img.src = assetUrl(`/sprites/${sp.sprite}/portrait.png`); };
+      img.src = assetUrl(`/sprites/${sp.sprite}/portrait${emotion ? `-${emotion}` : ''}.png`);
       this.close.querySelector('b').textContent = sp.name;
     } else {
       const p = this.person(who);
@@ -636,7 +637,7 @@ export class Cutscene {
       const m = Object.values(this.actors).find(a => a instanceof MonActor && a.sp.id === id);
       if (m) this.animate(null, m.sprite.has('Hop') ? 'Hop' : null, false, m);
     }
-    return this.showCard(`<div class="cs-joins">${list.map(id => `<span><img src="/sprites/${SPECIES[id].sprite}/portrait.png" alt=""><b>${SPECIES[id].name}</b></span>`).join('')}</div>
+    return this.showCard(`<div class="cs-joins">${list.map(id => `<span><img src="${assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`)}" alt=""><b>${SPECIES[id].name}</b></span>`).join('')}</div>
       <b>${list.map(id => SPECIES[id].name).join(' and ')} joined your team!</b>`, 'join', 2.6);
   }
 

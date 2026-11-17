@@ -1,3 +1,4 @@
+import { assetUrl } from './asset-url.js';
 import { CATALOG, ECONOMY, itemById } from './economy.js';
 import { Ring, drawSparkleStar } from './effects.js';
 import { SPECIES } from './data/species.js';
@@ -8,7 +9,7 @@ import { drawCosmeticAura, CosmeticStarburst } from './economy-art.js';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
 const coin='<i class="chaos-coin" aria-hidden="true"></i>';
 const labels={frame:'Frames',title:'Titles',aura:'Auras',effect:'Arrivals',pose:'Victory poses',ultimate:'Ultimate effects',shiny:'Shiny Pokémon'};
-const portrait=id=>`/sprites/${SPECIES[id].sprite}/portrait.png`;
+const portrait=id=>assetUrl(`/sprites/${SPECIES[id].sprite}/portrait.png`);
 export class EconomyUI {
  constructor(flow){this.flow=flow;this.client=flow.economy;this.category='all';this.selected=CATALOG[0].id;
   this.client.listeners.add(()=>this.updateCounters());
