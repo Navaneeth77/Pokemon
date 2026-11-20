@@ -1724,3 +1724,8 @@ body.mm .fmt-switch .tag-fmt { display: inline-block; }
 .km-slot .style-tag,.km-slot .fit-tag{font-size:8.5px;}
 .km-slot .style-tag{color:#fff;}
 .km-slot .fit-tag{color:#0d2a14;}
+
+/* Mega X / Mega Y cards: the form is written across the bottom of the picture. */
+.card .pic { position: relative; }
+.card .form-tag { position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%); padding: 1px 5px; font-size: 9px; font-weight: 800; line-height: 12px; letter-spacing: 0.3px; color: #fff; white-space: nowrap; background: #a03ac0; border: 1px solid #f0c8ff; border-radius: 6px; box-shadow: 0 1px 2px #0008; }
+.card.has-form .mg { display: none; }

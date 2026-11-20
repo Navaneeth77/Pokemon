@@ -121,7 +121,8 @@ export function applyHit(game, attacker, target, move, o = {}) {
   // Same-type bonus: its current types and, once Terastallized, its original types too; a Tera type that
   // matches an original type stacks a further 25%.
   const own = attacker.species.types.includes(type);
-  const stab = typesOf(attacker).includes(type) || (attacker.tera && own) ? (A.stab ?? 1.2) * (attacker.tera === type && own ? 1.25 : 1) : 1;
+  // Ultimates always count as STAB.
+  const stab = typesOf(attacker).includes(type) || (attacker.tera && own) ? (A.stab ?? 1.2) * (attacker.tera === type && own ? 1.25 : 1) : move.ultimate ? A.stab ?? 1.2 : 1;
   // Laser Focus: its next hit is a critical hit; Lucky Chant keeps critical hits off its side.
   const crit = !(game.sides?.[target.side]?.luckyChant > 0) && (attacker.laserFocus > 0 || !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0) + (attacker.focusEnergy ? 0.24 : 0));
   if (attacker.laserFocus > 0) attacker.laserFocus = 0;

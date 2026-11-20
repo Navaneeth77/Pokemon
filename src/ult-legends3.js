@@ -275,7 +275,6 @@ export const LEGEND_ULTS_3 = {
     g.spawn(new ScreenDim(2.4, 0.5, '14,18,26'));
     braille(a, g, u, [220, 230, 255], BRAILLE.registeel);
     a.later(0.15, () => {
-      g.buff(u, 'def', 1.3, 8);
       for (let i = 0; i < 3; i++) g.spawn(new Ring(u.x, u.y, { z: u.bodyZ, r0: 40 - i * 8, r1: 26 - i * 6, life: 0.4, color: ['#ffffff', '#a3b1c4', '#3a4458'][i], width: 4, layer: 'air' }));
       metalSparks(g, u.x, u.y, u.bodyZ);
       sfx.clang();

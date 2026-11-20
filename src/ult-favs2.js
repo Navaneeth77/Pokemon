@@ -409,7 +409,6 @@ export const FAV_ULTS_2 = {
       a.strike(0.25, { customArt: true, knockback: 0, stagger: 0.35 });
     });
     a.later(0.81, () => {
-      g.heal(u, u.maxHp * 0.12);
       g.spawn(new Glow(u.x, u.y, u.bodyZ, 31, aqua, 0.46));
       const down = t.y >= u.y, y0 = u.y, y1 = down ? 650 : 45;
       const wave = g.spawn(new TidalWave(y0, y1, 0.64, aqua, true));

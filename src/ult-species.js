@@ -1429,29 +1429,6 @@ export const SPECIES_ULTIMATES = {
     a.end(1.72);
   },
 
-  lightOfRuinUlt(a, g, u, t) {
-    const colors = ['#54193c', '#fa83ac', '#fff5d8'];
-    face(a, u, t);
-    a.anim('Charge', 0.85);
-    sfx.beamCharge(0.73);
-    a.later(0.76, () => {
-      face(a, u, t);
-      a.anim('Shoot', 1.18);
-      const m = a.mouth(), from = { x: m.x, y: m.y - m.z };
-      const beam = g.spawn(new Beam(from.x, from.y, from.x, from.y, 0.75, { width: 32, colors, tapered: true }));
-      const flight = Math.max(0.1, Math.hypot(t.x - from.x, t.y - t.bodyZ - from.y) / 1450);
-      a.ticks.push(() => {
-        const front = Math.min(1, beam.age / flight);
-        beam.set(from.x, from.y, lerp(from.x, t.x, front), lerp(from.y, t.y - t.bodyZ, front));
-      });
-      sfx.beamFire();
-      a.later(flight + 0.31, () => {
-        if (!t.alive || t.hidden || t.untouchable) return;
-        a.strike(1, { customArt: true, knockback: 230, stagger: 0.51, hitstop: 0.047 });
-      });
-    });
-    a.end(1.95);
-  },
   drumBeatingUlt(a, g, u, t) {
     const colors = ['#4e713c', '#89ae55', '#d5eca2'];
     face(a, u, t);
@@ -1517,9 +1494,13 @@ export const SPECIES_ULTIMATES = {
     a.later(0.53, () => {
       face(a, u, t);
       a.anim('Hop', 1.1);
+      // The jump follows the foe, so a foe that walks off during it is still under the hammer (ultimates can't be dodged).
       const landing = point(t.x + side * 26, t.y + 8);
       glide(a, g, u, landing, 0.57, '#b49aae', {
-        onStep(p) { u.zOverride = 28 * Math.sin(Math.PI * p); },
+        onStep(p) {
+          u.zOverride = 28 * Math.sin(Math.PI * p);
+          Object.assign(landing, point(t.x + side * 26, t.y + 8));
+        },
       });
     });
     a.later(0.94, () => a.anim('Slam', 1.45));

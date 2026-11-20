@@ -374,7 +374,6 @@ export const LEGEND_ULTS_4 = {
     g.spawn(new ScreenDim(2.4, 0.5, '30,10,24'));
     g.spawn(new Glow(u.x, u.y, u.headZ, 24, PINK, 0.5, true));
     a.later(0.1, () => {
-      g.buff(u, 'def', 1.3, 6);
       for (let k = 0; k < 6; k++) {
         const ang = (k / 6) * Math.PI * 2;
         g.spawn(new Spike(u.x + Math.cos(ang) * 22, u.y + Math.sin(ang) * 14, 'crystal', 0.6));

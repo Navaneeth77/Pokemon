@@ -540,8 +540,6 @@ export const LEGEND_ULTS = {
       }
     });
     sfx.megaCharge();
-    a.later(0.2, () => g.buff(u, 'atk', 1.25, 8));
-    a.later(0.4, () => g.buff(u, 'spd', 1.2, 8));
     // The burst.
     a.later(0.85, () => {
       a.anim('Shoot', 1);
@@ -624,7 +622,6 @@ export const LEGEND_ULTS = {
       });
     });
     a.later(1.1, () => {
-      g.heal(u, u.maxHp * 0.15);
       g.spawn(new Glow(u.x, u.y, u.bodyZ, 40, RED, 0.4));
     });
     a.later(1.24, () => {

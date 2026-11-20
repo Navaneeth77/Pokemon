@@ -200,13 +200,12 @@ test('physical and special ultimates use the matching stat stages at impact', ()
   ]) {
     const base = damage(attacker);
     const boosted = damage(attacker, { [offense]: 2 });
-    const lowered = damage(attacker, { [offense]: -2 });
     const defended = damage(attacker, {}, { [defense]: 2 });
     assert.ok(Math.abs(boosted - 1.5 * base) <= 10, `${attacker}: ${offense} +2 increases damage by 50% (${base} → ${boosted})`);
-    assert.ok(Math.abs(lowered - base / 1.5) <= 10, `${attacker}: ${offense} −2 reduces damage by a third (${base} → ${lowered})`);
-    assert.equal(defended, lowered, `${attacker}: ${defense} +2 reduces damage by a third`);
-    assert.equal(damage(attacker, { [otherOffense]: 2 }), base);
+    assert.ok(Math.abs(defended - base / 1.5) <= 10, `${attacker}: ${defense} +2 reduces damage by a third (${base} → ${defended})`);
     assert.equal(damage(attacker, {}, { [otherDefense]: 2 }), base);
+    // An ultimate hits with whichever attacking stat is higher: boosting the other one switches it over.
+    assert.notEqual(damage(attacker, { [otherOffense]: 2 }), base, `${attacker}: ${otherOffense} +2 makes it use that stat`);
   }
 });
 

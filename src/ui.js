@@ -33,6 +33,7 @@ const KITS_KEY = 'msb.kits'; // each Pokémon's held item, Tera type, chosen mov
 const SHINY_SET = new Set(SHINY);
 const hpColor = r => (r > 0.5 ? '#46d36b' : r > 0.2 ? '#f4c430' : '#ec4b3c');
 const portrait = s => assetUrl(`/sprites/${s.sprite}/portrait.png`);
+const formLabel = m => { const t = /Mega([XYZ])$/.exec(m)?.[1]; return t ? `MEGA ${t}` : 'MEGA'; };
 const typeChips = types => types.map(t => `<i style="background:${TYPE_COLORS[t][0]}">${t}</i>`).join('');
 const esc = str => str.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
@@ -175,22 +176,27 @@ export class UI {
   // ── Selection screen: searchable, filterable roster; details of the hovered Pokémon; team slots ──
   buildRoster() {
     const box = $('#roster');
+    // A Pokémon with two Mega forms (Mega X / Mega Y, or Mega / Mega Z) gets one card per form, labelled on the
+    // picture; picking a card picks that form.
     for (const id of ROSTER) {
       const s = SPECIES[id];
-      const btn = document.createElement('button');
-      btn.className = `card c-${s.class}`;
-      btn.style.setProperty('--t', TYPE_COLORS[s.types[0]][0]);
-      btn.title = `${s.name} · ${s.types.join(' / ')}${s.mega?.length ? ' · can Mega Evolve' : ''}`;
-      btn.innerHTML = `<span class="no"></span>${s.mega?.length ? '<span class="mg">M</span>' : ''}`
-        + `<span class="pic"><img loading="lazy" src="${portrait(s)}" alt=""></span><span class="nm">${s.name}</span>`;
-      btn.addEventListener('click', () => {
-        this.toggle(id);
-        this.showInfo(id);
-      });
-      btn.addEventListener('mouseenter', () => this.showInfo(id));
-      box.appendChild(btn);
-      const text = s.name.toLowerCase(); // search matches Pokémon names only
-      this.cards.push({ id, btn, no: btn.querySelector('.no'), species: s, text });
+      for (const form of s.mega?.length > 1 ? [...s.mega].sort((a, b) => formLabel(a).localeCompare(formLabel(b))) : [null]) {
+        const btn = document.createElement('button');
+        btn.className = `card c-${s.class}${form ? ' has-form' : ''}`;
+        btn.style.setProperty('--t', TYPE_COLORS[s.types[0]][0]);
+        btn.title = form ? `${s.name} → ${SPECIES[form].name} · ${SPECIES[form].types.join(' / ')}`
+          : `${s.name} · ${s.types.join(' / ')}${s.mega?.length ? ' · can Mega Evolve' : ''}`;
+        btn.innerHTML = `<span class="no"></span>${s.mega?.length ? '<span class="mg">M</span>' : ''}`
+          + `<span class="pic"><img loading="lazy" src="${portrait(s)}" alt="">${form ? `<b class="form-tag">${formLabel(form)}</b>` : ''}</span><span class="nm">${s.name}</span>`;
+        btn.addEventListener('click', () => {
+          this.pickCard(id, form);
+          this.showInfo(id);
+        });
+        btn.addEventListener('mouseenter', () => this.showInfo(id));
+        box.appendChild(btn);
+        const text = `${s.name} ${form ? SPECIES[form].name : ''}`.toLowerCase(); // search matches Pokémon names only
+        this.cards.push({ id, form, btn, no: btn.querySelector('.no'), species: s, text });
+      }
     }
     const search = $('#roster-search');
     search.addEventListener('input', e => {
@@ -202,7 +208,7 @@ export class UI {
       e.preventDefault();
       const hit = this.cards.find(c => !c.btn.hidden && !this.selection.includes(c.id));
       if (!hit || !this.query) return;
-      this.toggle(hit.id);
+      this.pickCard(hit.id, hit.form);
       this.showInfo(hit.id);
       search.value = '';
       this.query = '';
@@ -407,6 +413,19 @@ export class UI {
   // The team can't change once READY is pressed (friend room) or while searching for a match.
   get teamLocked() {
     return !!(this.loading || this.online?.locked || (this.queue && this.game.flow?.mm.busy));
+  }
+
+  // A Mega X / Mega Y card: picking the other form of a Pokémon already on the team switches its form.
+  pickCard(id, form) {
+    if (!form) return this.toggle(id);
+    if (this.teamLocked) return;
+    const on = this.selection.includes(id), cur = this.megaPick[id] ?? SPECIES[id].mega[0];
+    if (on && cur !== form) {
+      this.megaPick[id] = form;
+      return this.renderSelection();
+    }
+    if (!on) this.megaPick[id] = form;
+    this.toggle(id);
   }
 
   toggle(id) {
@@ -670,7 +689,7 @@ export class UI {
   // Fills the empty slots with random Pokémon, from the ones the search and filter show (or anyone).
   fillRandom() {
     if (this.teamLocked) return;
-    const shown = this.cards.filter(c => !c.btn.hidden && !this.selection.includes(c.id)).map(c => c.id);
+    const shown = [...new Set(this.cards.filter(c => !c.btn.hidden && !this.selection.includes(c.id)).map(c => c.id))];
     const pool = shown.length ? shown : ROSTER.filter(id => !this.selection.includes(id) && (!this.story || this.story.pool.has(id)));
     while (this.selection.length < this.format && pool.length) this.selection.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     this.renderSelection();
@@ -810,9 +829,11 @@ export class UI {
     if (this.foeBasis !== this.foeKey()) this.rollFoes();
     const full = this.selection.length >= this.format;
     for (const c of this.cards) {
-      const k = this.selection.indexOf(c.id);
+      let k = this.selection.indexOf(c.id);
+      if (k >= 0 && c.form && (this.megaPick[c.id] ?? c.species.mega[0]) !== c.form) k = -1; // the other form's card
+      const other = k < 0 && c.form && this.selection.includes(c.id);
       c.btn.classList.toggle('sel', k >= 0);
-      c.btn.classList.toggle('full', k < 0 && full);
+      c.btn.classList.toggle('full', k < 0 && full && !other);
       c.no.textContent = k < 0 ? '' : k === this.lead ? 'LEAD' : String(k + 1);
     }
     const box = $('#team-summary'), left = this.format - this.selection.length;
@@ -826,9 +847,11 @@ export class UI {
       const id = this.selection[i];
       if (!id) return '<div class="slot empty"><span class="plus">+</span></div>';
       const s = SPECIES[id];
-      // Pokémon with two Mega forms pick X or Y here, so nothing needs choosing mid-battle.
+      // Pokémon with two Mega forms pick one here (X/Y, or the plain Mega "M" and its "Z" form), so nothing
+      // needs choosing mid-battle.
+      const formTag = m => /Mega([XYZ])$/.exec(m)?.[1] ?? 'M';
       const xy = s.mega?.length > 1
-        ? `<span class="xy">${s.mega.map((m, k) => `<em data-id="${id}" data-m="${m}" class="${(this.megaPick[id] ?? s.mega[0]) === m ? 'on' : ''}">${'XY'[k]}</em>`).join('')}</span>`
+        ? `<span class="xy">${s.mega.map(m => `<em data-id="${id}" data-m="${m}" title="${SPECIES[m].name}" class="${(this.megaPick[id] ?? s.mega[0]) === m ? 'on' : ''}">${formTag(m)}</em>`).join('')}</span>`
         : '';
       return `<button class="slot${i === this.lead ? ' lead' : ''}" data-i="${i}" title="${i === this.lead ? 'Leads the battle' : 'Tap to lead with this one'}">`
         + `${i === this.lead ? '<b class="lead-tag">LEAD</b>' : ''}<i class="rm" data-rm="${i}" title="Remove ${s.name}">×</i>`

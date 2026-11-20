@@ -413,6 +413,7 @@ export const OFFICIAL = {
   normalize: { name: 'Normalize', desc: 'All its moves become Normal-type and hit 20% harder.', convert: { test: () => true, to: 'normal', mult: 1.2 } },
   refrigerate: { name: 'Refrigerate', desc: 'Normal-type moves become Ice-type and hit 20% harder.', convert: { from: 'normal', to: 'ice', mult: 1.2 } },
   aerilate: { name: 'Aerilate', desc: 'Normal-type moves become Flying-type and hit 20% harder.', convert: { from: 'normal', to: 'flying', mult: 1.2 } },
+  dragonize: { name: 'Dragonize', desc: 'Normal-type moves become Dragon-type and hit 20% harder.', convert: { from: 'normal', to: 'dragon', mult: 1.2 } },
   galvanize: { name: 'Galvanize', desc: 'Normal-type moves become Electric-type and hit 20% harder.', convert: { from: 'normal', to: 'electric', mult: 1.2 } },
   protean: {
     name: 'Protean', desc: 'Becomes the type of the move it is about to use.',
@@ -520,6 +521,15 @@ export const OFFICIAL = {
     takeMult: (g, me, atk, move, i) => (i.contact ? 0.6 : 1) * (i.type === 'fire' ? 1.6 : 1), guardText: 'The fluff cushioned it!',
   },
   heatproof: { name: 'Heatproof', desc: 'Takes half damage from Fire moves and burns.', ...guard((m, i) => i.type === 'fire', 0.5, 'Heatproof!'), statusDur: n => (n === 'burn' ? 0.5 : 1) },
+  auraGuard: { name: 'Aura Guard', desc: 'Takes half damage from contact moves.', ...guard((m, i) => i.contact, 0.5, 'Its aura guarded it!') },
+  spicySpray: {
+    name: 'Spicy Spray', desc: 'When a move damages it, the attacker is burned.',
+    onTake(g, me, atk, move, dmg) {
+      if (!atk?.alive || atk === me || !(dmg > 0)) return;
+      g.applyStatus(atk, 'burn', { source: me });
+      g.abilityPop(me, 'Spicy spray burned the attacker!');
+    },
+  },
   filter: { name: 'Filter', desc: 'Super-effective hits deal 25% less.', ...guard((m, i) => i.eff > 1, 0.75, 'It filtered the hit!') },
   prismArmor: { name: 'Prism Armor', desc: 'Super-effective hits deal 25% less.', ...guard((m, i) => i.eff > 1, 0.75, 'Its prism armor dulled it!') },
   battleArmor: { name: 'Battle Armor', desc: 'Immune to critical hits and takes 10% less damage.', noCrit: true, takeMult: () => 0.9 },

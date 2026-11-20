@@ -134,7 +134,15 @@ function recolor(img, palette) {
 const SHINY_PORTRAITS = new Set(['gyarados', 'rayquaza', 'rayquaza-mega']); // Mega Rayquaza's is generated (no official one exists)
 // Mega forms with a shiny palette of their own, so a shiny Pokémon stays shiny when it Mega Evolves. Mega Rayquaza
 // uses exactly the same four greens as Rayquaza, so it shares Rayquaza's measured palette.
-export const SHINY_FORMS = new Set(['rayquaza-mega']);
+// The Megas drawn from the player's own sheets have palettes measured from the official normal and shiny sprites.
+export const SHINY_FORMS = new Set([
+  'rayquaza-mega', 'salamence-mega', 'beedrill-mega', 'ampharos-mega', 'golurk-mega', 'abomasnow-mega', 'meganium-mega', 'meowstic-mega',
+  'golisopod-mega', 'malamar-mega', 'metagross-mega', 'magearna-mega', 'crabominable-mega', 'feraligatr-mega', 'barbaracle-mega',
+  'garchomp-mega', 'heatran-mega', 'delphox-mega', 'emboar-mega', 'chandelure-mega', 'absol-mega-z', 'garchomp-mega-z', 'baxcalibur-mega',
+  'froslass-mega', 'blastoise-mega', 'dragonite-mega', 'audino-mega', 'pidgeot-mega', 'heracross-mega',
+  'aggron-mega', 'blaziken-mega', 'charizard-mega-y', 'chesnaught-mega', 'glimmora-mega', 'gyarados-mega', 'lucario-mega-z', 'mewtwo-mega-x',
+  'pinsir-mega', 'scizor-mega', 'scolipede-mega', 'scovillain-mega', 'staraptor-mega', 'starmie-mega', 'swampert-mega', 'venusaur-mega', 'victreebel-mega', 'raichu-mega-y',
+]);
 export const shinyPortraitUrl = sprite => SHINY_PORTRAITS.has(sprite) ? assetUrl(`/sprites/${sprite}/portrait-shiny.png`) : null;
 
 async function loadShinySet(id) {

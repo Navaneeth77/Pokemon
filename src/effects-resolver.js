@@ -11,7 +11,7 @@
 // move connects, together with its animation and the log line.
 import { abilityOf, typesOf, isContact } from './data/abilities.js';
 import { ITEMS } from './data/items.js';
-import { STAT_NAME } from './stats.js';
+import { STAT_NAME, damageStageMult } from './stats.js';
 import { applyHit } from './combat.js';
 import { setSide, toggleTrickRoom, breakScreens, swapCourts } from './field.js';
 import { Ring, Glow, Pillar, FloatText, BeamLine, ItemFly, rand } from './effects.js';
@@ -178,7 +178,16 @@ export function beforeHit(game, attacker, target, move, stack) {
 }
 
 // Tera Blast hits with the user's higher attacking stat once it has Terastallized.
-export const moveCategory = (move, user) => (move.id === 'teraBlast' && user.tera && (user.species.atk ?? 0) > (user.species.spa ?? 0) ? 'physical' : move.cat);
+// Ultimates hit with whichever of Attack and Sp. Atk is higher right now (stat stages counted, so Dragon Dance or
+// Nasty Plot can swing it).
+// Nearly every species has one shared attack stat, so a tie keeps the move's own category.
+const ultCategory = (move, user) => {
+  const s = user.species, st = user.stages ?? {};
+  const phys = (s.atk ?? 1) * damageStageMult(st.atk ?? 0), spec = (s.spa ?? s.atk ?? 1) * damageStageMult(st.spa ?? 0);
+  return phys > spec ? 'physical' : spec > phys ? 'special' : move.cat;
+};
+export const moveCategory = (move, user) => (move.ultimate && user ? ultCategory(move, user)
+  : move.id === 'teraBlast' && user.tera && (user.species.atk ?? 0) > (user.species.spa ?? 0) ? 'physical' : move.cat);
 
 // Counter, Mirror Coat, Metal Burst: a hit of the matching kind during the window comes straight back,
 // multiplied, as a hit of the counter move's own type.
