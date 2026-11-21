@@ -75,10 +75,30 @@ export function dodgesHit(game, attacker, target, o = {}, stack = {}) {
   return true;
 }
 
+// Online lag forgiveness. The match server learns of a dodge only when the player's message arrives, which on a
+// slow connection can be after a hit their own screen showed them dodging. So a hit a dodge could still avoid
+// waits for up to that player's one-way delay (`game.dodgeGraceMs`, set only by the match server; capped at
+// 150 ms, under the 0.28 s of a dodge's invulnerability) and is then resolved normally: a dodge that arrived in
+// the meantime avoids it (DODGED!), otherwise it lands. Nothing waits for an unblockable hit (ultimates), with
+// No Guard on either side, for a target already dodging or unable to dodge in time, or on a fast connection.
+export const MAX_DODGE_GRACE_MS = 150;
+export function dodgeGraceFor(game, attacker, target, o = {}) {
+  if (!game.dodgeGraceMs || o.graced || o.unblockable || o.reaction || target.dodgeInv > 0 || attacker?.side === target.side) return 0;
+  if (abilityOf(attacker).noGuard || abilityOf(target).noGuard) return 0;
+  const ms = Math.min(MAX_DODGE_GRACE_MS, game.dodgeGraceMs(target) || 0);
+  return ms >= 15 && !(target.dodgeCD > ms / 1000) ? ms : 0;
+}
+
 // Applies one hit of `move` and all of its feedback. `o.stack` groups the ticks of a multi-hit move
 // so they share one damage popup, one status roll, one combo-chain check and capped ultimate charge.
 export function applyHit(game, attacker, target, move, o = {}) {
   if (game.state !== 'fighting' || !target.alive || target.hidden || (target.invuln && !o.unblockable)) return false;
+  const grace = dodgeGraceFor(game, attacker, target, o);
+  if (grace) {
+    // Resolved after the wait (reported as landed now: callers only use that for visual flourishes).
+    game.later(grace / 1000, () => applyHit(game, attacker, target, move, { ...o, graced: true }));
+    return true;
+  }
   const stack = o.stack ?? {};
   const A = abilityOf(attacker), Dfull = abilityOf(target), D = A.moldBreaker ? {} : Dfull;
   const I = itemOf(attacker) ?? {}, J = itemOf(target) ?? {};

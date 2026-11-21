@@ -12,6 +12,7 @@ import { EconomyStore } from './economy-store.js';
 import { ownsShiny } from '../src/economy.js';
 import { sendQueued } from './outbox.js';
 import { originChecker } from './origins.js';
+import { Latency, pingPayload, pingSentAt } from './latency.js';
 import { cleanKit } from '../src/data/items.js';
 import { SHINY } from '../src/data/national-dims.js';
 import { botEntry } from './bots.js';
@@ -48,6 +49,8 @@ const TRUST_PROXY = process.env.TRUST_PROXY ? process.env.TRUST_PROXY === '1' : 
 const clientIp = req => (TRUST_PROXY && String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim()) || req.socket.remoteAddress;
 // Testing only: every Pokémon starts with this fraction of its HP so a full match takes seconds.
 const TEST_HP = Math.min(1, Math.max(0.01, Number(process.env.MATCH_TEST_HP) || 1));
+// Testing only: every human player is treated as at least this far away (ms) for lag-forgiving dodges.
+const TEST_DODGE_GRACE_MS = Math.max(0, Number(process.env.MATCH_TEST_DODGE_GRACE_MS) || 0);
 
 // Advance combat at 60 Hz. Keep full snapshots at 30 Hz and deliver combat events as soon as they occur.
 const STEP = 1 / 60;
@@ -507,6 +510,12 @@ class Match {
 
   other(s) { return s === 'A' ? 'B' : 'A'; }
 
+  // The one-way delay of the player steering `mon` (a Tag Battle's current partner on that side); none for bots.
+  dodgeGraceMs(mon) {
+    const s = mon.side === 'player' ? 'A' : 'B', p = typeof this.controller === 'function' ? this.controller(s) : this.side[s].player;
+    return p && !p.bot ? Math.max(TEST_DODGE_GRACE_MS, p.ws?.conn?.latency?.oneWayMs() ?? 0) : 0;
+  }
+
   intro() {
     for (const s of ['A', 'B']) {
       const me = this.side[s], foe = this.side[this.other(s)];
@@ -541,6 +550,8 @@ class Match {
     g.foeKits = B.kit ?? {};
     g.eventSeed = seedOf(this.id);
     g.arenaId = this.arena;
+    // Lag-forgiving dodges (combat.js dodgeGraceFor): how late a dodge from the player controlling this side arrives.
+    g.dodgeGraceMs = mon => this.dodgeGraceMs(mon);
     g.red.name = A.player.name;
     g.gold.name = B.player.name;
     g.online = {
@@ -1315,8 +1326,12 @@ const wss = new WebSocketServer({
 });
 
 wss.on('connection', ws => {
-  const conn = { ws, player: null, tokens: RATE.burst, refill: Date.now(), dropped: 0, alive: true };
-  ws.on('pong', () => (conn.alive = true));
+  const conn = { ws, player: null, tokens: RATE.burst, refill: Date.now(), dropped: 0, alive: true, latency: new Latency() };
+  ws.on('pong', data => {
+    conn.alive = true;
+    const sent = pingSentAt(data);
+    if (sent != null) conn.latency.add(performance.now() - sent);
+  });
   // One bad message must never take down every other battle: an unexpected error ends only this connection
   // (its close handler then clears its queue entry, draft or match like any disconnect).
   ws.on('message', data => {
@@ -1343,6 +1358,12 @@ setInterval(() => {
     ws.ping();
   }
 }, HEARTBEAT_MS);
+
+// Once a second, measure each signed-in player's round trip (lag-forgiving dodges use it).
+setInterval(() => {
+  const now = performance.now();
+  for (const ws of wss.clients) if (ws.conn?.player && ws.readyState === 1) { try { ws.ping(pingPayload(now)); } catch { /* closing */ } }
+}, 1000).unref();
 
 // Render's free plan puts a service to sleep after 15 minutes without requests, and the next player
 // then waits for it to wake. Self-pings are best-effort and cannot guarantee that the host stays awake
