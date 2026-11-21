@@ -185,19 +185,37 @@ sfx.reaction = id => {
 
 // Pokémon cries (public/cries/<dex>.mp3, from PokeAPI): heard when a Pokémon is sent out, and lower and
 // slower when it faints. Decoded once and kept.
-// A failed load is dropped (so it can retry, at most twice); a cry that arrives too late for its send-out is skipped.
-const cries = new Map(), cryFails = new Map();
+// A failed load is dropped (so it can retry, at most twice); a cry that arrives too late for its send-out is skipped,
+// so a battle's cries are downloaded while its sprites load (preloadCries) and are ready for the first send-out.
+const cries = new Map(), cryBytes = new Map(), cryFails = new Map();
+const cryFailed = dex => {
+  cries.delete(dex);
+  cryBytes.delete(dex);
+  cryFails.set(dex, (cryFails.get(dex) ?? 0) + 1);
+  return null;
+};
+// The file itself: fetched without the audio context, which only exists after the first click or key.
+const cryData = dex => {
+  if (!cryBytes.has(dex)) cryBytes.set(dex, fetch(assetUrl(`/cries/${dex}.mp3`)).then(r => (r.ok ? r.arrayBuffer() : Promise.reject())));
+  return cryBytes.get(dex);
+};
+// Decoded once (decoding takes its own copy, so the downloaded bytes stay usable until then).
+const cryBuffer = dex => {
+  if (!cries.has(dex)) cries.set(dex, cryData(dex).then(b => ac.decodeAudioData(b.slice(0))).then(buf => { cryBytes.delete(dex); return buf; }).catch(() => cryFailed(dex)));
+  return cries.get(dex);
+};
+export function preloadCries(dexes) {
+  if (muted) return;
+  for (const dex of new Set(dexes)) {
+    if (!dex || cries.has(dex) || (cryFails.get(dex) ?? 0) >= 2) continue;
+    if (ac) cryBuffer(dex);
+    else cryData(dex).catch(() => cryFailed(dex));
+  }
+}
 export function playCry(dex, { rate = 1, gain = 0.55 } = {}) {
   if (!ac || !dex || muted || (cryFails.get(dex) ?? 0) >= 2) return;
-  if (!cries.has(dex)) {
-    cries.set(dex, fetch(assetUrl(`/cries/${dex}.mp3`)).then(r => (r.ok ? r.arrayBuffer() : Promise.reject())).then(b => ac.decodeAudioData(b)).catch(() => {
-      cries.delete(dex);
-      cryFails.set(dex, (cryFails.get(dex) ?? 0) + 1);
-      return null;
-    }));
-  }
   const asked = ac.currentTime;
-  cries.get(dex).then(buffer => {
+  cryBuffer(dex).then(buffer => {
     if (!buffer || muted || ac.currentTime - asked > 0.8) return;
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = buffer;

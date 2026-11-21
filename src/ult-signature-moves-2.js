@@ -1111,15 +1111,18 @@ export const SIGNATURE_MOVE_ULTS_2 = {
       face(a, u, t);
       a.anim('Shoot', 0.8);
       const m = a.mouth();
-      let tt = 0, hit = 0;
+      // Four burns of a quarter of the power each, every 0.27 s. Counted, not timed against the 1.1 s stream: frame
+      // timing used to push the fourth past the cut-off, so the song only ever dealt three quarters of its power.
+      let tt = 0, hit = 0, burns = 0;
       a.ticks.push(dt => {
-        if ((tt += dt) > 1.1) return;
+        tt += dt;
+        if (burns < 4 && (hit += dt) >= 0.27) { hit -= 0.27; burns++; g.marks.scorch(t.x + rand(-8, 8), t.y, 12, 5); a.strike(0.25, { customArt: true, knockback: 50, stagger: 0.25 }); }
+        if (tt > 1.1) return;
         const ang = u.aimAt(t);
         for (let k = 0, kN = emitCount(a, 'ult-signature-moves-21118', 7, dt); k < kN; k++) {
           const aa = ang + rand(-0.15, 0.15) + Math.sin(tt * 18) * 0.12, sp = rand(400, 480);
           g.particles.spawn({ x: m.x, y: m.y, z: m.z, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, vz: rand(-10, 20), gz: 0, drag: 0.3, life: 0.6, size: rand(4, 8), sizeEnd: 1, colors: FIRE });
         }
-        if ((hit += dt) >= 0.27) { hit = 0; g.marks.scorch(t.x + rand(-8, 8), t.y, 12, 5); a.strike(0.25, { customArt: true, knockback: 50, stagger: 0.25 }); }
       });
     });
     a.end(1.9);

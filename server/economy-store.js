@@ -103,9 +103,10 @@ export class EconomyStore {
 
   authenticated(pid, secret) { return typeof secret === 'string' && HEX.test(secret) && this.data.players[pid]?.credential === this.hash(secret); }
 
-  // Saves one wallet. The journal line is flushed to disk (fsync) before memory changes; a failure leaves
-  // both unchanged. With a `sink` (Redis) the write finishes later: `committed(pid)` resolves once it has
-  // landed, and callers that report success to a player wait for it.
+  // Saves one wallet. Memory changes at once; the write (a journal line flushed to disk, or the Redis `sink`)
+  // finishes later. `committed(pid)` resolves once it has landed, so callers that tell a player a change
+  // succeeded wait for it. A failed write marks the wallet unsaved, and it is saved again before anything
+  // else is confirmed (committed) and at shutdown (drain).
   save(pid, record) {
     if (this.error) throw Error(this.error);
     let done;
@@ -147,6 +148,20 @@ export class EconomyStore {
       return this.commits.get(pid);
     }
     return Promise.resolve();
+  }
+
+  // Shutdown: waits until every wallet change so far is stored, saving failed ones again, until `until`
+  // (a timestamp). `flushNow` (set by the Redis sink) sends queued writes without the batching delay.
+  // Returns whether nothing is left unsaved.
+  async drain(until) {
+    const settled = () => !this.commits.size && !this.unsaved.size;
+    while (!this.error && Date.now() < until) {
+      for (const pid of this.unsaved) if (!this.commits.has(pid)) this.committed(pid);
+      if (settled()) return true;
+      this.flushNow?.();
+      await Promise.race([Promise.allSettled([...this.commits.values()]), new Promise(r => setTimeout(r, Math.max(0, Math.min(200, until - Date.now()))))]);
+    }
+    return settled();
   }
 
   request(pid, secret, op, id, now = Date.now()) {

@@ -11,6 +11,7 @@ import './shim.js';
 import { EconomyStore } from './economy-store.js';
 import { ownsShiny } from '../src/economy.js';
 import { sendQueued } from './outbox.js';
+import { originChecker } from './origins.js';
 import { cleanKit } from '../src/data/items.js';
 import { SHINY } from '../src/data/national-dims.js';
 import { botEntry } from './bots.js';
@@ -38,14 +39,9 @@ const { OpponentAI } = await import('../src/ai.js');
 
 export const PROTOCOL = 2;
 const PORT = process.env.PORT === '0' ? 0 : Number(process.env.PORT) || 8787;
-// Origins allowed to use the server from a browser: ALLOWED_ORIGINS (comma separated; '*' allows any), else the
-// deployed game. Local development pages (localhost / 127.0.0.1) are always allowed. Requests with no Origin
-// (health checks, scripts, tests) are not browser cross-site requests and are allowed.
-const DEFAULT_ORIGINS = ['https://pokemon-gules-delta.vercel.app'];
-const ORIGIN_LIST = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
-const ORIGINS = ORIGIN_LIST.length ? ORIGIN_LIST : DEFAULT_ORIGINS;
-const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
-const originAllowed = origin => !origin || ORIGINS.includes('*') || ORIGINS.includes(origin) || LOCAL_ORIGIN.test(origin);
+// Origins allowed to use the server from a browser (server/origins.js): ALLOWED_ORIGINS or the deployed game,
+// plus this project's Vercel preview deployments and local development pages.
+const originAllowed = originChecker(process.env.ALLOWED_ORIGINS);
 // The player's address. Behind a proxy we trust (Render sets RENDER; or TRUST_PROXY=1), it is the last
 // X-Forwarded-For entry that proxy added; otherwise the header can be forged, so the socket address is used.
 const TRUST_PROXY = process.env.TRUST_PROXY ? process.env.TRUST_PROXY === '1' : !!process.env.RENDER;
@@ -244,6 +240,13 @@ if (REDIS) {
     } finally {
       inFlight.clear();
     }
+  };
+  // Shutdown sends queued wallet writes at once instead of after the batching delay (or a failure's retry wait).
+  economy.flushNow = () => {
+    if (writing || !pending.size) return;
+    clearTimeout(timer);
+    timer = null;
+    flush();
   };
   walletQueue = () => {
     const wallets = new Set();
@@ -1352,16 +1355,25 @@ if (KEEP_AWAKE_ENABLED) {
 
 server.listen(PORT, () => log(`match server on :${server.address().port} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${KEEP_AWAKE_ENABLED ? ', keep-awake on' : ''}${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
 
-// On shutdown (Render sends SIGTERM before a deploy or sleep), let pending saves land first (at most 5 s).
+// On shutdown (Render sends SIGTERM before a deploy or sleep), let pending saves land first (at most 5 s):
+// leaderboard results and wallet changes (match rewards included), in the file or in Redis, with failed
+// writes tried again. Repeated until both are quiet, since a battle ending meanwhile queues more of each.
+const sleep = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
+const boardSaved = () => !recordsWrite && !dirty.size;
+const walletsSaved = () => !economy.commits.size && !economy.unsaved.size;
 for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => {
-  const deadline = new Promise(resolve => setTimeout(resolve, 5000));
-  // Recheck for match results queued while the wallet journal was finishing.
-  const saves = Promise.allSettled([economy.journal, drainRecords()]).then(drainRecords);
-  await Promise.race([saves, deadline]);
-  if (recordsWrite || dirty.size) {
-    console.error('shutting down with unsaved leaderboard changes');
+  const until = Date.now() + 5000;
+  while (Date.now() < until) {
+    await Promise.race([Promise.all([drainRecords(), economy.drain(until)]), sleep(until - Date.now())]);
+    // Wallet storage that failed to load accepts no changes, so there is nothing of it to wait for.
+    if (boardSaved() && (walletsSaved() || economy.error)) break;
+    await sleep(50);
+  }
+  const unsaved = [!boardSaved() && 'leaderboard', !economy.error && !walletsSaved() && 'wallet'].filter(Boolean);
+  if (unsaved.length) {
+    console.error(`shutting down with unsaved ${unsaved.join(' and ')} changes`);
     process.exit(1);
   }
-  log('no leaderboard writes pending at shutdown');
+  log('no leaderboard or wallet writes pending at shutdown');
   process.exit(0);
 });

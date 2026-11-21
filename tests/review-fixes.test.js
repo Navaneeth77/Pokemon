@@ -381,11 +381,12 @@ test('after a restart, a late write from the previous server process cannot repl
   const stored = () => JSON.parse(redisMock.store.get(ECO_PID)).wallet.equipped.frame ?? null;
   if (!stored()) assert.equal((await wallet('equip', 'frame-amethyst')).status, 200);
   const before = stored(), target = before === 'frame-ember' ? 'frame-amethyst' : 'frame-ember';
-  // The old process's write is held in "Redis"; the process then dies.
+  // The old process's write is held in "Redis"; the process then dies abruptly (a crash: SIGKILL, so no
+  // graceful shutdown waits for that write to finish first).
   redisMock.delays.push(2500);
   const late = wallet('equip', target).catch(() => null);
   await new Promise(r => setTimeout(r, 300));
-  server.kill();
+  server.kill('SIGKILL');
   await late;
   // A new process starts (new epoch), loads storage and saves a different choice.
   const next = await startServer(18898);

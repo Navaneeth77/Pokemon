@@ -786,7 +786,7 @@ export class Cutscene {
   // Load every Pokémon a scene uses, with its reaction animations.
   async prepare(ids) {
     const g = this.game;
-    await g.ensureSprites(ids);
+    await g.ensureSprites(ids, null, { extra: true });
     await Promise.all(ids.map(id => addExtraAnims(SPECIES[id].sprite, g.sprites[SPECIES[id].sprite])));
   }
 }

@@ -34,7 +34,7 @@ import {
   ItemFly,
   ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst, Telegraph, TidalWave, Lightning, leafBurst,
   ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble, ShinySparkle, emitCount } from './effects.js';
-import { initAudio, sfx, playCry } from './audio.js';
+import { initAudio, sfx, playCry, preloadCries } from './audio.js';
 import { EMOTES } from './social.js';
 import { music, ARENA_TRACK, RAID_TRACKS } from './music.js';
 
@@ -232,11 +232,16 @@ export class Game {
 
   // Shiny Pokémon (in either side's kits) also get their recoloured sheets, and their Mega forms' where those
   // have a shiny palette (SHINY_FORMS).
-  async ensureSprites(ids, bossId) {
+  // A battle's load (both teams, a Tag partner's team, a raid boss) stays pinned against trimming until the next
+  // battle's; `extra` loads (a Pokédex entry, a cutscene's cast) are kept only while they are asked for.
+  async ensureSprites(ids, bossId, { extra = false } = {}) {
     const shinyIds = ids.filter(id => SPECIES[id] && (this.kits?.[id]?.shiny || this.foeKits?.[id]?.shiny));
     const megas = shinyIds.flatMap(id => SPECIES[id].mega ?? []).map(f => SPECIES[f]?.sprite).filter(sp => SHINY_FORMS.has(sp));
     const shiny = [...shinyIds.map(id => SPECIES[id].sprite), ...megas].map(sp => `${sp}~shiny`);
     const keys = [...new Set([...spritesFor(ids), ...shiny, ...bossSpritesFor(bossId)])];
+    if (!extra) this.battleSprites = keys;
+    // The battle's cries download alongside its sprites, so the first send-out isn't silent.
+    if (!extra && !this.headless) preloadCries(ids.map(id => SPECIES[id]?.dex));
     // Most recently wanted sets are kept longest when memory is trimmed (trimSprites).
     this.spriteUse ??= new Map();
     this.spriteTick ??= 0;
@@ -259,11 +264,12 @@ export class Game {
   }
 
   // Keeps decoded sprite sheets under a memory budget: once over it, the sets wanted least recently are
-  // released (from this table and the loaders' caches), never the ones being asked for now, the teams
-  // currently picked or the title screen's. Live Pokémon keep their own references, so nothing on screen breaks.
+  // released (from this table and the loaders' caches), never the ones being asked for now, the current battle's
+  // (ensureSprites), the teams currently picked or the title screen's. Live Pokémon keep their own references,
+  // so nothing on screen breaks.
   trimSprites(keep = []) {
     const BUDGET = 320 * 2 ** 20;
-    const pinned = new Set([...keep, ...TITLE_SPRITES, ...spritesFor([...(this.selection ?? []), ...(this.opponentSelection ?? [])])]);
+    const pinned = new Set([...keep, ...(this.battleSprites ?? []), ...TITLE_SPRITES, ...spritesFor([...(this.selection ?? []), ...(this.opponentSelection ?? [])])]);
     for (const k of [...pinned]) pinned.add(`${k}~shiny`);
     for (const mon of [this.player, this.opponent]) if (mon?.species) pinned.add(mon.species.sprite);
     const sizes = Object.entries(this.sprites).map(([k, set]) => [k, decodedBytes(set)]);

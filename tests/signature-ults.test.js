@@ -31,6 +31,7 @@ test('every signature ultimate plays out in battle and hits', () => {
     Object.assign(g, { showcase: null, state: 'fighting', timers: [] });
     for (const m of [g.player, g.opponent]) Object.assign(m, { hidden: false, appear: 0 });
     g.ai.update = () => {}; // the foe stays in, so the HP checked is the one that was hit
+    g.opponent.item = null; // and holds nothing that heals (Leftovers could undo a small hit before the check)
     const before = g.opponent.hp;
     g.player.ult = 100;
     assert.ok(g.useMove(g.player, g.player.species.ultimate), `${id} can use ${g.player.species.ultimate}`);

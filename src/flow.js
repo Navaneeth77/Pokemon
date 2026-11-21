@@ -501,7 +501,7 @@ export class Flow {
     wrap.querySelector('.dm-close').addEventListener('click', close);
     this.dex = { wrap, id, running: true };
     // Load just this Pokémon's sheets, then animate on its own: a pose or move as it opens, idle, and again now and then.
-    await this.game.ensureSprites([id]);
+    await this.game.ensureSprites([id], null, { extra: true }); // a Pokédex entry never unpins a battle
     if (this.dex?.wrap !== wrap) return;
     wrap.querySelector('.dm-loading').remove();
     const sprite = new AnimatedSprite(this.game.sprites[sp.sprite]);
