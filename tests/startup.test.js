@@ -141,3 +141,48 @@ test('online movement can clear before initialization and a changed direction re
   mm.sendDirection(undefined, true);
   assert.equal(messages.at(-1).x, 0);
 });
+
+
+test('jitter changes do not rewind or fast-forward a walking opponent between frames', () => {
+  const foeBuf = Array.from({ length: 22 }, (_, i) => ({ ts: i * 33, i: 0, x: i * 3.3, y: 0, mv: 1 }));
+  const mm = Object.assign(Object.create(Matchmaker.prototype), { offset: 0, delay: 35, foeBuf });
+  let x = mm.sampleFoe(350).x;
+  for (let now = 366; now < 650; now += 16) {
+    mm.delay = now < 480 ? 150 : 35;
+    const next = mm.sampleFoe(now).x;
+    assert.ok(next > x && next - x < 2);
+    x = next;
+  }
+  foeBuf.at(-1).mv = 0;
+  assert.equal(mm.sampleFoe(1100).x, foeBuf.at(-1).x);
+});
+
+test('a burst reconciles once per frame, retains positions and queues every action', () => {
+  const mm = Object.assign(Object.create(Matchmaker.prototype), {
+    state: 'battle', match: { spectator: true }, flow: {}, game: { state: 'fighting' },
+    hydrated: true, events: [], foeBuf: [], offs: [], applyState() {}, measureDrift() {},
+  });
+  const states = [];
+  mm.applyState = (_, side) => states.push(side.x);
+  for (let i = 1; i <= 8; i++) {
+    const pos = { i: 0, x: i, y: 10 };
+    mm.onMessage({ t: 'b', ts: 33 * i, s: { A: pos, B: pos }, e: [{ t: 'move', i }] });
+  }
+  assert.equal(mm.events.length, 8);
+  assert.deepEqual(mm.foeBuf.slice(-3).map(s => s.x), [6, 7, 8]);
+  mm.tick(1 / 60);
+  mm.tick(1 / 60);
+  assert.deepEqual(states, [8,8]);
+});
+
+test('an acknowledgement older than the prediction history cannot pull the local player back', () => {
+  const mon = { x: 180, y: 240 };
+  const mm = Object.assign(Object.create(Matchmaker.prototype), {
+    game: { playerTeam: { members: [mon], active: mon } }, sentAt: new Map([[3, 100]]),
+    hist: [{ t: 1800, x: 150, y: 240 }, { t: 1900, x: 170, y: 240 }], corr: { x: -40, y: 0 },
+  });
+  mm.measureDrift({ i: 0, q: [3, 400], x: 30, y: 240 }, 2050);
+  assert.equal(mm.corr, null);
+  mm.measureDrift({ i: 0, q: [3, 1750], x: 160, y: 240 }, 2080);
+  assert.deepEqual(mm.corr, { x: 0, y: 0 });
+});

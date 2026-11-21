@@ -1,3 +1,5 @@
+import { compactBattle } from '../src/battle-snapshot.js';
+
 // One write in flight per connection. Replace only adjacent battle states; combat events and
 // lifecycle messages retain their order. A stalled reader cannot accumulate seconds of snapshots.
 export class BattleOutbox {
@@ -54,9 +56,15 @@ export class BattleOutbox {
 }
 
 const outboxes = new WeakMap();
-export function sendQueued(ws, msg, encoded) {
+export function sendQueued(ws, msg, shared) {
   if (ws?.readyState !== 1) return;
   let outbox = outboxes.get(ws);
   if (!outbox) { outbox = new BattleOutbox(ws); outboxes.set(ws, outbox); }
-  outbox.send(msg, encoded);
+  // Both players and spectators share the same serialization for their negotiated format.
+  if (ws.compactSnapshots && msg.s && msg.t === 'b') {
+    const packet = shared ? (shared.compact ??= compactBattle(msg)) : compactBattle(msg);
+    outbox.send(packet, shared && (shared.compactJson ??= JSON.stringify(packet)));
+  } else {
+    outbox.send(msg, shared && (shared.json ??= JSON.stringify(msg)));
+  }
 }

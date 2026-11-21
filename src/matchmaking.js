@@ -1,3 +1,4 @@
+import { restoreBattleSides } from './battle-snapshot.js';
 import { assetUrl } from './asset-url.js';
 import { economyCredential } from './economy-client.js';
 import { appendBattleEvents } from './event-buffer.js';
@@ -182,7 +183,7 @@ export class Matchmaker {
       }, Math.max(1,timeoutMs));
       ws.onopen = () => {
         const save = this.flow.save;
-        ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pid: this.pid, economyToken:this.flow.economy?.token??economyCredential(this.pid), name: save.name ?? 'TRAINER', look: save.look ?? null }));
+        ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, compactSnapshots: 1, pid: this.pid, economyToken:this.flow.economy?.token??economyCredential(this.pid), name: save.name ?? 'TRAINER', look: save.look ?? null }));
       };
       ws.onmessage = ev => {
         if (this.ws !== ws) return;
@@ -465,7 +466,10 @@ export class Matchmaker {
         // Combat events may arrive between the regular state snapshots.
         if (!this.match || (this.state !== 'battle' && this.state !== 'result')) return;
         if (Array.isArray(m.e)) this.events=appendBattleEvents(this.events,m.e);
-        if (m.s && this.state === 'battle') this.onSnapshot(m.s, m.ts);
+        if (this.state === 'battle') {
+          if (m.cs) this.onSnapshot(restoreBattleSides(m.cs), m.ts);
+          else if (m.s) this.onSnapshot(m.s, m.ts);
+        }
         return;
       case 'ev':
         if (this.match && (this.state === 'battle' || this.state === 'result') && m.e) this.events=appendBattleEvents(this.events,[m.e]);
@@ -669,6 +673,8 @@ export class Matchmaker {
     this.offset = null;
     this.delay = null;
     this.foeSample = null;
+    this.playbackAt = this.playbackTs = null;
+    this.pendingState = false;
     this.allyBuf = [];
     this.allyDisconnected = false;
   }
@@ -735,6 +741,9 @@ export class Matchmaker {
   // Every frame: predictions the server never confirmed run out, and the held direction goes to the
   // server as soon as it changes (and every half second regardless).
   tick(dt) {
+    // Multiple packets can arrive together after a stall. Replay all combat events, but
+    // only reconcile the newest complete fighter state before this frame is simulated.
+    if (this.pendingState) this.applySnapshot();
     if (this.state !== 'battle' || !this.match || this.match.spectator || (this.match.tag && !this.inControl)) return;
     const g = this.game, p = g.player, pr = this.pred, now = performance.now();
     this.tickAlly(dt, now);
@@ -823,20 +832,26 @@ export class Matchmaker {
   }
 
   onSnapshot(m, ts) {
-    const g = this.game, mine = this.flip ? m.B : m.A, theirs = this.flip ? m.A : m.B;
+    const mine = this.flip ? m.B : m.A, theirs = this.flip ? m.A : m.B;
     if (!mine || !theirs) return;
     this.snap = { player: mine, opponent: theirs };
     const now = performance.now();
     this.lastSnapshotAt = now;
-    if (this.match?.tag) this.tagTurn(mine.ow === this.match.tag.me);
+    this.pendingState = true;
     if (typeof ts === 'number' && this.foeBuf) {
       this.trackClock(ts, now);
       const b = this.foeBuf;
       b.push({ ts, i: theirs.i, x: theirs.x, y: theirs.y, d: theirs.d, fz: theirs.fz, ah: theirs.ah, mv: theirs.mv, lx: theirs.lx, ly: theirs.ly });
-      const shown = now - this.offset - this.delay;
+      const shown = Math.min(now - this.offset - this.delay, this.playbackTs ?? Infinity);
       while (b.length > 2 && (b[1].ts < shown - 100 || b.length > 90)) b.shift();
     }
-    if (g.state !== 'fighting') return;
+  }
+
+  applySnapshot() {
+    this.pendingState = false;
+    const g = this.game, { player: mine, opponent: theirs } = this.snap;
+    if (this.state !== 'battle' || g.state !== 'fighting') return;
+    if (this.match?.tag) this.tagTurn(mine.ow === this.match.tag.me);
     if (!this.hydrated) {
       this.hydrated = true;
       this.hydrate(g.playerTeam, mine, 'player');
@@ -845,7 +860,7 @@ export class Matchmaker {
     this.applyState(g.playerTeam, mine, true);
     this.applyState(g.opponentTeam, theirs, false);
     if (typeof mine.sw === 'number') g.switchCD = mine.sw;
-    this.measureDrift(mine, now);
+    this.measureDrift(mine, this.lastSnapshotAt);
   }
 
   // How far the server's copy of our Pokémon is from where ours was at the same moment. Our screen
@@ -860,12 +875,19 @@ export class Matchmaker {
       return;
     }
     if (!this.hist || g.playerTeam.members[s.i] !== mon || mon.hidden || mon.fainted || mon.recallT > 0) return;
-    const sent = s.q && this.sentAt.get(s.q[0]);
-    const at = sent ? sent + s.q[1] : now - (this.rtt ?? 120) - 25;
-    const tx = this.fx(s.x), ty = this.fy(s.y), past = this.pastPos(at) ?? mon;
-    const ex = tx - past.x, ey = ty - past.y;
+    const sent = s.q ? this.sentAt.get(s.q[0]) : undefined;
+    const at = sent != null ? sent + s.q[1] : now - (this.rtt ?? 120) - 25;
+    const past = this.pastPos(at);
+    // After a delivery stall, comparing an old acknowledgement to our current position
+    // would pull a moving player backwards. Wait for an update covered by our history.
+    if (!past && this.hist.length && sent != null && at < this.hist[0].t) {
+      this.corr = null;
+      return;
+    }
+    const tx = this.fx(s.x), ty = this.fy(s.y);
+    const ex = tx - (past ?? mon).x, ey = ty - (past ?? mon).y;
     this.lastCorrectionMagnitude = Math.hypot(ex, ey);
-    this.corr = Math.hypot(ex, ey) > 120 ? { snap: true, x: tx, y: ty } : { x: ex, y: ey };
+    this.corr = this.lastCorrectionMagnitude > 120 ? { snap: true, x: tx, y: ty } : { x: ex, y: ey };
   }
 
   pastPos(t) {
@@ -899,14 +921,25 @@ export class Matchmaker {
   // little past the newest one, in the same direction, while the next is late).
   sampleFoe(now, b = this.foeBuf) {
     if (!b?.length || this.offset == null) return null;
-    const t = now - this.offset - this.delay;
+    // A new jitter estimate can move the desired playback time backwards. Slew the
+    // playback clock between frames so a steadily moving opponent never rewinds.
+    const target = now - this.offset - this.delay;
+    const elapsed = now - this.playbackAt;
+    if (this.playbackAt == null || elapsed > 250) {
+      this.playbackTs = target;
+    } else {
+      const advance = Math.max(0, elapsed);
+      this.playbackTs += Math.max(advance * 0.85, Math.min(advance * 1.15, target - this.playbackTs));
+    }
+    this.playbackAt = now;
+    const t = this.playbackTs;
     let k = b.length - 1;
     while (k >= 0 && b[k].ts > t) k--;
     if (k < 0) return b[0];
     const a = b[k], c = b[k + 1];
     if (!c) {
       const p = b[k - 1];
-      if (!p || p.i !== a.i || Math.hypot(a.x - p.x, a.y - p.y) > 60) return a;
+      if (!p || a.mv === 0 || p.ts >= a.ts || p.i !== a.i || Math.hypot(a.x - p.x, a.y - p.y) > 60) return a;
       const ahead = Math.min(t - a.ts, 80) / (a.ts - p.ts || 1);
       return { ...a, x: a.x + (a.x - p.x) * ahead, y: a.y + (a.y - p.y) * ahead };
     }
@@ -1093,6 +1126,7 @@ export class Matchmaker {
 
   // ── Result: always the server's ──
   onEnd(m) {
+    if (this.pendingState) this.applySnapshot();
     this.flow.economy?.sync();
     if(m.summary && m.result !== 'noContest') saveSummary({...m.summary,id:m.id,result:m.result,verified:true});
     this.result = m;

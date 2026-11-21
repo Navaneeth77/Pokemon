@@ -565,10 +565,10 @@ class Match {
   }
 
   broadcast(msg) {
-    const data = JSON.stringify(msg);
+    const shared = {};
     for (const p of [this.side.A.player, this.side.B.player, ...this.spectators]) {
       const ws = p.ws;
-      sendQueued(ws, msg, data);
+      sendQueued(ws, msg, shared);
     }
   }
 
@@ -858,10 +858,10 @@ class TagMatch extends Match {
   act(s, m, p) { if (p === this.controller(s) && !p.tagLeft) super.act(s, m); }
 
   broadcast(msg) {
-    const data = JSON.stringify(msg);
+    const shared = {};
     for (const p of [...this.everyone(), ...this.spectators]) {
       const ws = p.ws;
-      sendQueued(ws, msg, data);
+      sendQueued(ws, msg, shared);
     }
   }
 
@@ -1105,6 +1105,7 @@ function hello(conn, m) {
   }
   if (!records.has(pid)) records.set(pid, { name: 'TRAINER', w: 0, l: 0, d: 0, rating: START_RATING });
   if (!p) players.set(pid, (p = { pid, state: 'idle', entry: null, match: null, record: records.get(pid) }));
+  conn.ws.compactSnapshots = m.compactSnapshots === 1;
   p.ws = conn.ws;
   p.name = safeName(m.name);
   p.record.name = p.name; // the leaderboard shows the latest name
@@ -1298,7 +1299,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/health' || req.url === '/ready') {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, economy: economyHealth(), keepAwake: KEEP_AWAKE_ENABLED, load }));
+    res.end(JSON.stringify({ ok: true, ready: true, protocol: PROTOCOL, compactSnapshots: 1, capacity: MAX_MATCHES, drafts: drafts.rooms.size, players: players.size, matches: matches.size, queued: queues[3].length + queues[6].length, leaderboard: { storage: STORAGE, connected: STORAGE === 'redis' ? !storageError : undefined, error: storageError ?? undefined, players: records.size }, economy: economyHealth(), keepAwake: KEEP_AWAKE_ENABLED, load }));
     return;
   }
   res.writeHead(404).end();
