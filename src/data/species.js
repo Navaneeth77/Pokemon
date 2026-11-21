@@ -359,6 +359,8 @@ const MEGAS = [
   ['ampharos', 'ampharosMega', 'Mega Ampharos', { sprite: 'ampharos-mega', ability: 'moldBreaker', faintAnim: 'Faint', aura: ['#fffbe0', '#ffd84a', '#6a5cf0'] }],
   // Built from the player's key-pose atlases (one pose per action and direction), art/sources.
   ['golurk', 'golurkMega', 'Mega Golurk', { sprite: 'golurk-mega', ability: 'unseenFist', faintAnim: 'Faint', aura: ['#ffffff', '#c9a05a', '#45346a'] }],
+  // Ash-Greninja: Battle Bond Greninja's form after a KO (not a Mega). Built from the player's walk sheet, art/sources/ash-greninja.
+  ['greninjaBond', 'greninjaAsh', 'Ash-Greninja', { sprite: 'greninja-ash', formChange: 'bond', ability: 'battleBond', faintAnim: 'Faint', ultimate: 'waterShurikenBarrage', aura: ['#ffffff', '#5a8ef0', '#c8402c'] }],
   ['abomasnow', 'abomasnowMega', 'Mega Abomasnow', { sprite: 'abomasnow-mega', ability: 'snowWarning', faintAnim: 'Faint', aura: ['#ffffff', '#62b947', '#2b8794'] }],
   ['meganium', 'meganiumMega', 'Mega Meganium', { sprite: 'meganium-mega', faintAnim: 'Faint', aura: ['#ffffff', '#62b947', '#b05a80'] }],
   ['meowstic', 'meowsticMega', 'Mega Meowstic', { sprite: 'meowstic-mega', ability: 'trace', faintAnim: 'Faint', aura: ['#ffffff', '#f2588a', '#b02e58'] }],
@@ -407,11 +409,20 @@ const MEGAS = [
   ...MORE_MEGAS,
 ];
 
+// Battle Bond Greninja is its own Pokémon (as in Sun & Moon): Greninja with Battle Bond instead of Protean. When it
+// knocks out a foe it becomes Ash-Greninja (abilities-official.js battleBond, Game.bondForm). Ordinary Greninja
+// keeps Protean and has no form change.
+{
+  const g = LIST.find(s => s.id === 'greninja');
+  LIST.splice(LIST.indexOf(g) + 1, 0, { ...g, id: 'greninjaBond', name: 'Greninja (Battle Bond)', ability: 'battleBond', abilities: ['battleBond'], bondForm: 'greninjaAsh', moves: [...g.moves] });
+}
+
 export const SPECIES = {};
 for (const s of LIST) SPECIES[s.id] = s;
 for (const [baseId, id, name, o] of MEGAS) {
   const base = SPECIES[baseId];
-  if (!(base.mega ??= []).includes(id)) base.mega.push(id);
+  // A form reached another way (Battle Bond) isn't on the Mega list.
+  if (!o.formChange && !(base.mega ??= []).includes(id)) base.mega.push(id);
   const own = o.sprite && o.sprite !== base.sprite;
   const dims = own ? { radius: undefined, shadow: undefined, mouth: undefined, bodyZ: undefined, headZ: undefined } : {};
   SPECIES[id] = { ...base, ...dims, id, name, megaOf: baseId, mega: null, faintAnim: own ? null : base.faintAnim, ...o, sprite: o.sprite ?? base.sprite };
@@ -468,6 +479,7 @@ export function spritesFor(ids) {
     const s = SPECIES[id];
     out.add(s.sprite);
     for (const m of s.mega ?? []) out.add(SPECIES[m].sprite);
+    if (s.bondForm) out.add(SPECIES[s.bondForm].sprite); // Battle Bond: Ash-Greninja
     for (const f of s.forms ?? []) out.add(f);
   }
   return [...out];

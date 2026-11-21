@@ -155,7 +155,7 @@ export class Hud {
     outlinedText(ctx, name, tx, 14, { size: name.length > 12 ? 9.5 : 11, align, lw: 2.5 });
 
     const pills = art.types.map(t => [t.toUpperCase(), TYPE_COLORS[t][0]]);
-    if (mon.isMega) pills.push(['MEGA', '#c44fd8']);
+    if (mon.isMega) pills.push([mon.species.formChange === 'bond' ? 'BOND' : 'MEGA', '#c44fd8']);
     const R = ROLES[art.role];
     pills.push([R.short.slice(0, 4), R.color]); // PHYS / SPEC / SUPP
     pills.push(...art.statuses);

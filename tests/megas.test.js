@@ -16,7 +16,7 @@ test('every Mega has a sprite set, a measured body and a base Pokémon in the ro
   for (const m of megas) {
     assert.ok(sprites[m.sprite]?.anims?.Idle, `${m.id}: sprite set ${m.sprite}`);
     assert.ok(m.radius > 0 && m.bodyZ > 0 && m.headZ > 0, `${m.id}: measured body`);
-    assert.ok(SPECIES[m.megaOf].mega.includes(m.id), `${m.id}: listed on ${m.megaOf}`);
+    if (!m.formChange) assert.ok(SPECIES[m.megaOf].mega.includes(m.id), `${m.id}: listed on ${m.megaOf}`);
   }
   for (const [base] of MORE_MEGAS) assert.ok(ROSTER.includes(base), `${base} is playable`);
 });

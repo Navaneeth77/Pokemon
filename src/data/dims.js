@@ -107,6 +107,7 @@ export const DIMS = {
   'golurk-mega': [16, 20, 41, 31, 11, 6],
   'graveler': [8, 8, 17, 12, 6, 3],
   'greninja': [8, 10, 20, 15, 6, 3],
+  'greninja-ash': [8, 9, 18, 14, 6, 3],
   'grimer': [8, 7, 15, 11, 6, 3],
   'groudon': [13, 14, 29, 21, 9, 5],
   'growlithe': [8, 8, 16, 12, 6, 3],

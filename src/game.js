@@ -1141,6 +1141,53 @@ export class Game {
     return true;
   }
 
+  // Battle Bond: Greninja becomes Ash-Greninja after knocking out a foe. Like a Mega Evolution it gets its own
+  // cinematic (a water vortex engulfs it), played as soon as the field is clear (the KO usually lands mid-ultimate
+  // or right before the foe's next Pokémon comes out). It doesn't use up the team's Mega Evolution.
+  bondForm(mon) {
+    const form = SPECIES[mon.species.bondForm];
+    if (!form || !this.formSprites(mon, form) || mon.isMega || !mon.alive) return false; // never swap to sheets that aren't loaded
+    if (this.headless || this.raid || this.raidState || this.online?.server || this.online?.authority) return this.applyBondForm(mon);
+    mon.bondPending = true;
+    return true;
+  }
+
+  applyBondForm(mon) {
+    const form = SPECIES[mon.species.bondForm], baseName = mon.species.name;
+    mon.bondPending = false;
+    mon.megaEvolve(form, this.formSprites(mon, form));
+    mon.ab = {};
+    mon.form = null;
+    abilityOf(mon).onEnter?.(this, mon);
+    if (!this.headless) {
+      waterSplash(this, mon.x, mon.y);
+      for (const [r1, life, c] of [[40, 0.35, '#ffffff'], [80, 0.5, '#5aa6f0'], [120, 0.7, '#1f4a8a']]) this.spawn(new Ring(mon.x, mon.y, { r0: 6, r1, life, color: c, width: 5 }));
+      for (let k = 0; k < 36; k++) {
+        const a = rand(0, Math.PI * 2), sp = rand(80, 200);
+        this.particles.spawn({ x: mon.x, y: mon.y, z: mon.bodyZ, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: rand(40, 180), gz: 260, life: rand(0.5, 0.8), size: rand(2, 5), sizeEnd: 1,
+          colors: ['#ffffff', '#9fe8ff', '#5aa6f0'] });
+      }
+      this.shake(5, 0.35);
+    }
+    sfx.megaBurst();
+    this.ui.log(`${baseName} became ${form.name}!`, mon.side);
+    return true;
+  }
+
+  // Starts the Battle Bond cinematic for a Pokémon waiting to transform, once nothing else is playing.
+  startPendingBond() {
+    if (this.cinematic || this.state !== 'fighting' || this.switching || this.ultActive()) return;
+    const mon = [this.player, this.opponent].find(m => m?.bondPending && m.alive && !m.hidden && !m.appear && !m.recallT && !m.held);
+    if (!mon) return;
+    mon.bondPending = false;
+    this.cinematic = { mon, t: 0, swapped: false, bond: true };
+    mon.trainer?.setPose('raise', 1.7);
+    this.spawn(new Pillar(mon.x, mon.y, 0.9, [90, 166, 240], 150));
+    this.hud.callout(mon.side, 'Battle Bond!');
+    this.ui.log(`${mon.trainer?.name ?? 'Its Trainer'} and ${mon.species.name} are in perfect sync!`, mon.side);
+    sfx.megaCharge();
+  }
+
   // One Mega Evolution per trainer per battle. The battle pauses briefly while the camera zooms in.
   megaEvolve(mon, force = false) {
     const team = this.teamOf(mon);
@@ -1159,8 +1206,10 @@ export class Game {
     const h = tr.hand();
     this.spawn(new RainbowStreak(h.x, h.y - h.z, mon.x, mon.y - mon.bodyZ, 0.7));
     this.spawn(new MegaAura(mon, 1.1));
-    this.hud.callout(mon.side, 'Mega Evolution!');
-    this.ui.log(`${tr.name}'s Mega Ring is reacting!`, mon.side);
+    // Ash-Greninja is a Battle Bond form change, not a Mega Evolution.
+    const next = SPECIES[mon.species.mega.includes(mon.megaChoice) ? mon.megaChoice : mon.species.mega[0]], bond = next?.formChange === 'bond';
+    this.hud.callout(mon.side, bond ? 'Battle Bond!' : 'Mega Evolution!');
+    this.ui.log(bond ? `${tr.name} and ${mon.species.name} are in perfect sync!` : `${tr.name}'s Mega Ring is reacting!`, mon.side);
     sfx.megaCharge();
     return true;
   }
@@ -1171,7 +1220,14 @@ export class Game {
     c.t += dt;
     if (!c.swapped) {
       m.appear = Math.min(1, c.t / 0.9);
-      if (c.t > 0.2) {
+      if (c.bond) {
+        // Water spirals up round it and engulfs it.
+        for (let k = 0; k < 3; k++) {
+          const a = c.t * 12 + k * (Math.PI * 2 / 3), r = 22 - c.t * 8;
+          this.particles.spawn({ x: m.x + Math.cos(a) * r, y: m.y + Math.sin(a) * r * 0.55, z: c.t * 50 + rand(0, 10), vx: -Math.sin(a) * 60, vy: Math.cos(a) * 30, vz: rand(40, 90), gz: 0,
+            life: 0.45, size: rand(2, 5), sizeEnd: 1, colors: ['#ffffff', '#9fe8ff', '#5aa6f0', '#1f4a8a'] });
+        }
+      } else if (c.t > 0.2) {
         const a = rand(0, Math.PI * 2), r = rand(26, 36), life = 0.3, z = m.bodyZ;
         const x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r * 0.6;
         const hue = Math.floor(rand(0, 360));
@@ -1180,7 +1236,11 @@ export class Game {
           colors: [`hsl(${hue}, 100%, 80%)`], fade: false,
         });
       }
-      if (c.t >= 0.95) {
+      if (c.t >= 0.95 && c.bond) {
+        c.swapped = true;
+        this.applyBondForm(m);
+        m.appear = 1;
+      } else if (c.t >= 0.95) {
         c.swapped = true;
         const baseName = m.species.name;
         const mega = SPECIES[m.species.mega.includes(m.megaChoice) ? m.megaChoice : m.species.mega[0]];
@@ -1193,7 +1253,7 @@ export class Game {
         this.spawn(new MegaEmblem(m.x, m.y - m.headZ - 12, 1.3));
         this.shake(5, 0.35);
         sfx.megaBurst();
-        this.ui.log(`${baseName} has Mega Evolved into ${mega.name}!`, m.side);
+        this.ui.log(mega.formChange === 'bond' ? `${baseName} became ${mega.name}!` : `${baseName} has Mega Evolved into ${mega.name}!`, m.side);
       }
     } else {
       m.appear = Math.max(0, m.appear - dt * 2);
@@ -1415,6 +1475,7 @@ export class Game {
       return;
     }
 
+    this.startPendingBond();
     if (this.cinematic) {
       this.updateCinematic(dt);
       this.player.animate(dt);

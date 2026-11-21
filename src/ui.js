@@ -1099,11 +1099,18 @@ export class UI {
     if (megaKey !== this.megaState) {
       this.megaState = megaKey;
       this.megaBtn.className = `mega-btn ${mega}${tera ? ' tera' : ''}`;
-      this.megaBtn.querySelector('.name').textContent = tera ? 'Terastallize' : 'Mega Evolve';
       const target = megas.length ? SPECIES[megas.includes(p.megaChoice) ? p.megaChoice : megas[0]] : null;
+      const bond = (target ?? p.species).formChange === 'bond';
+      this.megaBtn.querySelector('.name').textContent = tera ? 'Terastallize' : bond ? 'Battle Bond' : 'Mega Evolve';
+      // A new form can bring its own ultimate (Ash-Greninja's Water Shuriken Barrage).
+      const ult = MOVES[p.species.ultimate];
+      if (ult && this.ult?.name && this.ult.name.textContent !== ult.name) {
+        this.ult.name.textContent = ult.name;
+        this.ult.meta.textContent = `Ultimate · ${ult.type.toUpperCase()} · charge the meter by fighting`;
+      }
       this.megaBtn.querySelector('.meta').textContent = mega === 'hidden' ? ''
         : p.tera ? `${p.species.name} is ${p.tera.toUpperCase()} type now`
-        : p.isMega ? `${p.baseSpecies.name} has Mega Evolved · ${ABILITIES[p.species.ability].name}`
+        : p.isMega ? `${p.baseSpecies.name} ${bond ? 'became ' + p.species.name : 'has Mega Evolved'} · ${ABILITIES[p.species.ability].name}`
         : used ? 'Already used this battle (one per team)'
         : tera ? `Once per battle · becomes pure ${p.teraType.toUpperCase()} type (keeps its own type bonus)`
         : `Once per battle · becomes ${target.name} (${ABILITIES[target.ability].name})`;

@@ -11,22 +11,25 @@ export const RETIRED_MOVES = new Set([
   'fissureAtk', 'guillotine', 'hornDrill', 'sheerColdAtk',
 ]);
 
+// Alternate forms that learn exactly what their species learns.
+const LEARN_AS = { greninjaBond: 'greninja' };
+const as = id => LEARN_AS[id] ?? id;
 const decoded = new Map();
 // Its learnset, decoded once (base-36 indexes into LEARN_IDS).
 export function learnset(id) {
-  if (!decoded.has(id)) decoded.set(id, (LEARNSETS[id] ?? '').split(',').filter(Boolean).map(s => LEARN_IDS[parseInt(s, 36)]));
+  if (!decoded.has(id)) decoded.set(id, (LEARNSETS[as(id)] ?? '').split(',').filter(Boolean).map(s => LEARN_IDS[parseInt(s, 36)]));
   return decoded.get(id);
 }
 // The generation its learnset comes from (9 = Scarlet/Violet; older for Pokémon not in those games).
-export const learnGen = id => LEARN_GEN[id] ?? 9;
+export const learnGen = id => LEARN_GEN[as(id)] ?? 9;
 // Moves Smogon's sets actually run on it: the picker marks them.
-export const isCompetitive = (species, move) => !!SMOGON_POOLS[species?.id]?.includes(move);
+export const isCompetitive = (species, move) => !!SMOGON_POOLS[as(species?.id)]?.includes(move);
 
 const pools = new Map();
 export function movePool(species) {
   if (!species?.id) return [...(species?.moves ?? [])];
   if (!pools.has(species.id)) {
-    const candidates = new Set([...(species.moves ?? []), ...(SMOGON_POOLS[species.id] ?? []), ...learnset(species.id)]);
+    const candidates = new Set([...(species.moves ?? []), ...(SMOGON_POOLS[as(species.id)] ?? []), ...learnset(species.id)]);
     pools.set(species.id, [...candidates].filter(id => !RETIRED_MOVES.has(id)));
   }
   return pools.get(species.id);
@@ -45,6 +48,6 @@ export function cleanMoves(species, list) {
 
 // Use the main Smogon set in slot order, filling any gaps from the arena defaults.
 export function competitivePreset(species) {
-  const moves = SMOGON_MOVES[species?.id];
+  const moves = SMOGON_MOVES[as(species?.id)];
   return moves ? cleanMoves(species, moves) ?? [...species.moves] : null;
 }

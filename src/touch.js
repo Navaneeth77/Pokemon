@@ -1,3 +1,4 @@
+import { SPECIES } from './data/species.js';
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
 
@@ -178,7 +179,9 @@ export class TouchControls {
     }
     const tera = !p.species.mega?.length && !p.isMega;
     this.mega.classList.toggle('hidden', (tera ? !p.teraType || p.tera || g.raid : p.isMega) || g.playerTeam.megaUsed || (g.story && !g.story.playerMega));
-    const megaTitle = tera ? 'TERA' : 'MEGA', megaSubtitle = tera ? p.teraType ?? '' : 'Evolve';
+    // Greninja's form change is Battle Bond, not Mega Evolution.
+    const bond = !tera && SPECIES[p.species.mega?.[0]]?.formChange === 'bond';
+    const megaTitle = tera ? 'TERA' : bond ? 'BOND' : 'MEGA', megaSubtitle = tera ? p.teraType ?? '' : bond ? 'Battle' : 'Evolve';
     if (this.megaTitle.textContent !== megaTitle) this.megaTitle.textContent = megaTitle;
     if (this.megaSubtitle.textContent !== megaSubtitle) this.megaSubtitle.textContent = megaSubtitle;
     const cd = Math.ceil(g.switchCD);

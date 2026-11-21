@@ -30,8 +30,8 @@ test('blind choices remain private; each player receives three own and three tra
  assert.equal(d.phase,'confirm');
 });
 test('draft timeout makes a deterministic legal pick',()=>{const d=new Draft('snake',3,['a','b','c','d','e','f'],0);d.tick(25000);assert.equal(d.teams[0][0],'a');});
-test('all 64 Mega stats verified; special and physical changes differ and HP is preserved',()=>{
- assert.equal(Object.keys(MEGA_STATS).length,64);
+test('all 65 Mega stats verified; special and physical changes differ and HP is preserved',()=>{
+ assert.equal(Object.keys(MEGA_STATS).length,65);
  for(const [id,v] of Object.entries(MEGA_STATS)) {const m=SPECIES[id],b=SPECIES[m.megaOf];assert.equal(m.hp,b.hp);assert.equal(m.atk,b.atk*v.form.atk/v.base.atk);assert.equal(m.spa,b.atk*v.form.spa/v.base.spa);}
  const g=battle(),p=g.player;p.hp=p.maxHp-100;const form=SPECIES[p.species.mega[0]];p.megaEvolve(form,sprites[form.sprite]);assert.equal(p.hp,p.maxHp-100);p.enter(100,400,0);assert.equal(p.species,form);p.reset(100,400,0);assert.equal(p.isMega,false);
 });

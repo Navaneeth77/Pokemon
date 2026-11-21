@@ -245,6 +245,24 @@ function drawHand(ctx, x, y, s, flip, fill = '#ececf2', cuff = '#e8c84a') {
   });
 }
 
+// A water shuriken: four curved blades round a hole, dark-outlined so it reads on any arena.
+function drawShuriken(ctx, x, y, r, ang) {
+  const blade = (rr, grow) => {
+    ctx.beginPath();
+    for (let k = 0; k < 4; k++) {
+      const a0 = ang + k * Math.PI / 2;
+      ctx.moveTo(x + Math.cos(a0 - 0.6) * rr * 0.34, y + Math.sin(a0 - 0.6) * rr * 0.34);
+      ctx.quadraticCurveTo(x + Math.cos(a0 - 0.15) * rr * 0.8, y + Math.sin(a0 - 0.15) * rr * 0.8, x + Math.cos(a0 + 0.25) * (rr + grow), y + Math.sin(a0 + 0.25) * (rr + grow));
+      ctx.quadraticCurveTo(x + Math.cos(a0 + 0.45) * rr * 0.5, y + Math.sin(a0 + 0.45) * rr * 0.5, x + Math.cos(a0 + 0.9) * rr * 0.34, y + Math.sin(a0 + 0.9) * rr * 0.34);
+    }
+    ctx.fill();
+  };
+  ctx.fillStyle = '#0f2a5a'; blade(r + 2, 2);
+  ctx.fillStyle = '#5aa6f0'; blade(r, 0);
+  ctx.fillStyle = 'rgba(225,246,255,0.9)'; blade(r * 0.6, 0);
+  ctx.fillStyle = '#0f2a5a'; ctx.beginPath(); ctx.arc(x, y, r * 0.2, 0, TAU); ctx.fill();
+}
+
 // ── Shared beats ──
 // Dims the arena and charges the user up (a legendary set piece starts here).
 function setPiece(a, g, u, { dim = '10,12,24', alpha = 0.55, len = 3, aura = [255, 255, 255], rings = ['#ffffff', '#c8d0e8'], gather } = {}) {
@@ -352,6 +370,68 @@ const ELEC = ['#ffffff', '#fff27a', '#ffd23a'];
 const ICE = ['#ffffff', '#c8f2ff', '#7ad8f0', '#2b8ac0'];
 
 export const SIGNATURE_MOVE_ULTS_2 = {
+
+  // Ash-Greninja: Water Shuriken, "hits the target with throwing stars two to five times in a row" — Ash-Greninja's
+  // giant shuriken. A whirlpool rises round it as the giant water shuriken forms on its back; it flings a volley of
+  // small shuriken, then hurls the giant one, which grinds into the foe and bursts.
+  waterShurikenBarrage(a, g, u, t) {
+    face(a, u, t);
+    a.anim('Charge', 0.7);
+    const WATER = ['#ffffff', '#9fe8ff', '#5aa6f0', '#1f4a8a'];
+    g.spawn(new ScreenDim(2.9, 0.45, '6,18,40'));
+    // The whirlpool.
+    let tt = 0;
+    a.ticks.push(dt => {
+      if ((tt += dt) > 1.1) return;
+      for (let k = 0; k < 4; k++) {
+        const ang = tt * 10 + k * TAU / 4, r = u.radius + 10;
+        g.particles.spawn({ x: u.x + Math.cos(ang) * r, y: u.y + Math.sin(ang) * r * 0.5, z: tt * 30, vx: -Math.sin(ang) * 70, vy: Math.cos(ang) * 35, vz: rand(50, 90), gz: 0, life: 0.45, size: rand(2, 4), sizeEnd: 1, colors: WATER });
+      }
+    });
+    // The giant shuriken forms on its back and spins.
+    const back = () => ({ x: u.x, y: u.y - u.bodyZ - 8 });
+    g.spawn(new Painted(1.5, (ctx, p, age) => {
+      const b = back(), r = 5 + Math.min(1, p * 1.6) * 9;
+      drawShuriken(ctx, b.x, b.y, r, age * 14);
+    }));
+    // A volley of small shuriken.
+    for (let i = 0; i < 3; i++) a.later(0.5 + i * 0.14, () => {
+      face(a, u, t);
+      a.anim('Shoot', 2);
+      g.spawn(new Flyer({ from: { x: u.x, y: u.y, z: u.bodyZ }, to: () => ({ x: t.x + (i - 1) * 6, y: t.y, z: t.bodyZ }), dur: 0.26, arc: 6,
+        paint: (ctx, x, y, age) => drawShuriken(ctx, x, y, 6, age * 30),
+        onArrive: () => {
+          spray(g, t.x, t.y, t.bodyZ, 6, WATER, { speed: 90, up: 70 });
+          a.strike(0.1, { customArt: true, knockback: 20, stagger: 0.2 });
+        } }));
+    });
+    // The giant one.
+    a.later(1.5, () => {
+      face(a, u, t);
+      a.anim('Attack', 1.3);
+      g.spawn(new Flyer({ from: back(), to: () => ({ x: t.x, y: t.y, z: t.bodyZ }), dur: 0.36, arc: 30, paint: (ctx, x, y, age, f) => {
+        drawShuriken(ctx, x, y, 14, age * 26);
+        g.particles.spawn({ x: f.x, y: f.y, z: f.z, vx: rand(-40, 40), vy: rand(-30, 30), vz: rand(0, 40), life: 0.4, size: rand(2, 4), sizeEnd: 1, colors: WATER });
+      }, onArrive: () => {
+        // It grinds into the foe…
+        g.spawn(new Stuck(t, 0.5, (ctx, mon, age) => drawShuriken(ctx, mon.x, mon.y - mon.bodyZ, 14, age * 34)));
+        for (let k = 0; k < 4; k++) a.later(k * 0.11, () => {
+          spray(g, t.x, t.y, t.bodyZ, 8, WATER, { speed: 130, up: 90 });
+          a.strike(0.1, { customArt: true, knockback: 15, stagger: 0.3 });
+        });
+        // …and bursts.
+        a.later(0.5, () => {
+          waterSplash(g, t.x, t.y);
+          spray(g, t.x, t.y, t.bodyZ, 30, WATER, { speed: 220, up: 200, size: [2, 6] });
+          for (const [r1, life, c] of [[60, 0.35, '#ffffff'], [140, 0.55, '#5aa6f0'], [210, 0.75, '#1f4a8a']]) g.spawn(new Ring(t.x, t.y, { z: t.bodyZ, r0: 8, r1, life, color: c, width: 5, layer: 'air' }));
+          g.marks.wet(t.x, t.y, 40);
+          g.shake(8, 0.35);
+          a.strike(0.3, { customArt: true, knockback: 260, stagger: 0.55 });
+        });
+      } }));
+    });
+    a.end(2.9);
+  },
 
   // Lugia: "A vortex of air is shot at the target." Storm clouds roll in and gales sweep the arena, Lugia rises as
   // the wind spirals into its mouth, then fires the vortex.

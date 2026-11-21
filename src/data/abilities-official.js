@@ -220,6 +220,13 @@ export const OFFICIAL = {
   moxie: { name: 'Moxie', desc: 'Knocking out a foe raises attack 20% for 8s.', ...onKO('atk', 1.2, 'Its confidence soared! Attack rose!') },
   chillingNeigh: { name: 'Chilling Neigh', desc: 'Knocking out a foe raises attack 20% for 8s.', ...onKO('atk', 1.2, 'A chilling neigh! Attack rose!') },
   grimNeigh: { name: 'Grim Neigh', desc: 'Knocking out a foe raises attack 20% for 8s.', ...onKO('atk', 1.2, 'A grim neigh! Attack rose!') },
+  // Battle Bond (Sun & Moon rule): when Battle Bond Greninja knocks out a foe, it becomes Ash-Greninja.
+  battleBond: {
+    name: 'Battle Bond', desc: 'When it knocks out a foe, Greninja becomes Ash-Greninja.',
+    onKO(g, me) {
+      if (me.species.bondForm) g.bondForm?.(me);
+    },
+  },
   beastBoost: {
     name: 'Beast Boost', desc: 'Knocking out a foe raises its best stat for 8s.',
     onKO(g, me) {
