@@ -159,6 +159,8 @@ export class Pokemon {
   megaEvolve(species, spriteSet) {
     const damageTaken = this.maxHp - this.hp;
     this.species = species;
+    // The new form has its own ability: anything copied or swapped in (Trace, Role Play, Entrainment…) is gone.
+    this.abilityOverride = null;
     this.hp = Math.max(0, this.maxHp - damageTaken);
     this.sprite.set = spriteSet;
     this.portrait = spriteSet.portrait;
@@ -224,6 +226,7 @@ export class Pokemon {
     const ab = abilityOf(this);
     this.dodgeSpeed = DODGE_SPEED * (ab.dodgeDist ?? 1);
     Object.assign(this, { dodgeT: DODGE_TIME, dodgeInv: DODGE_INVULN, dodgeCD: DODGE_COOLDOWN * (ab.dodgeCdMult ?? 1), ghostT: 0 });
+    this.dodgeCDMax = this.dodgeCD;
     this.dir = dirFromVector(dx, dy);
     return true;
   }
@@ -238,7 +241,8 @@ export class Pokemon {
   faint() {
     this.cancelAction();
     Object.assign(this, { elementAura: null, fainted: true, faintT: 0, frozen: 0, status: {}, buffs: {}, charging: null, held: false });
-    this.sprite.play(this.species.faintAnim ?? 'Hurt', { loop: false, force: true, speed: 0.55 });
+    // Its own Faint sheet when it has one (the resolver falls back to Hurt, then Idle).
+    this.sprite.play(this.species.faintAnim ?? 'Faint', { loop: false, force: true, speed: 0.55 });
   }
 
   // Hover with a wing-beat bob; actions can take over altitude (dives) or force a landing.
@@ -377,7 +381,8 @@ export class Pokemon {
           ? dirFromVector(this.foe.x - this.x, this.foe.y - this.y)
           : dirFromVector(nx, ny);
       }
-    } else if (!this.action && this.stagger <= 0 && this.foe) {
+    // A dash keeps facing the way it goes until it ends (then it turns back to the foe).
+    } else if (!this.action && this.stagger <= 0 && this.dodgeT <= 0 && this.foe) {
       this.face(this.foe.x, this.foe.y);
     }
 
@@ -399,8 +404,10 @@ export class Pokemon {
     if (this.charging) this.sprite.play('Charge');
     else if (!this.action && this.stagger <= 0 && !(this.animHold > 0)) {
       // Flyers with a wing-beat animation flap (faster while moving) instead of walking.
-      if (this.idleAnim() === 'Fly') this.sprite.play('Fly', { speed: this.moving ? 1.25 : 1 });
-      else this.sprite.play(this.moving ? 'Walk' : 'Idle');
+      // A dash shows the stride, not the idle pose, until it ends.
+      const going = this.moving || this.dodgeT > 0;
+      if (this.idleAnim() === 'Fly') this.sprite.play('Fly', { speed: going ? 1.25 : 1 });
+      else this.sprite.play(going ? 'Walk' : 'Idle');
     }
     this.sprite.update(dt);
     this.clamp();
@@ -447,7 +454,7 @@ export class Pokemon {
         color = '#ffffff';
       }
       if (t > 0.9) alpha = Math.max(0, 1 - (t - 0.9) / 0.9);
-      if (!this.species.faintAnim) sink = Math.min(10, t * 8);
+      if (!this.species.faintAnim && !this.sprite.has('Faint')) sink = Math.min(10, t * 8); // no faint pose: sink instead
     } else if (this.frozen > 0) {
       flash = Math.max(flash, 0.45);
       color = '#a6ecff';

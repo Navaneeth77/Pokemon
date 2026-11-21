@@ -66,7 +66,7 @@ export class DraftRooms {
     this.rooms.delete(r.id);
     if (!this.capacity()) { for (const p of r.players) { p.state = 'idle'; this.send(p, { t: 'draft-cancelled', message: 'Server is at capacity. Please retry.' }); } return; }
     const entries = r.players.map((player, s) => ({ player, format: r.draft.format, team: r.draft.teams[s], lead: 0, mega: {}, draftMode: r.draft.mode, ranked:r.ranked,
-      kit: player.bot ? Object.fromEntries(r.draft.teams[s].map(id => [id, randomKit(SPECIES[id])])) : this.kits(r.draft.teams[s], player.draftKits),
+      kit: player.bot ? Object.fromEntries(r.draft.teams[s].map(id => [id, randomKit(SPECIES[id])])) : this.kits(r.draft.teams[s], player.draftKits, player),
       ...(player.bot && { difficulty: player.botDifficulty }) }));
     this.start(...entries);
   }

@@ -6,9 +6,10 @@
 // their player wants to do (movement + button presses); the server decides every hit, faint and the
 // winner, and streams the resulting events and state back for both screens to animate.
 //
-//   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated)
+//   npm run server            PORT (default 8787), ALLOWED_ORIGINS (optional, comma separated; default: the deployed game), TRUST_PROXY
 import './shim.js';
 import { EconomyStore } from './economy-store.js';
+import { ownsShiny } from '../src/economy.js';
 import { sendQueued } from './outbox.js';
 import { cleanKit } from '../src/data/items.js';
 import { SHINY } from '../src/data/national-dims.js';
@@ -36,8 +37,19 @@ const { safeName } = await import('../src/names.js');
 const { OpponentAI } = await import('../src/ai.js');
 
 export const PROTOCOL = 2;
-const PORT = Number(process.env.PORT) || 8787;
-const ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+const PORT = process.env.PORT === '0' ? 0 : Number(process.env.PORT) || 8787;
+// Origins allowed to use the server from a browser: ALLOWED_ORIGINS (comma separated; '*' allows any), else the
+// deployed game. Local development pages (localhost / 127.0.0.1) are always allowed. Requests with no Origin
+// (health checks, scripts, tests) are not browser cross-site requests and are allowed.
+const DEFAULT_ORIGINS = ['https://pokemon-gules-delta.vercel.app'];
+const ORIGIN_LIST = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+const ORIGINS = ORIGIN_LIST.length ? ORIGIN_LIST : DEFAULT_ORIGINS;
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+const originAllowed = origin => !origin || ORIGINS.includes('*') || ORIGINS.includes(origin) || LOCAL_ORIGIN.test(origin);
+// The player's address. Behind a proxy we trust (Render sets RENDER; or TRUST_PROXY=1), it is the last
+// X-Forwarded-For entry that proxy added; otherwise the header can be forged, so the socket address is used.
+const TRUST_PROXY = process.env.TRUST_PROXY ? process.env.TRUST_PROXY === '1' : !!process.env.RENDER;
+const clientIp = req => (TRUST_PROXY && String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim()) || req.socket.remoteAddress;
 // Testing only: every Pokémon starts with this fraction of its HP so a full match takes seconds.
 const TEST_HP = Math.min(1, Math.max(0.01, Number(process.env.MATCH_TEST_HP) || 1));
 
@@ -68,9 +80,11 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 // ── Players and connections ──
 const players = new Map(); // pid → { pid, name, look, ws, state: 'idle'|'queued'|'match', entry, match, record }
 const queues = { 3: [], 6: [], tag: [] }; // waiting entries per format (tag: 2v2 Tag Battles), oldest first
-const matches = new Map();
+// A match starting or ending changes who is battling, so the lobby recounts (presence()).
+let presenceCache = null; // declared early: the match table clears it
+const matches = new (class extends Map { set(k, v) { presenceCache = null; return super.set(k, v); } delete(k) { presenceCache = null; return super.delete(k); } })();
 const MAX_MATCHES = Math.max(1, Math.min(32, Number(process.env.MAX_MATCHES) || 3));
-const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES, (team, kits) => validKits(team, kits), { makeBot: h => makeBot(h), botAfter: BOT_AFTER_MS });
+const drafts = new DraftRooms(sendTo, createMatch, () => matches.size < MAX_MATCHES, (team, kits, player) => validKits(team, kits, player), { makeBot: h => makeBot(h), botAfter: BOT_AFTER_MS });
 setInterval(() => drafts.tick(Date.now()), 1000).unref();
 // Online results and ratings (Elo, starting at 1000). Kept in Upstash Redis when
 // UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set, so they survive restarts and redeploys;
@@ -265,48 +279,70 @@ if (REDIS) {
 const dirty = new Set();
 let saveTimer = null;
 function saveRecords(...pids) {
+  standingsChanged();
   for (const p of pids) dirty.add(p);
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushRecords, 1500);
 }
-let recordsWriting = false; // one leaderboard write at a time, so an older one can't land after a newer one
-async function flushRecords() {
-  if (REDIS) {
-    if (recordsWriting) { clearTimeout(saveTimer); saveTimer = setTimeout(flushRecords, 500); return; }
-    const pids = [...dirty].filter(p => records.has(p));
-    dirty.clear();
-    if (!pids.length) return;
-    recordsWriting = true;
-    try {
-      const rev = nextRev();
-      const results = await writeNewer(REDIS_KEY, pids.map(p => [p, JSON.stringify(records.get(p)), rev]));
-      const refused = results.filter(r => r === -1).length;
-      storageError = refused ? `${refused} leaderboard write(s) refused: storage holds newer data (is a second server writing?)` : null;
-      if (refused) console.error(storageError);
-    } catch (err) {
-      storageError = `save failed: ${err.message}`;
-      for (const p of pids) dirty.add(p); // try again shortly
-      console.error('could not save the leaderboard to Redis:', err.message);
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(flushRecords, 10_000);
-    } finally {
-      recordsWriting = false;
-    }
-    return;
-  }
+// One leaderboard write at a time (an older one can't land after a newer one). Players changed while a write
+// is in flight stay dirty for the next one; a failed write puts its players back and retries in 10 s, so no
+// update is dropped. `recordsWrite` is the write in progress, so shutdown can wait for it (drainRecords).
+let recordsWrite = null;
+const WRITE_DELAY = Number(process.env.LEADERBOARD_WRITE_DELAY_MS) || 0;
+function flushRecords() {
+  if (recordsWrite) { clearTimeout(saveTimer); saveTimer = setTimeout(flushRecords, 500); return recordsWrite; }
+  if (!dirty.size) return Promise.resolve(true);
+  recordsWrite = writeRecords().finally(() => { recordsWrite = null; });
+  return recordsWrite;
+}
+async function writeRecords() {
+  const pids = [...dirty];
   dirty.clear();
   try {
-    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-    fs.writeFileSync(`${DATA_FILE}.tmp`, JSON.stringify(Object.fromEntries(records)));
-    fs.renameSync(`${DATA_FILE}.tmp`, DATA_FILE);
+    if (REDIS) {
+      const live = pids.filter(p => records.has(p));
+      if (live.length) {
+        const rev = nextRev();
+        const results = await writeNewer(REDIS_KEY, live.map(p => [p, JSON.stringify(records.get(p)), rev]));
+        const refused = results.filter(r => r === -1).length;
+        storageError = refused ? `${refused} leaderboard write(s) refused: storage holds newer data (is a second server writing?)` : null;
+        if (refused) console.error(storageError);
+      }
+    } else {
+      // Written without blocking battles; the snapshot is taken now, so later changes wait for the next save.
+      const text = JSON.stringify(Object.fromEntries(records));
+      await fs.promises.mkdir(path.dirname(DATA_FILE), { recursive: true });
+      await fs.promises.writeFile(`${DATA_FILE}.tmp`, text);
+      if (WRITE_DELAY) await new Promise(r => setTimeout(r, WRITE_DELAY)); // tests hold the snapshot before rename
+      await fs.promises.rename(`${DATA_FILE}.tmp`, DATA_FILE);
+      storageError = null;
+    }
+    return true;
   } catch (err) {
+    storageError = `save failed: ${err.message}`;
+    for (const p of pids) dirty.add(p); // kept for the retry
     console.error('could not save the leaderboard:', err.message);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushRecords, 10_000);
+    return false;
+  }
+}
+// Finish the current write and retry queued changes within the shutdown handler's grace period.
+async function drainRecords() {
+  clearTimeout(saveTimer);
+  while (recordsWrite || dirty.size) {
+    const ok = await (recordsWrite ?? flushRecords());
+    clearTimeout(saveTimer);
+    if (!ok) await new Promise(r => setTimeout(r, 200));
   }
 }
 
 // Ranked by rating (ties: more wins first); only players who have finished an online battle.
-const standings = () => [...records.entries()].filter(([, r]) => r.w + r.l + r.d > 0).sort(([, a], [, b]) => b.rating - a.rating || b.w - a.w);
-const rankOf = pid => standings().findIndex(([p]) => p === pid) + 1 || null;
+// Sorted once per change (saveRecords / loading clears it), not on every lobby check-in.
+let standingsCache = null, rankCache = null;
+const standings = () => (standingsCache ??= [...records.entries()].filter(([, r]) => r.w + r.l + r.d > 0).sort(([, a], [, b]) => b.rating - a.rating || b.w - a.w));
+const rankOf = pid => (rankCache ??= new Map(standings().map(([p], i) => [p, i + 1]))).get(pid) ?? null;
+const standingsChanged = () => { standingsCache = rankCache = null; };
 
 // Who is around right now, and where: in a battle, searching or looking at a screen, for ranked 3v3/6v6,
 // Legendary Raids and Draft Battles (the game checks in every few seconds while a screen is open). Each
@@ -314,7 +350,15 @@ const rankOf = pid => standings().findIndex(([p]) => p === pid) + 1 || null;
 // browsing). Queues waiting for a partner are listed so players can see who they could join.
 const lobby = new Map(); // pid → { fmt: 3 | 6 | 'raid' | 'draft' | 'menu', at }
 const LOBBY_TTL = 12_000;
+// Counted at most once a second however many players check in (each check-in otherwise walks every match).
+let presenceAt = 0;
 function presence() {
+  const now = Date.now();
+  if (presenceCache && now - presenceAt < 1000) return presenceCache;
+  presenceAt = now;
+  return (presenceCache = countPresence());
+}
+function countPresence() {
   const seen = whereAll();
   const modes = { 3: { browsing: 0, searching: 0, battling: 0 }, 6: { browsing: 0, searching: 0, battling: 0 }, tag: { browsing: 0, searching: 0, battling: 0 } };
   const raid = { browsing: 0, searching: 0, battling: 0, waiting: {} }, draft = { browsing: 0, searching: 0, drafting: 0, battling: 0, waiting: {} }, menu = { browsing: 0 };
@@ -362,7 +406,7 @@ function sendTo(player, msg) {
 const SHINY_SET = new Set(SHINY);
 
 // ── Validation: nothing from a client is trusted ──
-function validTeam(m) {
+function validTeam(m, player = null) {
   // A Tag Battle player brings three Pokémon; their partner brings the other three.
   const tag = m.format === 'tag', format = tag ? 3 : m.format === 6 ? 6 : m.format === 3 ? 3 : 0;
   // Entries must already be strings: converting arbitrary JSON (e.g. {"toString":null}) can throw.
@@ -374,12 +418,14 @@ function validTeam(m) {
     const pick = m.mega?.[id];
     if (typeof pick === 'string' && SPECIES[id].mega?.includes(pick)) mega[id] = pick;
   }
-  return { format: tag ? 'tag' : format, team, lead, mega, kit: validKits(team, m.kit) };
+  return { format: tag ? 'tag' : format, team, lead, mega, kit: validKits(team, m.kit, player) };
 }
 
-// Held items and Tera types are checked against the game's lists; shiny is cosmetic and passed through.
-function validKits(team, kits) {
-  return Object.fromEntries(team.map(id => [id, cleanKit(SPECIES[id], kits?.[id], () => SHINY_SET.has(id))]));
+// Held items and Tera types are checked against the game's lists. A shiny is cosmetic, but it is bought, so
+// it is shown only when this player's server wallet (signed in with its credential) owns it.
+function validKits(team, kits, player = null) {
+  const wallet = player?.economyAuthenticated ? economy.data.players[player.pid]?.wallet : null;
+  return Object.fromEntries(team.map(id => [id, cleanKit(SPECIES[id], kits?.[id], () => SHINY_SET.has(id) && ownsShiny(wallet, id))]));
 }
 
 // ── Queue ──
@@ -593,8 +639,11 @@ class Match {
     o.input.x = fighting ? -v.x : 0;
     o.input.y = fighting ? -v.y : 0;
     if (fighting && this.bufB) {
-      this.bufB.t -= STEP;
-      if (g.useMove(o, o.moves[this.bufB.i]) || this.bufB.t <= 0) this.bufB = null;
+      const b = this.bufB, id = o.moves[b.i];
+      b.t -= STEP;
+      // Same rule as offline (game.js): a buffered hold starts charging if still held, otherwise it fires.
+      const started = b.hold && !b.released && MOVES[id]?.chargeable ? g.beginCharge(o, id) : g.useMove(o, id);
+      if (started || b.t <= 0) this.bufB = null;
     }
     if (fighting && this.megaQueuedB > 0) {
       this.megaQueuedB -= STEP;
@@ -622,6 +671,7 @@ class Match {
     if (s === 'A') {
       if (k === 'press' && i >= 0 && i < 4) g.playerPress(i);
       else if (k === 'release' && i >= 0 && i < 4) g.playerRelease(i);
+      else if (k === 'cancel') g.cancelHeld();
       else if (k === 'dodge') g.playerDodge();
       else if (k === 'ult') g.playerUltimate();
       else if (k === 'mega') g.playerMega();
@@ -632,9 +682,17 @@ class Match {
     if (k === 'press' && i >= 0 && i < 4) {
       const id = o.moves[i];
       if (!id || (MOVES[id]?.chargeable && g.beginCharge(o, id))) return;
+      if (MOVES[id]?.chargeable && o.alive && !o.charging && g.moveCD(o, id) <= 0.25) {
+        this.bufB = { i, t: 0.3, hold: true };
+        return;
+      }
       if (!g.useMove(o, id) && o.alive && !o.charging && g.moveCD(o, id) <= 0.25) this.bufB = { i, t: 0.3 };
     } else if (k === 'release' && i >= 0 && i < 4) {
+      if (this.bufB?.hold && this.bufB.i === i) this.bufB.released = true;
       if (o.charging?.id === o.moves[i]) g.releaseCharge(o);
+    } else if (k === 'cancel') {
+      this.bufB = null;
+      o.charging = null;
     } else if (k === 'dodge') {
       const v = this.vec.B, held = v.x || v.y;
       g.dodge(o, held ? -v.x : o.x - p.x || 0.01, held ? -v.y : o.y - p.y || -1);
@@ -654,17 +712,20 @@ class Match {
     this.flush(); // the knockout itself goes out before the result
     this.phase = 'done';
     matches.delete(this.id);
+    // A server fault is no contest: nobody's record, rating or rewards change, and both players are told so.
+    const noContest = reason === 'error';
+    const outcome = s => (noContest ? 'noContest' : winner == null ? 'draw' : winner === s ? 'win' : 'loss');
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
-      const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
-      if (!wasLoading && this.ranked) {
+      const result = outcome(s);
+      if (!wasLoading && this.ranked && !noContest) {
         p.record[result === 'win' ? 'w' : result === 'loss' ? 'l' : 'd']++;
         p.record.streak = result === 'win' ? (p.record.streak ?? 0) + 1 : result === 'loss' ? 0 : p.record.streak ?? 0;
       }
       p.delta = 0;
     }
     // Ratings (Elo): beating a higher-rated player earns more. A server error changes nothing.
-    if (!wasLoading && this.ranked && reason !== 'error') {
+    if (!wasLoading && this.ranked && !noContest) {
       const a = this.side.A.player, b = this.side.B.player;
       const expectA = 1 / (1 + 10 ** ((b.record.rating - a.record.rating) / 400));
       const scoreA = winner == null ? 0.5 : winner === 'A' ? 1 : 0, delta = Math.round(ELO_K * (scoreA - expectA));
@@ -673,16 +734,16 @@ class Match {
       a.delta = delta;
       b.delta = -delta;
     }
-    if (!wasLoading) saveRecords(this.side.A.player.pid, this.side.B.player.pid);
+    if (!wasLoading && !noContest) saveRecords(this.side.A.player.pid, this.side.B.player.pid);
     for (const s of ['A', 'B']) {
       const p = this.side[s].player;
-      const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
+      const result = outcome(s);
       if (p.match === this) {
         p.match = null;
         p.state = 'idle';
       }
       if(!wasLoading&&['ko','time'].includes(reason)&&this.game)economy.award(p,resultSummary(this.game,s==='A'?'player':'opponent',{id:this.id,result,reason,team:this.side[s].team}),Date.now(),{local:this.bot});
-      sendTo(p, { t: 'end', id: this.id, ranked:this.ranked, result, reason, summary:this.game ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
+      sendTo(p, { t: 'end', id: this.id, ranked:this.ranked, result, reason, summary:this.game && !noContest ? resultSummary(this.game,s==='A'?'player':'opponent',{mode:this.draftMode?'draft':'battle'}) : null, record: p.record, delta: p.delta, rank: rankOf(p.pid) });
     }
     for (const p of this.spectators) {
       sendTo(p, { t: 'spectate-end', id: this.id, winner: winner ? this.side[winner].player.name : null, reason });
@@ -834,10 +895,12 @@ class TagMatch extends Match {
     this.flush();
     this.phase = 'done';
     matches.delete(this.id);
+    // A server fault is no contest here too: no result, no summary (nothing is saved or rewarded).
+    const noContest = reason === 'error';
     for (const s of ['A', 'B']) for (const p of this.humans(s)) {
-      const result = winner == null ? 'draw' : winner === s ? 'win' : 'loss';
+      const result = noContest ? 'noContest' : winner == null ? 'draw' : winner === s ? 'win' : 'loss';
       if (p.match === this) { p.match = null; p.state = 'idle'; }
-      const summary = this.game ? resultSummary(this.game, s === 'A' ? 'player' : 'opponent', { id: this.id, result, reason, mode: 'tag', team: this.side[s].team }) : null;
+      const summary = this.game && !noContest ? resultSummary(this.game, s === 'A' ? 'player' : 'opponent', { id: this.id, result, reason, mode: 'tag', team: this.side[s].team }) : null;
       if (!wasLoading && ['ko', 'time'].includes(reason) && summary) economy.award(p, summary, Date.now(), { local: true });
       if (p.ws) sendTo(p, { t: 'end', id: this.id, ranked: false, result, reason, summary, record: p.record, delta: 0 });
     }
@@ -924,6 +987,8 @@ function onMessage(conn, raw) {
   let m;
   try { m = JSON.parse(raw); } catch { return; }
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
+  // Anything but in-battle input and pings can change who is where: recount on the next lobby check-in.
+  if (m.t !== 'in' && m.t !== 'ping') presenceCache = null;
   if (m.t === 'ping') return send(conn.ws, { t: 'pong', ts: m.ts });
   if (m.t === 'hello') return hello(conn, m);
   const p = conn.player;
@@ -935,7 +1000,7 @@ function onMessage(conn, raw) {
   switch (m.t) {
     case 'queue': {
       if (p.state === 'match' || p.state === 'draft' || p.state === 'raid') return sendTo(p, { t: 'error', code: 'in-match', message: 'You are already in a match.' });
-      const spec = validTeam(m);
+      const spec = validTeam(m, p);
       if (!spec) return sendTo(p, { t: 'error', code: 'bad-team', message: 'That team is not valid for this format.' });
       dequeue(p); // queueing again replaces the old entry (one entry per player)
       return enqueue(p, spec);
@@ -1054,6 +1119,7 @@ function hello(conn, m) {
 function onClose(conn) {
   const p = conn.player;
   if (!p || p.ws !== conn.ws) return;
+  presenceCache = null;
   p.ws = null;
   raids.leaveWaiting(p);
   drafts.leave(p);
@@ -1062,6 +1128,11 @@ function onClose(conn) {
   if (p.match) p.match.leave(p.matchSide, 'disconnect', p);
   if (p.state === 'idle') players.delete(p.pid);
 }
+
+// Players whose battle or raid ended after they disconnected are idle with no socket: forget them.
+setInterval(() => {
+  for (const [pid, p] of players) if (!p.ws && p.state === 'idle' && !p.match) players.delete(pid);
+}, 30_000).unref();
 
 // ── Clock: runs only while a battle is going on; housekeeping 1×/s ──
 let loop = null, last = 0, acc = 0, snapshotAcc = 0;
@@ -1162,7 +1233,10 @@ setInterval(() => {
 // The game's Online Battles screen: who's online per format, the top 10, and the asking player's rank.
 // Players are identified by their anonymous id in the request body (never in the URL); ids are never sent out.
 function lobbyInfo(pid, fmt) {
-  if (pid && PID_RE.test(pid) && [3, 6, 'tag', 'raid', 'draft', 'menu'].includes(fmt)) lobby.set(pid, { fmt, at: Date.now() });
+  if (pid && PID_RE.test(pid) && [3, 6, 'tag', 'raid', 'draft', 'menu'].includes(fmt)) {
+    if (lobby.get(pid)?.fmt !== fmt) presenceCache = null; // a new or moved browser counts at once
+    lobby.set(pid, { fmt, at: Date.now() });
+  }
   const table = standings(), mine = pid ? table.findIndex(([p]) => p === pid) : -1;
   return {
     ...presence(),
@@ -1174,15 +1248,17 @@ function lobbyInfo(pid, fmt) {
 
 const server = http.createServer((req, res) => {
   const requestOrigin=req.headers.origin;
-  if(requestOrigin && (!ORIGINS.length || ORIGINS.includes(requestOrigin))) res.setHeader('access-control-allow-origin',requestOrigin);
+  const health = req.url === '/health' || req.url === '/ready';
+  // A page from another site is turned away before anything is read or processed.
+  if(!health && !originAllowed(requestOrigin)){res.writeHead(403).end();req.resume();return;}
+  if(requestOrigin) { res.setHeader('access-control-allow-origin',requestOrigin); res.setHeader('vary','Origin'); }
   if(req.url==='/economy'){
-    if(requestOrigin&&ORIGINS.length&&!ORIGINS.includes(requestOrigin)){res.writeHead(403).end();return;}
     res.setHeader('cache-control','no-store');
     if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-methods':'POST','access-control-allow-headers':'content-type'}).end();return;}
     if(req.method!=='POST'){res.writeHead(405).end();return;}
     // Behind Render's proxy every request arrives from the proxy; the player's address is the last
     // entry the proxy added to X-Forwarded-For. Without this, one limit would be shared by everyone.
-    const ip=String(req.headers['x-forwarded-for']??'').split(',').pop().trim()||req.socket.remoteAddress,now=Date.now(),rate=economyRate.get(ip)??{at:now,n:0};
+    const ip=clientIp(req),now=Date.now(),rate=economyRate.get(ip)??{at:now,n:0};
     if(now-rate.at>10000){rate.at=now;rate.n=0;}rate.n++;economyRate.set(ip,rate);
     if(economyRate.size>2000)for(const [key,v]of economyRate)if(now-v.at>10000)economyRate.delete(key);
     if(rate.n>40){res.writeHead(429).end(JSON.stringify({error:'Please wait a moment before trying again.'}));return;}
@@ -1200,8 +1276,6 @@ const server = http.createServer((req, res) => {
     });return;
   }
   if (req.url === '/lobby') {
-    const origin = req.headers.origin;
-    if (origin && (!ORIGINS.length || ORIGINS.includes(origin))) res.setHeader('access-control-allow-origin', origin);
     if (req.method === 'OPTIONS') {
       res.writeHead(204, { 'access-control-allow-methods': 'POST, GET', 'access-control-allow-headers': 'content-type' }).end();
       return;
@@ -1233,7 +1307,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({
   server,
   maxPayload: 4096,
-  verifyClient: ({ origin }) => !ORIGINS.length || ORIGINS.includes(origin),
+  verifyClient: ({ origin }) => originAllowed(origin),
 });
 
 wss.on('connection', ws => {
@@ -1275,4 +1349,18 @@ if (KEEP_AWAKE_ENABLED) {
   setInterval(() => fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(15_000) }).catch(noop), 10 * 60_000);
 }
 
-server.listen(PORT, () => log(`match server on :${PORT} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${KEEP_AWAKE_ENABLED ? ', keep-awake on' : ''}${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
+server.listen(PORT, () => log(`match server on :${server.address().port} (${Object.keys(sprites).length} sprite sets, leaderboard: ${STORAGE}, ${records.size} players${KEEP_AWAKE_ENABLED ? ', keep-awake on' : ''}${TEST_HP < 1 ? `, TEST HP ×${TEST_HP}` : ''})`));
+
+// On shutdown (Render sends SIGTERM before a deploy or sleep), let pending saves land first (at most 5 s).
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => {
+  const deadline = new Promise(resolve => setTimeout(resolve, 5000));
+  // Recheck for match results queued while the wallet journal was finishing.
+  const saves = Promise.allSettled([economy.journal, drainRecords()]).then(drainRecords);
+  await Promise.race([saves, deadline]);
+  if (recordsWrite || dirty.size) {
+    console.error('shutting down with unsaved leaderboard changes');
+    process.exit(1);
+  }
+  log('no leaderboard writes pending at shutdown');
+  process.exit(0);
+});

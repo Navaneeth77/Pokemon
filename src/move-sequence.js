@@ -37,8 +37,8 @@
 // The move's mechanics (secondary effects, stat changes…) all resolve inside `hit` (combat.js),
 // so what the player sees and what happens can never drift apart.
 import { spawnStructure, structureField } from './arena-structures.js';
-import { applyHit } from './combat.js';
-import { rand, Glow, Ring, FloatText, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
+import { applyHit, dodgesHit, segmentDist, segmentClosest } from './combat.js';
+import { rand, perFrame, emitCount, Glow, Ring, FloatText, Lightning, Pillar, Falling, Spike, Missile, TidalWave, StormCloud, dustCloud, sparkBurst, SlashArc, Beam, PsyDome, Tether, ScreenDim, Afterimage, ChargeOrb, OrbitBlades,
   waterSplash, electricBurst, leafBurst, iceShatter, metalSparks, debris, windBurst, FIRE } from './effects.js';
 import { sfx } from './audio.js';
 import { WEATHER_TINT } from './data/move-anims.js';
@@ -144,8 +144,12 @@ class SeqShot {
 
   update(dt) {
     if (this.dead) return false;
-    const P = this.P, t = this.target;
+    const P = this.P;
     this.age += dt;
+    // The foe it was thrown at switched out: it flies on at whoever took that place.
+    const foe = this.user.foe;
+    if (foe && foe !== this.target && foe.side === this.target.side) this.target = foe;
+    const t = this.target;
     // Homing: turns toward the foe at its tracking rate, for its tracking time, by no more than its turn limit.
     if (P.track > 0 && this.age >= (P.spreadT ?? 0) && this.age <= P.trackTime && this.turned < P.maxTurn && t.alive && !t.hidden) {
       const want = wrap(Math.atan2(t.y - this.y, t.x - this.x) - this.angle), left = P.maxTurn - this.turned;
@@ -153,12 +157,17 @@ class SeqShot {
       this.angle += k;
       this.turned += Math.abs(k);
     }
-    const step = P.speed * dt;
+    const step = P.speed * dt, px = this.x, py = this.y;
     this.x += Math.cos(this.angle) * step;
     this.y += Math.sin(this.angle) * step;
     this.traveled += step;
-    // It hits what it touches: the foe's body inside the projectile's hitbox. A dodge's i-frames let it through.
-    if (t.alive && !t.hidden && !t.untouchable && !t.invuln && Math.hypot(t.x - this.x, t.y - this.y) <= P.hitbox + t.radius) return this.impact(true);
+    // It hits what it touches: the foe's body inside the projectile's hitbox, anywhere along this frame's path.
+    // Invulnerable frames let it through; so does a dodge (which counts, DODGED! and its charge) unless No Guard is in play.
+    if (t.alive && !t.hidden && segmentDist(t.x, t.y, px, py, this.x, this.y) <= P.hitbox + t.radius && !t.invuln) {
+      const st = this.action.stack ?? (this.action.stack = {});
+      if (dodgesHit(this.action.game, this.user, t, {}, st)) st.dodgeShown = true;
+      else { Object.assign(this, segmentClosest(t.x, t.y, px, py, this.x, this.y)); return this.impact(true); }
+    }
     if (Math.hypot(this.x - this.x0, this.y - this.y0) >= this.reach || this.traveled >= this.reach * 1.6) return this.impact(false); // reach from where it was thrown
     return true;
   }
@@ -396,13 +405,13 @@ export function tickGather(action, dt) {
     const k = Math.min(1, (action.t - l.t0) / l.dur);
     u.x = l.from.x + (l.to.x - l.from.x) * k;
     u.y = l.from.y + (l.to.y - l.from.y) * k;
-    if (l.ghost && Math.random() < 0.5) action.game.spawn(new Afterimage(u, 0.2, l.ghost));
+    if (l.ghost && perFrame(0.5, dt)) action.game.spawn(new Afterimage(u, 0.2, l.ghost));
     if (k >= 1) action.lunge = null;
   }
   const o = action.orbit;
   if (o && action.t <= o.end) {
     const a = action.t * 9;
-    for (let i = 0; i < 2; i++) action.game.particles.spawn({ x: u.x + Math.cos(a + i * Math.PI) * (o.r ?? 22), y: u.y + Math.sin(a + i * Math.PI) * (o.r ?? 22) * 0.5, z: u.bodyZ, life: 0.3, size: rand(2, 3.5), sizeEnd: 1, colors: o.colors, fade: false });
+    for (let n = emitCount(action, 'orbit', 2, dt), i = 0; i < n; i++) action.game.particles.spawn({ x: u.x + Math.cos(a + i * Math.PI) * (o.r ?? 22), y: u.y + Math.sin(a + i * Math.PI) * (o.r ?? 22) * 0.5, z: u.bodyZ, life: 0.3, size: rand(2, 3.5), sizeEnd: 1, colors: o.colors, fade: false });
   }
   const gth = action.gatherUntil;
   if (!gth || action.t > gth.end) return;

@@ -10,7 +10,7 @@ export class RaidRooms {
     if(m.t==='raid-cancel') {this.leaveWaiting(p);return true;}
     if(m.t!=='raid-queue') return false;
     if(p.state!=='idle') return true;
-    const spec=this.validate(m);
+    const spec=this.validate(m,p);
     if(!spec || !BOSSES[m.boss] || !['public','private','join'].includes(m.kind)) {this.send(p,{t:'raid-cancelled',message:'Invalid raid or team.'});return true;}
     if(!this.capacity()) {this.send(p,{t:'raid-cancelled',message:'Raid capacity reached. Try again shortly.'});return true;}
     const entry={player:p,...spec,boss:m.boss,kind:m.kind,difficulty:RAID_DIFFICULTY[m.difficulty]?m.difficulty:'normal',code:randomBytes(3).toString('hex').toUpperCase(),at:Date.now()};

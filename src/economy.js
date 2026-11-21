@@ -99,3 +99,25 @@ export function walletAction(w,op,id,now){
 }
 export function walletView(w,now){rollover(w,now);const {receipts,...view}=w;return {...view,serverNow:now,resetAt:nextDaily(w.lastNow),weeklyResetAt:nextWeekly(w.lastNow)};}
 export const walletLoadout=w=>Object.fromEntries(Object.entries(w?.equipped??{}).flatMap(([kind,id])=>{const item=itemById(id);return item?.kind===kind&&w.owned.includes(id)?[[kind,item]]:[];}));
+
+// Wallets reach the page from localStorage or the network, so rebuild one from known fields before it is shown.
+// Mission text, art and targets come from the deterministic pool; only progress and claim state are kept from the save.
+// Returns null when the core fields are unusable (the caller then offers recovery).
+const nat=v=>Number.isSafeInteger(v)&&v>=0?v:0;
+const DATE=/^\d{4}-\d{2}-\d{2}$/;
+export function cleanWallet(w,pid){
+ if(!w||typeof w!=='object'||w.version!==1||w.pid!==pid||!Number.isSafeInteger(w.balance)||w.balance<0||!Array.isArray(w.owned)||!Array.isArray(w.history)||!w.equipped||typeof w.equipped!=='object')return null;
+ const owned=[...new Set(w.owned.filter(id=>typeof id==='string'&&itemById(id)))];
+ const equipped={};for(const [kind,id] of Object.entries(w.equipped)){const item=typeof id==='string'?itemById(id):null;if(item?.kind===kind&&owned.includes(id))equipped[kind]=id;}
+ const history=w.history.filter(t=>t&&typeof t.id==='string'&&Number.isSafeInteger(t.amount)&&typeof t.reason==='string'&&Number.isFinite(t.at)&&Math.abs(t.at)<=8.64e15).slice(0,ECONOMY.history).map(t=>({id:t.id.slice(0,120),amount:t.amount,reason:t.reason.slice(0,80),at:t.at}));
+ const receipts={};if(w.receipts&&typeof w.receipts==='object'&&!Array.isArray(w.receipts))for(const k of Object.keys(w.receipts))if(w.receipts[k])receipts[k]=1;
+ let day=null;const d=w.day;
+ if(d&&typeof d.key==='string'&&DATE.test(d.key)&&Array.isArray(d.missions)){
+  const saved=new Map(d.missions.filter(m=>m&&typeof m.id==='string').map(m=>[m.id,m]));
+  day={key:d.key,missions:missions(pid,d.key).map(m=>{const s=saved.get(m.id);return {...m,progress:Math.min(m.target,nat(s?.progress)),claimed:s?.claimed===true};}),bonus:d.bonus===true,firstWin:d.firstWin===true,streak:nat(d.streak),count:nat(d.count)};
+ }
+ const k=w.week,week=k&&typeof k.key==='string'&&DATE.test(k.key)?{key:k.key,wins:nat(k.wins),claimed:k.claimed===true,raid:k.raid===true}:null;
+ const out={version:1,pid,balance:w.balance,owned,equipped,history,receipts,wins:nat(w.wins),completed:nat(w.completed),day,week,lastNow:Number.isFinite(w.lastNow)?w.lastNow:0};
+ if(Number.isFinite(w.serverNow))out.serverNow=w.serverNow;
+ return out;
+}

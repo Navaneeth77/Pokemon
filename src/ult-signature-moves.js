@@ -17,7 +17,7 @@
 //   Flower Trick  – throws a rigged bouquet; never misses and always lands a critical hit.
 //   Salt Cure     – salt-cures the target, which keeps taking damage.
 // Visual only: no screen flashes or hit-pause (the feel of a hit stays the game's own).
-import { Effect, Glow, Ring, Beam, EnergyAura, ScreenDim, Spike, iceShatter, metalSparks, debris, dustCloud, waterSplash, leafBurst, electricBurst, rand } from './effects.js';
+import { Effect, Glow, Ring, Beam, EnergyAura, ScreenDim, Spike, iceShatter, metalSparks, debris, dustCloud, waterSplash, leafBurst, electricBurst, rand, emitCount } from './effects.js';
 import { glide, spray, inward } from './ult-choreo.js';
 import { confuse } from './effects-extra.js';
 import { BOUNDS } from './arena.js';
@@ -450,7 +450,7 @@ export const SIGNATURE_MOVE_ULTS = {
     let snowT = 0;
     a.ticks.push(dt => {
       if ((snowT += dt) > 3.3) return;
-      for (let k = 0; k < 5; k++) g.particles.spawn({ x: rand(BOUNDS.minX - 40, BOUNDS.maxX), y: rand(BOUNDS.minY - 40, BOUNDS.maxY), z: rand(120, 220),
+      for (let k = 0, kN = emitCount(a, 'ult-signature-moves453', 5, dt); k < kN; k++) g.particles.spawn({ x: rand(BOUNDS.minX - 40, BOUNDS.maxX), y: rand(BOUNDS.minY - 40, BOUNDS.maxY), z: rand(120, 220),
         vx: rand(60, 120), vy: rand(10, 40), vz: rand(-140, -90), gz: 0, life: rand(1.2, 1.8), size: rand(2, 4), sizeEnd: 1,
         colors: k % 2 ? ['#ffffff', '#c8f2ff'] : ['#c8f2ff', '#7ad8f0'] });
     });
@@ -490,7 +490,7 @@ export const SIGNATURE_MOVE_ULTS = {
       let blowT = 0, hitT = 0;
       a.ticks.push(dt => {
         if ((blowT += dt) > 1.5) return;
-        for (let k = 0; k < 10; k++) {
+        for (let k = 0, kN = emitCount(a, 'ult-signature-moves493', 10, dt); k < kN; k++) {
           const aa = ang + rand(-0.38, 0.38), sp = rand(380, 540);
           g.particles.spawn({ x: m.x, y: m.y, z: m.z, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, vz: rand(-30, 30), gz: 0, drag: 0.6,
             life: rand(0.5, 0.75), size: rand(2, 6), sizeEnd: 1, colors: ICE });
@@ -715,7 +715,7 @@ export const SIGNATURE_MOVE_ULTS = {
     a.ticks.push(dt => {
       if ((grow += dt) > 0.9) return;
       const r = 4 + grow * 16;
-      for (let k = 0; k < 3; k++) g.particles.spawn({ x: u.x + rand(-r, r) * 0.6, y: u.y, z: hz() + rand(0, r), vz: rand(30, 80), gz: -20, life: 0.35,
+      for (let k = 0, kN = emitCount(a, 'ult-signature-moves718', 3, dt); k < kN; k++) g.particles.spawn({ x: u.x + rand(-r, r) * 0.6, y: u.y, z: hz() + rand(0, r), vz: rand(30, 80), gz: -20, life: 0.35,
         size: rand(3, 6) + grow * 4, sizeEnd: 1, colors: FIRE });
     });
     a.later(0.95, () => {

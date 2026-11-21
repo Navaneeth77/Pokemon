@@ -185,14 +185,20 @@ sfx.reaction = id => {
 
 // Pokémon cries (public/cries/<dex>.mp3, from PokeAPI): heard when a Pokémon is sent out, and lower and
 // slower when it faints. Decoded once and kept.
-const cries = new Map();
+// A failed load is dropped (so it can retry, at most twice); a cry that arrives too late for its send-out is skipped.
+const cries = new Map(), cryFails = new Map();
 export function playCry(dex, { rate = 1, gain = 0.55 } = {}) {
-  if (!ac || !dex || muted) return;
+  if (!ac || !dex || muted || (cryFails.get(dex) ?? 0) >= 2) return;
   if (!cries.has(dex)) {
-    cries.set(dex, fetch(assetUrl(`/cries/${dex}.mp3`)).then(r => (r.ok ? r.arrayBuffer() : Promise.reject())).then(b => ac.decodeAudioData(b)).catch(() => null));
+    cries.set(dex, fetch(assetUrl(`/cries/${dex}.mp3`)).then(r => (r.ok ? r.arrayBuffer() : Promise.reject())).then(b => ac.decodeAudioData(b)).catch(() => {
+      cries.delete(dex);
+      cryFails.set(dex, (cryFails.get(dex) ?? 0) + 1);
+      return null;
+    }));
   }
+  const asked = ac.currentTime;
   cries.get(dex).then(buffer => {
-    if (!buffer || muted) return;
+    if (!buffer || muted || ac.currentTime - asked > 0.8) return;
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = buffer;
     src.playbackRate.value = rate;

@@ -563,7 +563,10 @@ export class Matchmaker {
     const ui = this.flow.ui;
     this.match = null;
     this.setState('idle');
-    ui.resultText.innerHTML = `<b>${m.winner ? `${esc(safeName(m.winner))} won the battle!` : 'The battle ended in a draw.'}</b><br>Thanks for watching.`;
+    // A server fault ends it as no contest for the players, so spectators are told the same (not a draw).
+    const headline = m.reason === 'error' ? 'No contest: the battle was stopped by a server problem.'
+      : m.winner ? `${esc(safeName(m.winner))} won the battle!` : 'The battle ended in a draw.';
+    ui.resultText.innerHTML = `<b>${headline}</b><br>Thanks for watching.`;
     $('#again-btn').textContent = 'Watch another';
     $('#again-btn').classList.remove('hidden');
     $('#leave-btn').textContent = 'Main Menu';
@@ -1091,7 +1094,7 @@ export class Matchmaker {
   // ── Result: always the server's ──
   onEnd(m) {
     this.flow.economy?.sync();
-    if(m.summary) saveSummary({...m.summary,id:m.id,result:m.result,verified:true});
+    if(m.summary && m.result !== 'noContest') saveSummary({...m.summary,id:m.id,result:m.result,verified:true});
     this.result = m;
     this.record = m.record;
     if (this.state !== 'battle') {
@@ -1129,7 +1132,7 @@ export class Matchmaker {
       return '<b>Battle over</b>Confirming the result with the match server…';
     }
     this.awaitingResult = false;
-    const title = r.result === 'win' ? '<b class="win">Victory!</b>' : r.result === 'loss' ? '<b class="lose">Defeat…</b>' : '<b>Draw</b>';
+    const title = r.result === 'win' ? '<b class="win">Victory!</b>' : r.result === 'loss' ? '<b class="lose">Defeat…</b>' : r.result === 'noContest' ? '<b>No contest</b>' : '<b>Draw</b>';
     const who = winner ? `<img class="win-mon" src="${winner.portrait.src}" alt="">${esc(winner.species.name)} wins the battle for ${esc(winner.trainer.name)}!<br>` : '';
     const why = {
       ko: { win: `${foe} is out of usable Pokémon.`, loss: 'All of your Pokémon fainted.' },
@@ -1137,7 +1140,7 @@ export class Matchmaker {
       forfeit: { win: `${foe} left the battle — you win by forfeit.`, loss: 'You left the battle.' },
       afk: { win: `${foe} stopped playing — you win.`, loss: 'You were inactive for too long.', draw: 'Both players were inactive.' },
       time: { win: "Time's up! You had more HP left.", loss: "Time's up! Your opponent had more HP left.", draw: "Time's up! It's dead even." },
-      error: { draw: 'The match server had a problem, so this match has no result.' },
+      error: { noContest: 'The match server had a problem, so this match has no result and your record is unchanged.', draw: 'The match server had a problem, so this match has no result.' },
       lost: { loss: 'Lost connection to the match server — the match counts as a forfeit.' },
     }[r.reason]?.[r.result] ?? '';
     const delta = r.delta ? ` (${r.delta > 0 ? '+' : ''}${r.delta})` : '';

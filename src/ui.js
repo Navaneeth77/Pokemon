@@ -6,7 +6,7 @@ import { TYPE_COLORS } from './data/types.js';
 import { SPECIES, ROSTER, isPlayable, normalizeTeam, OPPONENT_TEAM, CLASS_LABEL } from './data/species.js';
 
 const CAT = { physical: 'Physical', special: 'Special', status: 'Status' };
-import { ABILITIES } from './data/abilities.js';
+import { ABILITIES, abilityOf } from './data/abilities.js';
 import { isMuted, setMuted } from './audio.js';
 import { leaderTeam, leaderAi, leaderMega, leaderTrainer } from './leaders.js';
 import { ITEMS, ITEM_LIST, TERA_TYPES, cleanKit } from './data/items.js';
@@ -41,6 +41,17 @@ function moveLine(id) {
   const m = MOVES[id], [c1] = TYPE_COLORS[m.type];
   return `<li><b style="color:${c1}">${m.name}</b>${m.chargeable ? ' <em title="Hold to charge">⚡</em>' : ''}`
     + `<span>${m.ultimate ? (m.cat === 'physical' ? 'PHYSICAL' : 'SPECIAL') : powerOf(m)} · ${esc(m.tag)}</span></li>`;
+}
+
+// Saved teams come from localStorage, so rebuild each one from the fields the game uses (nothing else reaches the page).
+export function cleanSavedTeam(t) {
+  const ids = t.team.filter(id => typeof id === 'string');
+  const format = t.format === 6 || (t.format !== 3 && ids.length > 3) ? 6 : 3;
+  const team = normalizeTeam(ids, format);
+  const lead = Math.max(0, Math.min(team.length - 1, Number.isInteger(t.lead) ? t.lead : 0));
+  const mega = {};
+  if (t.mega && typeof t.mega === 'object') for (const id of team) { const v = t.mega[id]; if (typeof v === 'string' && SPECIES[id]?.mega?.includes(v)) mega[id] = v; }
+  return { name: t.name.slice(0, 40), format, team, lead, mega, rosterVersion: 1 };
 }
 
 export class UI {
@@ -592,7 +603,7 @@ export class UI {
     try {
       const list = JSON.parse(localStorage.getItem(TEAMS_KEY));
       if(!Array.isArray(list))return [];
-      const clean=list.filter(t=>t&&typeof t.name==='string'&&Array.isArray(t.team)).slice(0,20).map(t=>({...t,team:normalizeTeam(t.team,t.format===6||t.team.length>3?6:3),rosterVersion:1}));
+      const clean=list.filter(t=>t&&typeof t.name==='string'&&Array.isArray(t.team)).slice(0,20).map(cleanSavedTeam);
       if(JSON.stringify(clean)!==JSON.stringify(list)){
         if(!localStorage.getItem('msb.teams.pre-final-v1'))localStorage.setItem('msb.teams.pre-final-v1',JSON.stringify(list));
         this.storeTeams(clean);this.rosterMigrated=true;
@@ -1085,11 +1096,12 @@ export class UI {
       this.ult.btn.classList.toggle('locked', locked);
     }
 
-    const ab = p.species.ability, abKey = `${p.species.id}|${ab}`;
+    // The ability in effect right now: Trace's copy, a Mega's own, or none while Neutralizing Gas or
+    // Gastro Acid has it switched off (abilityOf), not just the species' usual one.
+    const a = abilityOf(p), abKey = `${p.species.id}|${a.id ?? 'none'}`;
     if (abKey !== this.abilityLast) {
       this.abilityLast = abKey;
-      const a = ABILITIES[ab];
-      this.abilityBox.innerHTML = `<b>${a.name}</b><span>${esc(a.desc)}</span>`;
+      this.abilityBox.innerHTML = a.id ? `<b>${esc(a.name)}</b><span>${esc(a.desc)}</span>` : '<b>No ability</b><span>Its ability is not working right now.</span>';
     }
 
     // The M button: Mega Evolution for Pokémon with a Mega form, Terastallization for everyone else.

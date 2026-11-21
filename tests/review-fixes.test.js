@@ -131,10 +131,12 @@ test('F03: a wallet save that fails is not reported as committed', async () => {
   await store.committed(pid);
 });
 
-test('F03: the journal file is fsynced and reloads after a restart', () => {
+test('F03: the journal file is fsynced and reloads after a restart', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'economy-durable-')), file = path.join(dir, 'economy.json');
   const pid = 'wallet-durable-test', secret = 'f'.repeat(64);
-  new EconomyStore(file).request(pid, secret, 'view');
+  const store = new EconomyStore(file);
+  store.request(pid, secret, 'view');
+  await store.committed(pid); // the journal line is on disk (fsynced) once this resolves
   const again = new EconomyStore(file);
   assert.ok(again.authenticated(pid, secret));
 });

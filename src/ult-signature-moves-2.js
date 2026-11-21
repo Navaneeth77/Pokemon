@@ -2,7 +2,7 @@
 // briefly above each). Legendary and Mythical Pokémon get a whole-arena set piece. Visual only: no screen
 // flashes or hit-pause.
 import { Effect, Glow, Ring, Beam, BeamLine, EnergyAura, ScreenDim, Spike, Lightning, StormCloud, StormSwirl, ClawSlash, FangBite, SlashArc,
-  Afterimage, Pillar, iceShatter, metalSparks, debris, dustCloud, waterSplash, leafBurst, electricBurst, rand } from './effects.js';
+  Afterimage, Pillar, iceShatter, metalSparks, debris, dustCloud, waterSplash, leafBurst, electricBurst, rand, emitCount } from './effects.js';
 import { glide, spray, inward } from './ult-choreo.js';
 import { AeroblastBeam } from './raid-art.js';
 import { BOUNDS } from './arena.js';
@@ -383,7 +383,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
     let tt = 0;
     a.ticks.push(dt => {
       if ((tt += dt) > 1.1) return;
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0, kN = emitCount(a, 'ult-signature-moves-2386', 4, dt); k < kN; k++) {
         const ang = tt * 10 + k * TAU / 4, r = u.radius + 10;
         g.particles.spawn({ x: u.x + Math.cos(ang) * r, y: u.y + Math.sin(ang) * r * 0.5, z: tt * 30, vx: -Math.sin(ang) * 70, vy: Math.cos(ang) * 35, vz: rand(50, 90), gz: 0, life: 0.45, size: rand(2, 4), sizeEnd: 1, colors: WATER });
       }
@@ -449,7 +449,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
     a.ticks.push(dt => {
       if ((sp += dt) > 1.1) return;
       const m = a.mouth();
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0, kN = emitCount(a, 'ult-signature-moves-2452', 4, dt); k < kN; k++) {
         const ang = sp * 12 + k * TAU / 4, r = 90 * (1 - (sp % 0.35) / 0.35) + 10;
         g.particles.spawn({ x: m.x + Math.cos(ang) * r, y: m.y + Math.sin(ang) * r * 0.5, z: m.z, vx: -Math.cos(ang) * 160, vy: -Math.sin(ang) * 80, vz: 0, gz: 0, life: 0.3, size: rand(2, 4), sizeEnd: 1, colors: ['#ffffff', '#c8d8ff'] });
       }
@@ -626,7 +626,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
       let tt = 0, hit = 0;
       a.ticks.push(dt => {
         if ((tt += dt) > 1.9) return;
-        for (let k = 0; k < 9; k++) {
+        for (let k = 0, kN = emitCount(a, 'ult-signature-moves-2629', 9, dt); k < kN; k++) {
           const h = rand(0, 110), ang = tt * 9 + rand(0, TAU), r = 10 + h * 0.32;
           g.particles.spawn({ x: t.x + Math.cos(ang) * r, y: t.y + Math.sin(ang) * r * 0.45, z: h, vx: -Math.sin(ang) * 60, vy: Math.cos(ang) * 30, vz: rand(60, 120), gz: 0,
             life: rand(0.3, 0.5), size: rand(3, 7), sizeEnd: 1, colors: FIRE });
@@ -825,7 +825,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
     let tt = 0;
     a.ticks.push(dt => {
       if ((tt += dt) > 1.3 || tt < 0.3) return;
-      for (let k = 0; k < 3; k++) {
+      for (let k = 0, kN = emitCount(a, 'ult-signature-moves-2828', 3, dt); k < kN; k++) {
         const ang = tt * 14 + k * TAU / 3, r = u.radius + 14;
         g.particles.spawn({ x: u.x + Math.cos(ang) * r, y: u.y + Math.sin(ang) * r * 0.5, z: u.bodyZ + Math.sin(ang * 2) * 6, vx: -Math.sin(ang) * 80, vy: Math.cos(ang) * 40, vz: 0, gz: 0,
           life: 0.3, size: rand(3, 5), sizeEnd: 1, colors: ['#ffffff', '#c8d0d8', '#6a7480'] });
@@ -1049,7 +1049,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
       a.ticks.push(dt => {
         if ((tt += dt) > 0.45) return;
         g.spawn(new Afterimage(u, 0.35, '#5ad0e8'));
-        for (let k = 0; k < 4; k++) g.particles.spawn({ x: u.x + rand(-u.radius, u.radius), y: u.y, z: rand(0, 10), vx: rand(-40, 40), vy: rand(-30, 30), vz: rand(40, 100), life: 0.45, size: rand(2, 4), sizeEnd: 1, colors: SPIRIT });
+        for (let k = 0, kN = emitCount(a, 'ult-signature-moves-21052', 4, dt); k < kN; k++) g.particles.spawn({ x: u.x + rand(-u.radius, u.radius), y: u.y, z: rand(0, 10), vx: rand(-40, 40), vy: rand(-30, 30), vz: rand(40, 100), life: 0.45, size: rand(2, 4), sizeEnd: 1, colors: SPIRIT });
       });
       glide(a, g, u, past, 0.35, '#5ad0e8');
       a.later(0.26, () => {
@@ -1115,7 +1115,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
       a.ticks.push(dt => {
         if ((tt += dt) > 1.1) return;
         const ang = u.aimAt(t);
-        for (let k = 0; k < 7; k++) {
+        for (let k = 0, kN = emitCount(a, 'ult-signature-moves-21118', 7, dt); k < kN; k++) {
           const aa = ang + rand(-0.15, 0.15) + Math.sin(tt * 18) * 0.12, sp = rand(400, 480);
           g.particles.spawn({ x: m.x, y: m.y, z: m.z, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, vz: rand(-10, 20), gz: 0, drag: 0.3, life: 0.6, size: rand(4, 8), sizeEnd: 1, colors: FIRE });
         }
@@ -1304,7 +1304,7 @@ export const SIGNATURE_MOVE_ULTS_2 = {
     let tt = 0;
     a.ticks.push(dt => {
       if ((tt += dt) > 0.9) return;
-      for (let k = 0; k < 3; k++) g.particles.spawn({ x: u.x + rand(-u.radius, u.radius), y: u.y + rand(-4, 4), z: rand(0, u.bodyZ * 1.5), vx: rand(-15, 15), vz: rand(60, 120), gz: -30,
+      for (let k = 0, kN = emitCount(a, 'ult-signature-moves-21307', 3, dt); k < kN; k++) g.particles.spawn({ x: u.x + rand(-u.radius, u.radius), y: u.y + rand(-4, 4), z: rand(0, u.bodyZ * 1.5), vx: rand(-15, 15), vz: rand(60, 120), gz: -30,
         life: rand(0.35, 0.55), size: rand(3, 6), sizeEnd: 1, colors: RAGE.slice(1) });
       if (Math.random() < 0.2) g.shake(2, 0.1);
     });
@@ -1549,7 +1549,7 @@ function stormSetPiece(a, g, u, t, { dim, aura, rings, gust, swirl, clouds, hear
   let tt = 0, hit = 0, k = 0;
   a.later(0.8, () => a.ticks.push(dt => {
     if ((tt += dt) > 1.9) return;
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0, iN = emitCount(a, 'ult-signature-moves-21552', 7, dt); i < iN; i++) {
       const ang = tt * 10 + rand(0, TAU), r = rand(16, 60), h = rand(0, 90);
       const { colors } = gust(i);
       g.particles.spawn({ x: t.x + Math.cos(ang) * r, y: t.y + Math.sin(ang) * r * 0.45, z: h, vx: -Math.sin(ang) * 160, vy: Math.cos(ang) * 70, vz: rand(20, 70), gz: 0, life: 0.4, size: rand(2, 5), sizeEnd: 1, colors });

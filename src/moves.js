@@ -28,7 +28,7 @@ import { FAV_ULTS_2 } from './ult-favs2.js';
 import { SPECIES_ULTIMATES } from './ult-species.js';
 import { SIGNATURE_MOVE_ULTS } from './ult-signature-moves.js';
 import { SIGNATURE_MOVE_ULTS_2 } from './ult-signature-moves-2.js';
-import {
+import { perFrame, emitCount,
   Effect, ItemFly, UltimateImpact, FIRE, flameColors, rand, Glow, ClawSlash, Spike, Falling, sparkBurst, FangBite, Beam, Telegraph, FloatText, Ring, Lightning, BeamLine, SlashArc,
   Afterimage, GroundMarker, StormCloud, StormSwirl, Pillar, EnergyAura, ScreenDim, RainbowStreak, waterSplash, iceShatter, dustCloud, electricBurst, leafBurst,
   debris, windBurst, metalSparks, Missile, TidalWave, Tether, FloatingRock, PsyDome,
@@ -576,6 +576,8 @@ class Shot extends MoveAction {
       ? new Orb(this.game, this.user, this.move, m.x, m.y, m.z, ang, style, i)
       : new AirBlade(this.game, this.user, this.move, m.x, m.y, m.z, ang));
     // A split volley: the shots share one hit (one added effect) and each carries a part of it.
+    // All shots of one cast count as one dodge (DODGED! and its ultimate charge once).
+    projectile.volley = (this.dodgeVolley ??= {});
     if (c.part) Object.assign(projectile, { part: 1 / (c.spread?.length ?? 1), stack: (this.volleyStack ??= {}) });
     // A full-power volley still pays its own stat changes once per cast.
     else if (c.spread?.length > 1 && this.move.dex?.selfBoosts) projectile.afterStack = this.stack;
@@ -955,13 +957,13 @@ class Thunderbolt extends MoveAction {
     if (!this.struck) this.retarget((this.move.targeting?.track ?? 4) * dt);
     if (!this.charging) return;
     const u = this.user, g = this.game;
-    if (Math.random() < 0.7) {
+    if (perFrame(0.7, dt)) {
       g.particles.spawn({
         x: u.x + rand(-u.radius, u.radius), y: u.y + rand(-4, 4), z: rand(2, u.headZ), vx: rand(-30, 30), vz: rand(-30, 30),
         life: 0.15, size: 1.5, colors: ['#ffffff', '#fff27a'],
       });
     }
-    if (Math.random() < 0.45) {
+    if (perFrame(0.45, dt)) {
       const z = u.bodyZ, a0 = rand(0, Math.PI * 2), a1 = a0 + rand(1.2, 2.6), r = u.radius + 3;
       g.spawn(new Lightning(u.x + Math.cos(a0) * r, u.y - z + Math.sin(a0) * r * 0.7, u.x + Math.cos(a1) * r, u.y - z + Math.sin(a1) * r * 0.7, 0.08, { width: 1, branches: 0 }));
     }
@@ -1090,7 +1092,7 @@ class DragonAscent extends MoveAction {
       this.riseT += dt;
       const k = Math.min(1, this.riseT / 0.42);
       u.zOverride = this.z0 + (H - this.z0) * k * k;
-      for (let i = 0; i < 3; i++) {
+      for (let i = emitCount(this, 'rise', 3, dt); i > 0; i--) {
         g.particles.spawn({
           x: u.x + rand(-10, 10), y: u.y, z: Math.max(0, u.z - rand(0, 30)), vz: -rand(80, 160),
           life: 0.45, size: rand(2, 4), sizeEnd: 1, colors: this.fire,
@@ -1241,7 +1243,7 @@ class Waterfall extends MoveAction {
     const u = this.user, g = this.game;
     if (this.rearing) {
       this.retarget(3 * dt);
-      if (Math.random() < 0.8) {
+      if (perFrame(0.8, dt)) {
         const a = rand(0, Math.PI * 2);
         g.particles.spawn({
           x: u.x + Math.cos(a) * rand(10, 22), y: u.y + Math.sin(a) * rand(5, 10), z: 0, vz: rand(60, 120), gz: 120,
@@ -1251,7 +1253,7 @@ class Waterfall extends MoveAction {
     }
     if (this.surging) {
       this.lungeStep(dt);
-      for (let i = 0; i < 2; i++) {
+      for (let i = emitCount(this, 'surge', 2, dt); i > 0; i--) {
         g.particles.spawn({
           x: u.x + rand(-8, 8), y: u.y + rand(-4, 4), z: rand(4, 30), vx: rand(-20, 20), vy: rand(-20, 20), vz: rand(20, 60),
           gz: 300, life: 0.4, size: rand(2, 4), colors: ['#ffffff', '#bfe6ff', '#5aa6f0'],
@@ -1291,7 +1293,7 @@ class IceFang extends MoveAction {
     if (this.windup) {
       this.retarget(3 * dt);
       const m = this.mouth();
-      if (Math.random() < 0.7) {
+      if (perFrame(0.7, dt)) {
         this.game.particles.spawn({
           x: m.x + rand(-8, 8), y: m.y + rand(-4, 4), z: m.z + rand(-6, 6), vz: rand(-10, 10),
           life: 0.3, size: 2, colors: ['#ffffff', '#bdf3ff'],
@@ -1476,7 +1478,7 @@ class TwoTurn extends MoveAction {
       this.retarget();
       u.x = clampX(u.x + Math.cos(this.aim) * step);
       u.y = clampY(u.y + Math.sin(this.aim) * step);
-      if (Math.random() < 0.7) g.particles.spawn({ x: u.x + rand(-6, 6), y: u.y + rand(-3, 3), z: 1, vx: rand(-20, 20), vz: rand(30, 70), gz: 300, life: 0.4, size: rand(2, 3.5), colors: ['#c8a878', '#8a6a48'] });
+      if (perFrame(0.7, dt)) g.particles.spawn({ x: u.x + rand(-6, 6), y: u.y + rand(-3, 3), z: 1, vx: rand(-20, 20), vz: rand(30, 70), gz: 300, life: 0.4, size: rand(2, 3.5), colors: ['#c8a878', '#8a6a48'] });
     }
     if (this.mode === 'charge' || this.mode === 'focus') {
       this.retarget(3 * dt);
@@ -1597,7 +1599,7 @@ function tkStep(action, dt) {
   m.zOverride = tk.from.z * (1 - k) + tk.height * 4 * k * (1 - k) + (tk.to.z ?? 0) * k;
   m.flash = 0.55;
   m.flashColor = tk.color ?? '#ff9fe0';
-  if (Math.random() < 0.8) {
+  if (perFrame(0.8, dt)) {
     action.game.particles.spawn({ x: m.x + rand(-m.radius, m.radius), y: m.y, z: m.z + rand(0, m.species.headZ), vz: rand(-20, 20), life: 0.3, size: 2, colors: tk.colors ?? ['#ffffff', '#ffb0e0', '#c060ff'] });
   }
   if (k < 1) return;
@@ -1809,7 +1811,7 @@ const ULTS = {
     a.markT = 0;
     a.onTick = dt => {
       if (wave.age >= wave.life) return;
-      for (let i = 0; i < 6; i++) {
+      for (let i = emitCount(a, 'wave', 6, dt); i > 0; i--) {
         g.particles.spawn({ x: rand(0, 360), y: wave.y, z: rand(0, 14), vx: rand(-20, 20), vy: (down ? 1 : -1) * rand(40, 90), vz: rand(40, 120), gz: 300, life: 0.5, size: rand(2, 4), colors: ['#ffffff', '#bfe6ff', '#5aa6f0'] });
       }
       if ((a.markT -= dt) <= 0) {
@@ -1834,7 +1836,7 @@ const ULTS = {
     a.frostT = 0;
     a.onTick = dt => {
       if (a.t > 1.8) return;
-      for (let i = 0; i < 8; i++) {
+      for (let i = emitCount(a, 'snow', 8, dt); i > 0; i--) {
         g.particles.spawn({ x: rand(-40, 360), y: rand(60, 640), z: rand(4, 50), vx: rand(160, 260), vy: rand(30, 70), life: rand(0.3, 0.5), size: rand(1.5, 3), colors: ['#ffffff', '#e2f7ff', '#a6e6ff'] });
       }
       if ((a.frostT -= dt) <= 0) {
@@ -2424,7 +2426,7 @@ const BEATS = {
     g.spawn(new Glow(t.x, t.y, t.bodyZ, 50, P.rgb, dur, true));
     a.ticks.push(dt => {
       if ((left -= dt) <= 0) return;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0, iN = emitCount(a, 'moves2429', 3, dt); i < iN; i++) {
         const ang = rand(0, Math.PI * 2), r = rand(50, 90), x = t.x + Math.cos(ang) * r, y = t.y + Math.sin(ang) * r * 0.6;
         g.particles.spawn({ x, y, z: rand(4, 40), vx: (t.x - x) / 0.4, vy: (t.y - y) / 0.4, life: 0.4, size: rand(2, 4), sizeEnd: 1, colors: P.c, fade: false });
       }

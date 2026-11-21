@@ -18,6 +18,15 @@ function writeDurably(file, text, flags) {
     fs.closeSync(fd);
   }
 }
+// The same, without blocking the match server's thread (battles keep running while the disk works).
+async function appendDurably(file, text) {
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  let fresh = false;
+  try { await fs.promises.access(file); } catch { fresh = true; }
+  const fh = await fs.promises.open(file, 'a', 0o600);
+  try { await fh.writeFile(text); await fh.sync(); } finally { await fh.close(); }
+  if (fresh) { let dir; try { dir = await fs.promises.open(path.dirname(file), 'r'); await dir.sync(); } catch { /* unsupported here */ } finally { await dir?.close(); } }
+}
 // A new or renamed file is only durable once its directory entry is synced too (best effort: not every
 // platform allows opening a directory).
 function syncDir(dir) {
@@ -102,11 +111,10 @@ export class EconomyStore {
     let done;
     if (this.sink) done = Promise.resolve(this.sink(pid, record));
     else {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      const fresh = !fs.existsSync(this.file);
-      writeDurably(this.file, `${JSON.stringify({ pid, ...record })}\n`, 'a');
-      if (fresh) syncDir(path.dirname(this.file));
-      done = Promise.resolve();
+      // Journal lines are appended in order, one at a time, off the main thread; like the Redis sink, a
+      // player is only told a change succeeded once `committed(pid)` sees its line on disk.
+      const line = `${JSON.stringify({ pid, ...record })}\n`;
+      done = this.journal = (this.journal ?? Promise.resolve()).catch(() => {}).then(() => appendDurably(this.file, line));
     }
     this.data.players[pid] = record;
     this.commits.set(pid, done);

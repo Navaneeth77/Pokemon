@@ -60,11 +60,12 @@ test('purchases validate price and ownership, never go negative, and equipment r
  walletAction(w,'equip','frame-amethyst',now);assert.equal(walletLoadout(w).frame.id,'frame-amethyst');walletAction(w,'unequip','frame-amethyst',now);assert.equal(walletLoadout(w).frame,undefined);
  assert.throws(()=>walletAction(w,'grant',10000,now));assert.equal(walletView(w,now).receipts,undefined);
 });
-test('server ledger persists confirmed transactions and rejects other credentials and arbitrary award operations',()=>{
+test('server ledger persists confirmed transactions and rejects other credentials and arbitrary award operations',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'chaos-wallet-'));try{
   const file=path.join(dir,'economy.json'),store=new EconomyStore(file);store.request(pid,secret,'view',null,now);
   assert.equal(store.award({pid,economyAuthenticated:true},summary(),now),true);assert.equal(store.award({pid,economyAuthenticated:true},summary(),now),false);
   assert.equal(store.award({pid,economyAuthenticated:false},summary('forged'),now),false);
+  await store.committed(pid); // journal lines land asynchronously; success is reported only after this
   const saved=fs.readFileSync(file,'utf8');assert.ok(!saved.includes(secret));const reload=new EconomyStore(file);assert.equal(reload.request(pid,secret,'view',null,now).balance,90);
   assert.throws(()=>reload.request(pid,'b'.repeat(64),'view',null,now));assert.throws(()=>reload.request(pid,secret,'award',90000,now));assert.equal(reload.request(pid,secret,'view',null,now).balance,90);
   fs.writeFileSync(file,'broken');const broken=new EconomyStore(file);assert.throws(()=>broken.request(pid,secret,'view',null,now));assert.equal(fs.readFileSync(file,'utf8'),'broken');
@@ -97,12 +98,12 @@ test('timeouts retain cached online funds and corrupt local saves are never over
  }finally{globalThis.localStorage=storage;globalThis.fetch=fetchBefore;}
 });
 
-test('wallet journal: a first-version save without a trailing newline and a torn last line both recover', () => {
+test('wallet journal: a first-version save without a trailing newline and a torn last line both recover', async () => {
  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'economy-journal-')), file = path.join(dir, 'economy.json'), secret = 'c'.repeat(64), now = Date.UTC(2026, 9, 25, 12);
- const first = new EconomyStore(file); first.request('legacy-player-1', secret, 'view', null, now);
+ const first = new EconomyStore(file); first.request('legacy-player-1', secret, 'view', null, now); await first.committed('legacy-player-1');
  fs.writeFileSync(file, JSON.stringify({ version: 1, players: first.data.players })); // the old single-line format
  const upgraded = new EconomyStore(file); assert.equal(upgraded.error, null);
- upgraded.request('second-player-2', 'd'.repeat(64), 'view', null, now); // appends after the rewrite
+ upgraded.request('second-player-2', 'd'.repeat(64), 'view', null, now); await upgraded.committed('second-player-2'); // appends after the rewrite
  const reloaded = new EconomyStore(file); assert.equal(reloaded.error, null); assert.ok(reloaded.data.players['legacy-player-1'] && reloaded.data.players['second-player-2']);
  fs.appendFileSync(file, '{"pid":"torn-player-3","creden'); // a crash in the middle of a write
  const recovered = new EconomyStore(file); assert.equal(recovered.error, null); assert.ok(recovered.data.players['second-player-2']);

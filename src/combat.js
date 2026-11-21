@@ -3,7 +3,7 @@ import { roleDamage } from './roles.js';
 import { abilityOf, isContact, isPunch, typesOf } from './data/abilities.js';
 import { itemOf } from './data/items.js';
 import { stageOf, damageStageMult } from './stats.js';
-import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse, beforeHit, moveCategory, counterHit, crashOnMiss } from './effects-resolver.js';
+import { movePower, fixedDamage, attackStatOf, typeTweak, onHit, afterUse, beforeHit, moveCategory, counterHit, crashOnMiss, hasAddedEffect } from './effects-resolver.js';
 import { screenMult } from './field.js';
 import { DamageNumber, FloatText, Ring, sparkBurst, rand } from './effects.js';
 import { applyStatus, TYPE_STATUS, buffMult, wakeOnHit } from './status.js';
@@ -48,6 +48,33 @@ function terrainMult(game, type, attacker, target, move) {
   return grounded(attacker) && type === { electric: 'electric', grassy: 'grass', psychic: 'psychic' }[t] ? 1.3 : 1;
 }
 
+// Distance from (x, y) to the segment from (ax, ay) to (bx, by).
+export function segmentDist(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const k = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+  return Math.hypot(x - ax - dx * k, y - ay - dy * k);
+}
+// The point on that segment closest to (x, y): where a swept shot touched its target.
+export function segmentClosest(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const k = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+  return { x: ax + dx * k, y: ay + dy * k };
+}
+
+// A dodge (its invulnerable frames) avoids a hit unless the move is unblockable or either side has No Guard.
+// The first dodged hit of a move use (one `stack`) shows DODGED!, gives ultimate charge and runs onDodged.
+export function dodgesHit(game, attacker, target, o = {}, stack = {}) {
+  const Dfull = abilityOf(target);
+  if (!(target.dodgeInv > 0) || o.unblockable || abilityOf(attacker).noGuard || Dfull.noGuard) return false;
+  if (!stack.dodged) {
+    stack.dodged = true;
+    game.spawn(new FloatText(target.x, target.y - target.headZ - 10, 'DODGED!', '#bff3ff'));
+    target.gainUlt(game, 3);
+    Dfull.onDodged?.(game, target, attacker);
+  }
+  return true;
+}
+
 // Applies one hit of `move` and all of its feedback. `o.stack` groups the ticks of a multi-hit move
 // so they share one damage popup, one status roll, one combo-chain check and capped ultimate charge.
 export function applyHit(game, attacker, target, move, o = {}) {
@@ -56,15 +83,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const A = abilityOf(attacker), Dfull = abilityOf(target), D = A.moldBreaker ? {} : Dfull;
   const I = itemOf(attacker) ?? {}, J = itemOf(target) ?? {};
   const head = target.y - target.headZ;
-  if (target.dodgeInv > 0 && !o.unblockable && !A.noGuard && !Dfull.noGuard) {
-    if (!stack.dodged) {
-      stack.dodged = true;
-      game.spawn(new FloatText(target.x, head - 10, 'DODGED!', '#bff3ff'));
-      target.gainUlt(game, 3);
-      Dfull.onDodged?.(game, target, attacker);
-    }
-    return false;
-  }
+  if (dodgesHit(game, attacker, target, o, stack)) return false;
 
   // King's Shield / Quick Guard: most of the hit is blocked; contact against King's Shield saps attack.
   const guard = !o.unblockable && !(A.unseenFist && isContact(move)) && target.guard;
@@ -127,7 +146,7 @@ export function applyHit(game, attacker, target, move, o = {}) {
   const crit = !(game.sides?.[target.side]?.luckyChant > 0) && (attacker.laserFocus > 0 || !D.noCrit && Math.random() < (o.critChance ?? 0.06) + (A.crit?.(move, target) ?? 0) + (I.crit?.() ?? 0) + (move.critRatio > 1 ? 0.12 * (move.critRatio - 1) : 0) + (attacker.focusEnergy ? 0.24 : 0));
   if (attacker.laserFocus > 0) attacker.laserFocus = 0;
   // Sheer Force: moves with an added effect hit harder and lose the effect.
-  const sheer = !!(A.sheerForce && (move.status || move.debuff || move.statusPool || move.selfBuff || o.burnChance || o.freezeChance || o.flinchChance));
+  const sheer = !!A.sheerForce && hasAddedEffect(move, o);
   const power = o.power ?? movePower(game, attacker, target, move);
   // Foul Play turns the target's own attack against it.
   const atkSrc = move.foul ? target : attacker;

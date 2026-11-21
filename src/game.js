@@ -18,7 +18,7 @@ import { comboRole, soften, grounded } from './combat.js';
 import { typeMultiplier } from './data/types.js';
 import { Showcase, Finale } from './cinema.js';
 import { outlinedText } from './draw.js';
-import { loadSpecies, measureDims, SHINY_FORMS } from './assets.js';
+import { loadSpecies, measureDims, SHINY_FORMS, decodedBytes, releaseSprite } from './assets.js';
 import { WINGS } from './data/wings.js';
 import { addFlapAnim } from './flap.js';
 import { TYPE_COLORS } from './data/types.js';
@@ -33,7 +33,7 @@ import { Hud } from './hud.js';
 import {
   ItemFly,
   ParticleSystem, DamageNumber, FloatText, FIRE, rand, dustCloud, sendOutBurst, Telegraph, TidalWave, Lightning, leafBurst,
-  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble, ShinySparkle } from './effects.js';
+  ThrownBall, MegaAura, RainbowStreak, MegaEmblem, rainbowBurst, BeamLine, WindStreaks, Ring, Glow, Pillar, iceShatter, electricBurst, waterSplash, AbilityFlare, TeraBurst, SpeechBubble, ShinySparkle, emitCount } from './effects.js';
 import { initAudio, sfx, playCry } from './audio.js';
 import { EMOTES } from './social.js';
 import { music, ARENA_TRACK, RAID_TRACKS } from './music.js';
@@ -71,6 +71,18 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const NOT_COPYABLE = new Set(['copy', 'copycat', 'kingsShield', 'sleepTalk']);
 
 // Perpendicular distance from (px, py) to a ray; Infinity when outside it.
+// Whether two beams overlap: the gap between their centre segments is within their half-widths combined.
+export function beamsMeet(ua, a, ub, b) {
+  const seg = (u, act) => [u.x, u.y, u.x + Math.cos(act.aim) * act.move.range, u.y + Math.sin(act.aim) * act.move.range];
+  const [ax, ay, bx, by] = seg(ua, a), [cx, cy, dx, dy] = seg(ub, b);
+  const d = (px, py, x0, y0, x1, y1) => { const vx = x1 - x0, vy = y1 - y0, l2 = vx * vx + vy * vy, k = l2 ? Math.max(0, Math.min(1, ((px - x0) * vx + (py - y0) * vy) / l2)) : 0; return Math.hypot(px - x0 - vx * k, py - y0 - vy * k); };
+  const cross = (x0, y0, x1, y1, x2, y2) => (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
+  const crosses = Math.sign(cross(ax, ay, bx, by, cx, cy)) !== Math.sign(cross(ax, ay, bx, by, dx, dy)) && Math.sign(cross(cx, cy, dx, dy, ax, ay)) !== Math.sign(cross(cx, cy, dx, dy, bx, by));
+  const gap = crosses ? 0 : Math.min(d(ax, ay, cx, cy, dx, dy), d(bx, by, cx, cy, dx, dy), d(cx, cy, ax, ay, bx, by), d(dx, dy, ax, ay, bx, by));
+  const w = act => Number.isFinite(act.move.beam.width) ? act.move.beam.width : 10;
+  return gap <= w(a) + w(b);
+}
+
 function rayDist(px, py, x0, y0, ang, len) {
   const dx = px - x0, dy = py - y0, along = dx * Math.cos(ang) + dy * Math.sin(ang);
   if (along < 0 || along > len) return Infinity;
@@ -83,6 +95,9 @@ function setPower(p, power, extra) {
 }
 
 // Sizes for species without hand-tuned dimensions, and procedural wing flaps, once their sheets load.
+// The title screen's Pokémon (opening.js): loaded at startup and never trimmed.
+export const TITLE_SPRITES = ['rayquaza', 'charizard', 'pikachu', 'eevee', 'bidoof'];
+
 export function prepareSprites(sprites, ids) {
   for (const s of Object.values(SPECIES)) {
     if (s.bodyZ == null && ids.includes(s.sprite) && sprites[s.sprite]) Object.assign(s, measureDims(sprites[s.sprite]));
@@ -134,7 +149,7 @@ export class Game {
 
   // Mega Rayquaza's Delta Stream: strong winds while it is out on the field.
   get deltaStream() {
-    return [this.player, this.opponent].some(m => m.species.ability === 'deltaStream' && m.alive && !m.hidden);
+    return [this.player, this.opponent].some(m => m?.alive && !m.hidden && abilityOf(m).id === 'deltaStream'); // its effective ability (suppression counts)
   }
 
   teamOf(mon) {
@@ -221,10 +236,47 @@ export class Game {
     const shinyIds = ids.filter(id => SPECIES[id] && (this.kits?.[id]?.shiny || this.foeKits?.[id]?.shiny));
     const megas = shinyIds.flatMap(id => SPECIES[id].mega ?? []).map(f => SPECIES[f]?.sprite).filter(sp => SHINY_FORMS.has(sp));
     const shiny = [...shinyIds.map(id => SPECIES[id].sprite), ...megas].map(sp => `${sp}~shiny`);
-    const need = [...new Set([...spritesFor(ids), ...shiny, ...bossSpritesFor(bossId)])].filter(k => !this.sprites[k]);
+    const keys = [...new Set([...spritesFor(ids), ...shiny, ...bossSpritesFor(bossId)])];
+    // Most recently wanted sets are kept longest when memory is trimmed (trimSprites).
+    this.spriteUse ??= new Map();
+    this.spriteTick ??= 0;
+    for (const k of keys) this.spriteUse.set(k, ++this.spriteTick);
+    const need = keys.filter(k => !this.sprites[k]);
+    // Trimmed on every call, before and after loading: a cache hit can still change which teams are pinned,
+    // and a finished load can take the total over the budget.
+    this.trimSprites(keys);
     if (!need.length) return;
-    Object.assign(this.sprites, await loadSpecies(need));
-    prepareSprites(this.sprites, need);
+    // A set already on its way (another caller asked first) is waited for, not loaded and prepared twice.
+    this.spriteLoads ??= new Map();
+    const fresh = need.filter(k => !this.spriteLoads.has(k));
+    if (fresh.length) {
+      const p = loadSpecies(fresh).then(sets => { Object.assign(this.sprites, sets); prepareSprites(this.sprites, fresh); })
+        .finally(() => { for (const k of fresh) if (this.spriteLoads.get(k) === p) this.spriteLoads.delete(k); });
+      for (const k of fresh) this.spriteLoads.set(k, p);
+    }
+    await Promise.all([...new Set(need.map(k => this.spriteLoads.get(k)).filter(Boolean))]);
+    this.trimSprites(keys);
+  }
+
+  // Keeps decoded sprite sheets under a memory budget: once over it, the sets wanted least recently are
+  // released (from this table and the loaders' caches), never the ones being asked for now, the teams
+  // currently picked or the title screen's. Live Pokémon keep their own references, so nothing on screen breaks.
+  trimSprites(keep = []) {
+    const BUDGET = 320 * 2 ** 20;
+    const pinned = new Set([...keep, ...TITLE_SPRITES, ...spritesFor([...(this.selection ?? []), ...(this.opponentSelection ?? [])])]);
+    for (const k of [...pinned]) pinned.add(`${k}~shiny`);
+    for (const mon of [this.player, this.opponent]) if (mon?.species) pinned.add(mon.species.sprite);
+    const sizes = Object.entries(this.sprites).map(([k, set]) => [k, decodedBytes(set)]);
+    let total = sizes.reduce((n, [, b]) => n + b, 0);
+    if (total <= BUDGET) return;
+    const victims = sizes.filter(([k]) => !pinned.has(k)).sort(([a], [b]) => (this.spriteUse?.get(a) ?? 0) - (this.spriteUse?.get(b) ?? 0));
+    for (const [k, b] of victims) {
+      if (total <= BUDGET) break;
+      delete this.sprites[k];
+      this.spriteUse?.delete(k);
+      releaseSprite(k);
+      total -= b;
+    }
   }
 
   later(delay, fn) {
@@ -959,7 +1011,7 @@ export class Game {
   updateUltCutscene(dt) {
     const c = this.cinematic, m = c.mon, [c1] = this.ultColors(c);
     c.t += dt;
-    for (let i = 0; i < 3; i++) {
+    for (let i = emitCount(c, 'gather', 3, dt); i > 0; i--) {
       const a = rand(0, Math.PI * 2), r = rand(30, 60), life = 0.35;
       const x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r * 0.6, z = m.bodyZ + rand(-14, 14);
       this.particles.spawn({ x, y, z, vx: (m.x - x) / life, vy: (m.y - y) / life, life, size: rand(2, 4), sizeEnd: 1, colors: ['#ffffff', c1], fade: false });
@@ -1051,10 +1103,18 @@ export class Game {
     if (this.state !== 'fighting') return;
     if (this.online?.intent) return this.online.intent('press', i);
     initAudio();
-    const id = this.player.moves[i];
-    if (MOVES[id]?.chargeable && this.beginCharge(this.player, id)) {
-      this.ui.pressed(i, true);
-      return;
+    const p = this.player, id = p.moves[i];
+    if (MOVES[id]?.chargeable) {
+      if (this.beginCharge(p, id)) {
+        this.ui.pressed(i, true);
+        return;
+      }
+      // Pressed in the last moments of a recovery: remember the press as a hold, so it starts charging as soon as
+      // it can (or taps, if the key was let go by then) instead of turning into an uncharged tap.
+      if (p.alive && !this.switching && !p.charging && this.moveCD(p, id) <= 0.25) {
+        this.buffered = { i, t: 0.3, hold: true };
+        return;
+      }
     }
     this.playerMove(i);
   }
@@ -1062,7 +1122,17 @@ export class Game {
   playerRelease(i) {
     if (this.online?.intent) return this.online.intent('release', i);
     const p = this.player, id = p.moves[i];
+    if (this.buffered?.hold && this.buffered.i === i) this.buffered.released = true;
     if (p.charging?.id === id) this.releaseCharge(p);
+  }
+
+  // A press that was cancelled rather than released (pause, the window losing focus, a touch the system took
+  // over): drop the charge and any buffered press without firing anything.
+  cancelHeld() {
+    this.buffered = null;
+    const p = this.player;
+    if (p?.charging) p.charging = null; // also drops a hosted battle's local prediction of the charge
+    if (this.state === 'fighting') this.online?.intent?.('cancel', -1); // the match server drops its copy too
   }
 
   // Space: dodge along the held direction, or straight away from the opponent when standing still.
@@ -1520,12 +1590,14 @@ export class Game {
         if (this.gimmick(p)) this.megaQueued = 0;
       }
       if (this.buffered) {
-        this.buffered.t -= dt;
-        const id = p.moves[this.buffered.i];
-        if (this.useMove(p, id)) {
-          this.ui.pressed(this.buffered.i, true);
+        const b = this.buffered, id = p.moves[b.i];
+        b.t -= dt;
+        // A buffered hold starts charging if the key is still down; a released one (or a plain press) fires.
+        const started = b.hold && !b.released && MOVES[id]?.chargeable ? this.beginCharge(p, id) : this.useMove(p, id);
+        if (started) {
+          this.ui.pressed(b.i, true);
           this.buffered = null;
-        } else if (this.buffered.t <= 0) this.buffered = null;
+        } else if (b.t <= 0) this.buffered = null;
       }
     } else {
       p.input.x = p.input.y = 0;
@@ -1801,10 +1873,15 @@ export class Game {
   // Attacks meeting attacks: element reactions decide the winner first (fire melts ice, water douses
   // fire…); otherwise raw power decides, with a cancel when they are close. Each pair reacts once.
   updateClashes() {
-    const shots = this.effects.filter(e => e.isProjectile && e.move && e.user && !e.dead && e.move.power >= 20);
-    for (let i = 0; i < shots.length; i++) {
-      for (let j = i + 1; j < shots.length; j++) {
-        const a = shots[i], b = shots[j];
+    // Collected into reused per-side lists (no new arrays each frame); only shots from opposite sides can meet.
+    const shots = (this.clashShots ??= []), mine = (this.clashMine ??= []), theirs = (this.clashTheirs ??= []);
+    shots.length = mine.length = theirs.length = 0;
+    for (const e of this.effects) if (e.isProjectile && e.move && e.user && !e.dead && e.move.power >= 20) {
+      shots.push(e);
+      (e.user.side === 'player' ? mine : theirs).push(e);
+    }
+    for (const a of mine) {
+      for (const b of theirs) {
         if (a.dead || b.dead || a.user.side === b.user.side) continue;
         if (Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius + 4) continue;
         this.resolveMeeting(a, b, (a.x + b.x) / 2, (a.y + b.y) / 2, Math.max(a.z, b.z));
@@ -1828,7 +1905,8 @@ export class Game {
     const A = this.player.action, B = this.opponent.action;
     if (A?.firing && B?.firing && A.move.beam && B.move.beam && !A.clashed && !B.clashed && !A.hitDone && !B.hitDone) {
       const diff = Math.abs(Math.atan2(Math.sin(A.aim - B.aim), Math.cos(A.aim - B.aim)));
-      if (diff > Math.PI - 0.6) {
+      // Head-on, and the two finite beams (from each user along its aim, as far as its range, as wide as it is) meet.
+      if (diff > Math.PI - 0.6 && beamsMeet(this.player, A, this.opponent, B)) {
         A.clashed = B.clashed = true;
         const r = reactionBetween(A.move.type, B.move.type);
         const pa = A.move.power * (r?.win === A.move.type ? 1.6 : 1), pb = B.move.power * (r?.win === B.move.type ? 1.6 : 1);
@@ -2132,6 +2210,7 @@ export class Game {
   }
 
   resize() {
+    this.pausedDrawn = false;
     const stage = this.canvas.parentElement, touch = document.body.classList.contains('touch');
     const vw = window.innerWidth, vh = window.visualViewport?.height ?? window.innerHeight;
     stage.style.width = `${vw}px`;
@@ -2188,6 +2267,9 @@ export class Game {
       const start = performance.now();
       this.update(dt);
       const updated = this.profile ? performance.now() : 0;
+      // A paused offline battle draws its frame once; a resize invalidates it.
+      if (this.paused && this.pausedDrawn) return;
+      this.pausedDrawn = this.paused;
       this.render();
       const rendered = performance.now();
       if (observeFrame(rendered - start, frameMs)) this.resize();

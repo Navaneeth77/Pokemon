@@ -7,7 +7,7 @@ import { WORLD_W } from './arena.js';
 import { addExtraAnims } from './assets.js';
 import { music } from './music.js';
 import { sfx } from './audio.js';
-import { Ring, Glow, Pillar, Lightning, ScreenDim, ThrownBall, PsyDome, dustCloud, sparkBurst, electricBurst, leafBurst, windBurst, waterSplash, iceShatter, sendOutBurst, FIRE } from './effects.js';
+import { emitCount, Ring, Glow, Pillar, Lightning, ScreenDim, ThrownBall, PsyDome, dustCloud, sparkBurst, electricBurst, leafBurst, windBurst, waterSplash, iceShatter, sendOutBurst, FIRE } from './effects.js';
 
 // Story cutscenes, staged on the game's own canvas and arenas with the game's existing sprites: trainers
 // (your party seen from behind, everyone else facing the camera, as in battle) and the Pokémon sprite
@@ -716,7 +716,7 @@ export class Cutscene {
     }
     f.flash = Math.max(0, f.flash - dt * 2.2);
     if (f.shadow && (f.shadow.t += dt) >= f.shadow.d) f.shadow = null;
-    if (f.rain) for (let i = 0; i < 5; i++) g.particles.spawn({ x: rand(-40, WORLD_W + 40), y: rand(160, 620), z: 140, vx: -60, vz: -520, life: 0.28, size: 1.5, colors: ['#bfe6ff', '#8fc8f0'] });
+    if (f.rain) for (let i = emitCount(f, 'rain', 5, dt); i > 0; i--) g.particles.spawn({ x: rand(-40, WORLD_W + 40), y: rand(160, 620), z: 140, vx: -60, vz: -520, life: 0.28, size: 1.5, colors: ['#bfe6ff', '#8fc8f0'] });
     if (f.lightning && (f.boltT -= dt) <= 0) {
       f.boltT = rand(3.5, 7);
       this.bolt(rand(60, WORLD_W - 60));

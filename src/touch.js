@@ -1,6 +1,7 @@
 import { SPECIES } from './data/species.js';
 import { MOVES } from './moves.js';
 import { TYPE_COLORS } from './data/types.js';
+import { DODGE_COOLDOWN } from './pokemon.js';
 
 // On-screen controls for touch devices.
 // Left: a floating joystick — it appears where your thumb lands anywhere in the left half and follows
@@ -50,14 +51,15 @@ export class TouchControls {
     this.team = this.root.querySelector('.t-team');
     this.root.addEventListener('contextmenu', e => e.preventDefault());
     this.bindJoystick();
-    this.moves.forEach((b, i) => this.hold(b, () => game.playerPress(i), () => game.playerRelease(i)));
+    // A real lift fires a charged move; a touch the system cancelled or took over only drops it.
+    this.moves.forEach((b, i) => this.hold(b, () => game.playerPress(i), () => game.playerRelease(i), () => game.cancelHeld()));
     this.hold(this.ult, () => game.playerUltimate());
     this.hold(this.dodge, () => game.playerDodge());
     this.hold(this.mega, () => game.playerMega());
     this.hold(this.root.querySelector('.t-pause'), onPause);
   }
 
-  hold(el, down, up) {
+  hold(el, down, up, cancel = up) {
     el.addEventListener('pointerdown', e => {
       e.preventDefault();
       capture(el, e.pointerId);
@@ -65,14 +67,14 @@ export class TouchControls {
       navigator.vibrate?.(8); // a light tap you can feel, where supported
       down();
     });
-    const end = () => {
+    const end = fn => () => {
       if (!el.classList.contains('down')) return;
       el.classList.remove('down');
-      up?.();
+      fn?.();
     };
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
-    el.addEventListener('lostpointercapture', end);
+    el.addEventListener('pointerup', end(up));
+    el.addEventListener('pointercancel', end(cancel));
+    el.addEventListener('lostpointercapture', end(cancel));
   }
 
   // Floating joystick: the centre is wherever the thumb first touches; dragging past the edge pulls the
@@ -171,7 +173,7 @@ export class TouchControls {
     const dcd = p.dodgeCD;
     const dodgeLabel = dcd > 0 ? `${dcd.toFixed(1)}s` : 'ready';
     if (this.dodgeValue.textContent !== dodgeLabel) this.dodgeValue.textContent = dodgeLabel;
-    const dodgeFill = Math.round(Math.max(0, Math.min(100, dcd / 1.2 * 100)));
+    const dodgeFill = Math.round(Math.max(0, Math.min(100, dcd / (p.dodgeCDMax || DODGE_COOLDOWN) * 100)));
     if (dodgeFill !== this.lastDodgeFill) {
       this.lastDodgeFill = dodgeFill;
       this.dodge.style.setProperty('--cd', `${dodgeFill}%`);

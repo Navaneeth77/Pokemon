@@ -30,14 +30,19 @@ export function applyAliases(id, anims) {
 }
 
 const imageCache = new Map();
+// At most 8 sheets download and decode at once, so a big team doesn't flood the connection and decoder.
+let imageSlots = 8;
+const imageWaiting = [];
+const imageSlot = () => imageSlots > 0 ? (imageSlots--, Promise.resolve()) : new Promise(r => imageWaiting.push(r));
+const freeImageSlot = () => { const next = imageWaiting.shift(); if (next) next(); else imageSlots++; };
 export function loadImage(src) {
   if(imageCache.has(src))return imageCache.get(src);
-  const pending = new Promise((resolve, reject) => {
+  const pending = imageSlot().then(() => new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = async () => { try { await img.decode?.(); } catch {} resolve(img); };
     img.onerror = () => reject(new Error(`Failed to load ${src}`));
     img.src = assetUrl(src);
-  }).catch(err=>{imageCache.delete(src);throw err;});
+  })).finally(freeImageSlot).catch(err=>{imageCache.delete(src);throw err;});
   imageCache.set(src,pending);return pending;
 }
 
@@ -82,6 +87,9 @@ async function loadSpriteSet(id) {
     if (d.copyOf && anims[d.copyOf]) anims[d.name] = { ...anims[d.copyOf], name: d.name };
   }
   applyAliases(id, anims);
+  // Never cache a set the game can't draw: it needs an Idle sheet with frames and positive durations.
+  const idle = anims.Idle;
+  if (!idle?.image?.width || !idle.fw || !idle.fh || !idle.frames || idle.durations.some(d => !(d > 0))) throw new Error(`Unusable Idle animation for ${id}`);
   return { anims, portrait: await loadImage(`${base}/portrait.png`) };
 }
 
@@ -170,6 +178,22 @@ export async function loadSpecies(ids) {
     return spriteCache.get(id);
   }));
   return Object.fromEntries(ids.map((id, i) => [id, sets[i]]));
+}
+
+// Roughly how many bytes a loaded set takes once decoded (4 bytes a pixel, each sheet counted once).
+export function decodedBytes(set) {
+  const imgs = new Set([set?.portrait, ...Object.values(set?.anims ?? {}).map(a => a.image)].filter(Boolean));
+  let n = 0;
+  for (const i of imgs) n += (i.width || 0) * (i.height || 0) * 4;
+  return n;
+}
+
+// Forgets one loaded set (a species' sheets, or its `~shiny` recolour) so its decoded images can be freed.
+export function releaseSprite(key) {
+  spriteCache.delete(key);
+  if (key.endsWith('~shiny')) return;
+  const prefix = `/sprites/${key}/`;
+  for (const path of imageCache.keys()) if (path.startsWith(prefix)) imageCache.delete(path);
 }
 
 // The dev roster playback cycles through hundreds of decoded sheets in one tab.

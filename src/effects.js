@@ -6,6 +6,16 @@ import { blit } from './sprite.js';
 import { drawNaturalCharge } from './raid-art.js';
 
 export const rand = (a, b) => a + Math.random() * (b - a);
+// A chance tuned for one 60 Hz frame, scaled to this update's time step: the same particle count per second
+// on a 60, 120 or 144 Hz screen (and in stepped updates), instead of more on faster screens.
+export const perFrame = (p, dt) => Math.random() < 1 - (1 - p) ** (Math.max(0, dt) * 60);
+// How many particles an emitter makes this update: `perFrame` per 60 Hz frame, as a steady rate per second,
+// with the fraction carried on `owner` to its next update (so 60, 120 and 144 Hz make the same amount).
+export function emitCount(owner, key, perFrame, dt) {
+  const k = `emit_${key}`, acc = (owner[k] ?? 0) + perFrame * 60 * Math.max(0, dt), n = Math.floor(acc);
+  owner[k] = acc - n;
+  return n;
+}
 export const FIRE = ['#fffbd0', '#ffe066', '#ffab33', '#ff6a1f', '#d23a17', '#7a3a2a'];
 export const FIRE_BLUE = ['#f2fbff', '#bfe9ff', '#6cc8ff', '#2f86ee', '#1f4cc0', '#2a2f4a'];
 export const flameColors = mon => (mon.species.flame === 'blue' ? FIRE_BLUE : FIRE);

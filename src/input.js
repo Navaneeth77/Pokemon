@@ -82,6 +82,7 @@ export class Input {
   clear() {
     this.held.clear();
     this.touch = null;
+    this.game.cancelHeld?.(); // a charge being held is dropped, never fired by a later key-up
     this.game.online?.sendDirection?.(undefined, true);
   }
 

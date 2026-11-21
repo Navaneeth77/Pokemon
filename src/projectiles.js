@@ -1,5 +1,5 @@
-import { applyHit } from './combat.js';
-import { rand, Ring, Glow, iceShatter, leafBurst, debris, dustCloud } from './effects.js';
+import { applyHit, dodgesHit, segmentDist, segmentClosest } from './combat.js';
+import { rand, perFrame, Ring, Glow, iceShatter, leafBurst, debris, dustCloud } from './effects.js';
 import { BOUNDS } from './arena.js';
 import { skyLegend, PressureWave } from './legendary-effects.js';
 import { showShotTrail } from './move-presentation.js';
@@ -105,18 +105,29 @@ class Projectile {
   }
 
   update(dt) {
+    // Already spent (a reaction or a clash can end it before its own update).
+    if (this.dead) return false;
     this.age += dt;
-    const step = this.speed * dt;
+    // The foe it was thrown at switched out: it flies on at whoever took that place.
+    const foe = this.user.foe;
+    if (foe && foe !== this.target && foe.side === this.target.side) this.target = foe;
+    const step = this.speed * dt, px = this.x, py = this.y;
     this.x += Math.cos(this.angle) * step;
     this.y += Math.sin(this.angle) * step;
     this.traveled += step;
     this.trail(dt);
     const t = this.target;
-    // A dodging target is untouchable: the projectile flies straight through.
-    if (t.alive && !t.hidden && !t.untouchable && Math.hypot(t.x - this.x, t.y - this.y) <= this.radius + t.radius) this.impact(true);
+    // Contact is checked along the whole path travelled this frame, so a fast shot can't skip past a target.
+    if (t.alive && !t.hidden && segmentDist(t.x, t.y, px, py, this.x, this.y) <= this.radius + t.radius) {
+      // Invulnerable (a move's own i-frames, flying up, digging): it passes through.
+      if (t.invuln) { /* flies on */ }
+      // A dodge: it flies through, and the dodge counts (DODGED!, ultimate charge) unless No Guard is in play.
+      else if (dodgesHit(this.game, this.user, t, {}, this.volley ?? this.stack)) { /* flies on */ }
+      else { Object.assign(this, segmentClosest(t.x, t.y, px, py, this.x, this.y)); this.impact(true); return !this.dead; }
+    }
     // Its reach is how far from where it was thrown it gets (a shot that curves in a fan still reaches as far), with a
     // cap on the path so nothing circles for ever.
-    else if (Math.hypot(this.x - this.x0, this.y - this.y0) >= this.maxDist || this.traveled >= this.maxDist * 1.6 || this.outside()) this.impact(false);
+    if (Math.hypot(this.x - this.x0, this.y - this.y0) >= this.maxDist || this.traveled >= this.maxDist * 1.6 || this.outside()) this.impact(false);
     return !this.dead;
   }
 }
@@ -128,8 +139,8 @@ export class AirBlade extends Projectile {
     showShotTrail(game, this, move);
   }
 
-  trail() {
-    if (Math.random() < 0.6) {
+  trail(dt) {
+    if (perFrame(0.6, dt)) {
       this.game.particles.spawn({
         x: this.x, y: this.y, z: this.z, vx: rand(-12, 12), vy: rand(-12, 12), life: 0.25,
         size: 2, colors: ['#e9fbff', '#a6e9ff'],
@@ -288,15 +299,17 @@ export class Orb extends Projectile {
     return super.update(dt);
   }
 
-  trail() {
+  trail(dt) {
     const s = this.s, back = this.angle + Math.PI;
     if (s.sphere && !this.game.headless && this.traveled - (this.lastFracture ?? 0) >= 27) {
       this.lastFracture = this.traveled;
       this.game.marks.fracture(this.x, this.y, 9, 4);
       dustCloud(this.game, this.x, this.y, 3, 3);
     }
-    const count = s.shard || (s.leaves && this.move.id !== 'leafStorm') ? 1 : 2;
-    for (let i = 0; i < count; i++) {
+    // 1 or 2 particles per 60 Hz frame, emitted by elapsed time so faster screens don't double them.
+    const rate = (s.shard || (s.leaves && this.move.id !== 'leafStorm') ? 1 : 2) * 60;
+    this.emit = (this.emit ?? 0) + rate * dt;
+    for (; this.emit >= 1; this.emit--) {
       this.game.particles.spawn({
         x: this.x + rand(-3, 3), y: this.y + rand(-3, 3), z: this.z + rand(-3, 3),
         vx: Math.cos(back) * 30 + rand(-12, 12), vy: Math.sin(back) * 30 + rand(-12, 12),

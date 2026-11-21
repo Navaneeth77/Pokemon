@@ -114,7 +114,13 @@ export function onHit(game, attacker, target, move, dmg, stack) {
     it.eat?.(game, attacker, 1);
     game.useUpItem(target);
   }
-  if (A.sheerForce || abilityOf(target).shieldDust || target.item === 'covertCloak') return;
+  // Primary effects are part of the move itself: Sheer Force, Shield Dust and the Covert Cloak leave them alone.
+  if (move.id === 'saltCure' && target.alive) target.salted = { by: attacker.side, t: 0 };
+  if ((move.id === 'whirlpool' || move.id === 'magmaStorm' || move.id === 'fireSpin') && target.alive) target.bound = { t: 6, tick: 0, by: move.name };
+  if (move.id === 'thief' && !attacker.item && target.item) game.knockOffItem(target, attacker, true);
+  if (move.id === 'clearSmog' && target.alive) target.stages = {};
+  // Added (secondary) effects: Sheer Force trades them for power; Shield Dust and the Covert Cloak block them.
+  if ((A.sheerForce && hasAddedEffect(move)) || abilityOf(target).shieldDust || target.item === 'covertCloak') return;
   for (const s of d.secondary ?? []) {
     if (Math.random() * 100 >= s.chance * serene) continue;
     if (s.status && target.alive) game.applyStatus(target, STATUS_OF[s.status], { source: attacker, toxic: s.status === 'tox' });
@@ -124,10 +130,13 @@ export function onHit(game, attacker, target, move, dmg, stack) {
     if (s.boosts && target.alive) game.stage(target, s.boosts, attacker);
     if (s.self && attacker.alive) game.stage(attacker, s.self);
   }
-  if (move.id === 'saltCure' && target.alive) target.salted = { by: attacker.side, t: 0 };
-  if ((move.id === 'whirlpool' || move.id === 'magmaStorm' || move.id === 'fireSpin') && target.alive) target.bound = { t: 6, tick: 0, by: move.name };
-  if (move.id === 'thief' && !attacker.item && target.item) game.knockOffItem(target, attacker, true);
-  if (move.id === 'clearSmog' && target.alive) target.stages = {};
+}
+
+// One rule for Sheer Force: a move qualifies when it has an added effect (a database move's secondaries,
+// or a built-in move's own status, stat drop, self boost or burn / freeze / flinch chance).
+export function hasAddedEffect(move, o = {}) {
+  if (move.dex) return !!move.dex.secondary?.length;
+  return !!(move.status || move.debuff || move.statusPool || move.selfBuff || o.burnChance || o.freezeChance || o.flinchChance);
 }
 
 export function afterUse(game, user, move, stack = {}) {

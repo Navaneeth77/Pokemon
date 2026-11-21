@@ -40,6 +40,7 @@ export class Opening {
   }
 
   start() {
+    cancelAnimationFrame(this.raf); // restarting never leaves a second frame loop running
     this.running = true;
     this.t = 0;
     this.last = performance.now();
@@ -47,18 +48,19 @@ export class Opening {
     window.addEventListener('resize', this.resize);
     const frame = now => {
       if (!this.running) return;
-      requestAnimationFrame(frame);
+      this.raf = requestAnimationFrame(frame);
       const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
       this.last = now;
       this.t += dt;
       for (const m of this.mons) m.sprite.update(dt);
       this.draw();
     };
-    requestAnimationFrame(frame);
+    this.raf = requestAnimationFrame(frame);
   }
 
   stop() {
     this.running = false;
+    cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.resize);
   }
 

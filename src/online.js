@@ -179,6 +179,7 @@ export class Online {
 
   open() {
     this.close();
+    this.gen = (this.gen ?? 0) + 1; // a new room: async work started for an older one must not touch it
     this.net = new Net({
       connect: () => this.onConnect(),
       message: msg => this.onMessage(msg),
@@ -310,15 +311,18 @@ export class Online {
     if (!this.me || !this.them || this.loading || this.meLoaded) return;
     this.loading = true;
     this.flow.onlineUpdate();
+    const gen = this.gen, net = this.net, current = () => gen === this.gen && net === this.net;
     try {
       Object.assign(this.game, { kits: this.me.kit, foeKits: this.them.kit });
       await this.game.ensureSprites([...this.me.team, ...this.them.team]);
     } catch (err) {
       console.error(err);
+      if (!current()) return; // that room is gone: leave the new one alone
       this.loading = false;
       this.lost('could not be reached (loading failed)');
       return;
     }
+    if (!current()) return;
     this.loading = false;
     if (!this.net) return;
     this.meLoaded = true;

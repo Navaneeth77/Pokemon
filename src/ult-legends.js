@@ -7,8 +7,7 @@
 import { spawnStructure, structureField } from './arena-structures.js';
 import {
   Effect, rand, FIRE, FIRE_BLUE, Glow, Ring, Pillar, Spike, Missile, Beam, BeamLine, PsyDome, ScreenDim, Afterimage, EnergyAura,
-  GroundMarker, Lightning, TidalWave, RainbowStreak, Ripple, dustCloud, debris, windBurst, electricBurst, waterSplash,
-} from './effects.js';
+  GroundMarker, Lightning, TidalWave, RainbowStreak, Ripple, dustCloud, debris, windBurst, electricBurst, waterSplash, emitCount } from './effects.js';
 import { sfx } from './audio.js';
 import { clampX, clampY, inward, spray, crater, charge, through } from './ult-choreo.js';
 
@@ -151,7 +150,7 @@ export const LEGEND_ULTS = {
     let rain = 2.4;
     a.ticks.push(dt => {
       if ((rain -= dt) <= 0) return;
-      for (let i = 0; i < 5; i++) g.particles.spawn({ x: rand(0, 380), y: rand(60, 640), z: rand(160, 240), vx: -60, vz: -520, life: 0.4, size: 1.5, colors: ['#bfe6ff', '#8ac8ff'], fade: false });
+      for (let i = 0, iN = emitCount(a, 'ult-legends154', 5, dt); i < iN; i++) g.particles.spawn({ x: rand(0, 380), y: rand(60, 640), z: rand(160, 240), vx: -60, vz: -520, life: 0.4, size: 1.5, colors: ['#bfe6ff', '#8ac8ff'], fade: false });
     });
     for (let i = 0; i < 5; i++) a.later(i * 0.14, () => g.spawn(new Ring(u.x, u.y, { r0: 10, r1: 60 + i * 12, life: 0.4, color: '#8ac8ff', width: 2 })));
     sfx.hydro(0.7);
@@ -360,7 +359,7 @@ export const LEGEND_ULTS = {
     let wisps = 0.5;
     a.ticks.push(dt => {
       if ((wisps -= dt) <= 0) return;
-      for (let i = 0; i < 2; i++) g.particles.spawn({ x: u.x + rand(-30, 30), y: u.y + rand(-12, 12), z: 0, vz: rand(40, 100), life: 0.5, size: rand(3, 6), sizeEnd: 1, colors: ['#7a3a3a', '#2a1020', '#140c1c'] });
+      for (let i = 0, iN = emitCount(a, 'ult-legends363', 2, dt); i < iN; i++) g.particles.spawn({ x: u.x + rand(-30, 30), y: u.y + rand(-12, 12), z: 0, vz: rand(40, 100), life: 0.5, size: rand(3, 6), sizeEnd: 1, colors: ['#7a3a3a', '#2a1020', '#140c1c'] });
     });
     sfx.zap(0.5);
     // It sinks out of sight.
@@ -433,7 +432,7 @@ export const LEGEND_ULTS = {
     a.ticks.push(dt => {
       if ((spin -= dt) <= 0) return;
       const k = a.t * 10;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0, iN = emitCount(a, 'ult-legends436', 3, dt); i < iN; i++) {
         const ang = k + (i / 3) * Math.PI * 2;
         g.particles.spawn({ x: u.x + Math.cos(ang) * 30, y: u.y + Math.sin(ang) * 14, z: u.bodyZ, vz: rand(10, 40), life: 0.35, size: rand(3, 5), sizeEnd: 1, colors: FIRE_BLUE });
       }
@@ -534,7 +533,7 @@ export const LEGEND_ULTS = {
     let draw = 0.8;
     a.ticks.push(dt => {
       if ((draw -= dt) <= 0) return;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0, iN = emitCount(a, 'ult-legends537', 4, dt); i < iN; i++) {
         const x = rand(10, 350), y = rand(80, 620), life = 0.6;
         g.particles.spawn({ x, y, z: 0, vx: (u.x - x) / life, vy: (u.y - y) / life, vz: u.bodyZ / life, life, size: rand(2, 4), sizeEnd: 1.5, colors: [LIGHTS[i % 5]], fade: false });
       }
@@ -615,7 +614,7 @@ export const LEGEND_ULTS = {
       let left = 0.6;
       a.ticks.push(dt => {
         if ((left -= dt) <= 0 || !alive(t)) return;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0, iN = emitCount(a, 'ult-legends618', 3, dt); i < iN; i++) {
           const x = t.x + rand(-10, 10), y = t.y + rand(-6, 6), life = 0.45;
           g.particles.spawn({ x, y, z: t.bodyZ, vx: (u.x - x) / life, vy: (u.y - y) / life, vz: (u.bodyZ - t.bodyZ) / life, life, size: rand(2, 4), sizeEnd: 1.5, colors: ['#ff6080', '#c02040'], fade: false });
         }

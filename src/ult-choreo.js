@@ -11,8 +11,7 @@ import { spawnStructure, structureField } from './arena-structures.js';
 import { BOUNDS } from './arena.js';
 import {
   rand, FIRE, Glow, Ring, Pillar, Falling, Spike, Missile, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura,
-  GroundMarker, Glare, Ripple, dustCloud, debris, windBurst, leafBurst,
-} from './effects.js';
+  GroundMarker, Glare, Ripple, dustCloud, debris, windBurst, leafBurst, emitCount } from './effects.js';
 import { sfx } from './audio.js';
 
 export const clampX = x => Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, x));
@@ -164,7 +163,7 @@ export const TYPE_ULTS = {
     let hum = 0.7;
     a.ticks.push(dt => {
       if ((hum -= dt) <= 0) return;
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0, iN = emitCount(a, 'ult-choreo167', 2, dt); i < iN; i++) {
         const ang = rand(0, Math.PI * 2), r = rand(22, 40);
         g.particles.spawn({ x: u.x + Math.cos(ang) * r, y: u.y + Math.sin(ang) * r * 0.5, z: u.bodyZ + rand(-10, 10), vx: -Math.sin(ang) * 120, vy: Math.cos(ang) * 60, life: 0.25, size: rand(1.5, 2.5), colors: ['#2a3a10', '#f4ffd0'] });
       }
@@ -688,7 +687,7 @@ export const TYPE_ULTS = {
       a.ticks.push(dt => {
         if ((dizzy -= dt) <= 0) return;
         const k = a.t * 8;
-        for (let i = 0; i < 3; i++) g.particles.spawn({ x: u.x + Math.cos(k + i * 2.1) * 12, y: u.y + Math.sin(k + i * 2.1) * 5, z: u.headZ + 8, life: 0.12, size: 2.5, colors: ['#fff6b0'], fade: false });
+        for (let i = 0, iN = emitCount(a, 'ult-choreo691', 3, dt); i < iN; i++) g.particles.spawn({ x: u.x + Math.cos(k + i * 2.1) * 12, y: u.y + Math.sin(k + i * 2.1) * 5, z: u.headZ + 8, life: 0.12, size: 2.5, colors: ['#fff6b0'], fade: false });
       });
     });
     a.end(at + 1.1);

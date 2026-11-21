@@ -6,18 +6,18 @@ import { preloadUltimateArt } from './ultimate-art.js';
 import { preloadImpactSprite } from './effects.js';
 import { loadSpecies } from './assets.js';
 import { DEFAULT_TEAM, OPPONENT_TEAM, spritesFor } from './data/species.js';
-import { Game, prepareSprites } from './game.js';
+import { Game, prepareSprites, TITLE_SPRITES } from './game.js';
 import { UI } from './ui.js';
 import { Flow } from './flow.js';
 import { PerformanceOverlay } from './performance-overlay.js';
 
 export async function main() {
-  // Only the default team and the opponent's are loaded up front; other picks load when a battle starts.
-  const first = [...spritesFor([...DEFAULT_TEAM, ...OPPONENT_TEAM]), 'pikachu', 'eevee', 'bidoof']; // + title-screen Pokémon
+  // Waited for: the title screen's Pokémon, the default teams the game is built with, and the fonts.
+  // Other picks load when a battle starts (game.ensureSprites); ultimate art and the impact sprite follow
+  // in the background (an ultimate cast before they arrive simply draws without them).
+  const first = [...new Set([...TITLE_SPRITES, ...spritesFor([...DEFAULT_TEAM, ...OPPONENT_TEAM])])];
   const [sprites] = await Promise.all([
     loadSpecies(first),
-    preloadImpactSprite().catch(()=>{}),
-    preloadUltimateArt(),
     document.fonts.load('700 16px "Pixelify Sans"'),
     document.fonts.load('400 16px "Luckiest Guy"'),
   ]);
@@ -41,6 +41,7 @@ export async function main() {
   game.resize();
   flow.begin();
   game.run();
+  void Promise.allSettled([preloadImpactSprite(), preloadUltimateArt()]);
   requestAnimationFrame(() => document.documentElement.classList.remove('booting'));
   if(import.meta.env.DEV && new URLSearchParams(location.search).has('profile')) {
     game.profile=[];

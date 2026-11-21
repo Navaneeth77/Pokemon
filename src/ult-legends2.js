@@ -4,8 +4,7 @@
 // sleep between its two halves).
 import {
   Effect, rand, FIRE, Glow, Ring, Pillar, Falling, Beam, BeamLine, SlashArc, PsyDome, ScreenDim, Afterimage, EnergyAura,
-  GroundMarker, Lightning, StormCloud, Ripple, dustCloud, windBurst, electricBurst,
-} from './effects.js';
+  GroundMarker, Lightning, StormCloud, Ripple, dustCloud, windBurst, electricBurst, emitCount } from './effects.js';
 import { sfx } from './audio.js';
 import { spray, crater, charge, through } from './ult-choreo.js';
 
@@ -274,7 +273,7 @@ export const LEGEND_ULTS_2 = {
     let swirl = 2;
     a.ticks.push(dt => {
       if ((swirl -= dt) <= 0) return;
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0, iN = emitCount(a, 'ult-legends2277', 2, dt); i < iN; i++) {
         const ang = a.t * 3 + i * Math.PI + rand(-0.3, 0.3), r = rand(120, 170);
         g.particles.spawn({ x: 180 + Math.cos(ang) * r, y: 200 + Math.sin(ang) * r * 0.4, z: 140, vx: -Math.sin(ang) * 80, vy: Math.cos(ang) * 30, life: 0.6, size: rand(3, 6), colors: ['#ff3a6a', '#4a0a2a'] });
       }
@@ -519,7 +518,7 @@ export const LEGEND_ULTS_2 = {
       let left = 0.75;
       a.ticks.push(dt => {
         if ((left -= dt) <= 0) return;
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0, iN = emitCount(a, 'ult-legends2522', 4, dt); i < iN; i++) {
           const ang = rand(0, Math.PI * 2), r = rand(50, 90), x = t.x + Math.cos(ang) * r, y = t.y + Math.sin(ang) * r * 0.6;
           g.particles.spawn({ x, y, z: rand(4, 40), vx: (t.x - x) / 0.4 - Math.sin(ang) * 60, vy: (t.y - y) / 0.4 + Math.cos(ang) * 30, life: 0.4, size: rand(3, 6), sizeEnd: 1, colors: ['#05030a', '#4a2a6a', '#d0b8ff'], fade: false });
         }
