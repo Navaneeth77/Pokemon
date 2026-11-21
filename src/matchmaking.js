@@ -416,6 +416,8 @@ export class Matchmaker {
   }
 
   onMessage(m) {
+    // The server measuring our delay (lag-forgiving dodges): answer at once, before anything else.
+    if (m.t === 'sping') { this.send({ t: 'spong', ts: m.ts }); this.serverOneWay = m.ow; return; }
     if (this.flow.expansion?.onMessage(m)) return;
     switch (m.t) {
       case 'pong': {

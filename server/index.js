@@ -12,7 +12,7 @@ import { EconomyStore } from './economy-store.js';
 import { ownsShiny } from '../src/economy.js';
 import { sendQueued } from './outbox.js';
 import { originChecker } from './origins.js';
-import { Latency, pingPayload, pingSentAt } from './latency.js';
+import { Latency } from './latency.js';
 import { cleanKit } from '../src/data/items.js';
 import { SHINY } from '../src/data/national-dims.js';
 import { botEntry } from './bots.js';
@@ -1004,6 +1004,7 @@ function onMessage(conn, raw) {
   // Anything but in-battle input and pings can change who is where: recount on the next lobby check-in.
   if (m.t !== 'in' && m.t !== 'ping') presenceCache = null;
   if (m.t === 'ping') return send(conn.ws, { t: 'pong', ts: m.ts });
+  if (m.t === 'spong') { if (typeof m.ts === 'number') conn.latency.echo(m.ts, performance.now()); return; }
   if (m.t === 'hello') return hello(conn, m);
   const p = conn.player;
   if (!p || p.ws !== conn.ws) return send(conn.ws, { t: 'error', code: 'no-hello', message: 'Say hello first.' });
@@ -1327,11 +1328,7 @@ const wss = new WebSocketServer({
 
 wss.on('connection', ws => {
   const conn = { ws, player: null, tokens: RATE.burst, refill: Date.now(), dropped: 0, alive: true, latency: new Latency() };
-  ws.on('pong', data => {
-    conn.alive = true;
-    const sent = pingSentAt(data);
-    if (sent != null) conn.latency.add(performance.now() - sent);
-  });
+  ws.on('pong', () => (conn.alive = true));
   // One bad message must never take down every other battle: an unexpected error ends only this connection
   // (its close handler then clears its queue entry, draft or match like any disconnect).
   ws.on('message', data => {
@@ -1359,10 +1356,14 @@ setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-// Once a second, measure each signed-in player's round trip (lag-forgiving dodges use it).
+// Once a second, measure each signed-in player's round trip with a game message (server/latency.js says why not a
+// ping frame); lag-forgiving dodges use it. `ow` is the current one-way estimate, shown to the player for reference.
 setInterval(() => {
-  const now = performance.now();
-  for (const ws of wss.clients) if (ws.conn?.player && ws.readyState === 1) { try { ws.ping(pingPayload(now)); } catch { /* closing */ } }
+  const now = Math.round(performance.now());
+  for (const ws of wss.clients) {
+    const c = ws.conn;
+    if (c?.player && ws.readyState === 1) send(ws, { t: 'sping', ts: c.latency.stamp(now), ow: Math.round(c.latency.oneWayMs()) });
+  }
 }, 1000).unref();
 
 // Render's free plan puts a service to sleep after 15 minutes without requests, and the next player
