@@ -59,8 +59,8 @@ test('readiness retry respects its overall deadline',async()=>{
 
 test('interpolated opponent positions do not accumulate a second smoothing delay',()=>{
  const mon={x:10,y:20,z:0,hidden:false,fainted:false};
- const mm={foeSample:{},fx:x=>x,fy:y=>y,fd:d=>d};
- Matchmaker.prototype.puppetAfter.call(mm,1/60,{mon,x:10,y:20},{x:15,y:25,d:0,fz:0},false);
+ const mm=Object.assign(Object.create(Matchmaker.prototype),{foeSample:{},flip:false});
+ mm.puppetAfter(1/60,{mon,x:10,y:20},{x:15,y:25,d:0,fz:0},false);
  assert.equal(mon.x,15);assert.equal(mon.y,25);
 });
 
@@ -75,7 +75,11 @@ test('co-op partner moves between snapshots and advances its sprite every render
 
 test('late snapshots extrapolate only briefly and never slide across a teleport',()=>{
  const mm={offset:100,delay:35,foeBuf:[{ts:0,i:0,x:0,y:0},{ts:33,i:0,x:33,y:0}]};
- assert.equal(Matchmaker.prototype.sampleFoe.call(mm,500).x,113);
+ // Full speed for 80 ms past the newest update, then easing to a stop: never more than 200 ms of motion (33 + 200).
+ const late=Matchmaker.prototype.sampleFoe.call(mm,500).x;
+ assert.ok(late>113&&late<233,`extrapolated to ${late}`);
+ mm.playbackAt=null;
+ assert.ok(Matchmaker.prototype.sampleFoe.call(mm,5000).x<=233,'bounded however late the update is');
  mm.foeBuf[1].x=200;
  assert.equal(Matchmaker.prototype.sampleFoe.call(mm,500).x,200);
 });

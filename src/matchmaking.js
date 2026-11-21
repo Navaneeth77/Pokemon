@@ -940,7 +940,11 @@ export class Matchmaker {
     if (!c) {
       const p = b[k - 1];
       if (!p || a.mv === 0 || p.ts >= a.ts || p.i !== a.i || Math.hypot(a.x - p.x, a.y - p.y) > 60) return a;
-      const ahead = Math.min(t - a.ts, 80) / (a.ts - p.ts || 1);
+      // While the next update is late (a stall on a lossy connection), keep going the same way at full speed for
+      // 80 ms, then ease to a stop within about another 120 ms instead of halting dead (the burst that ends the
+      // stall is blended in by puppetAfter).
+      const over = t - a.ts, aheadMs = over <= 80 ? over : 80 + 120 * (1 - Math.exp(-(over - 80) / 120));
+      const ahead = aheadMs / (a.ts - p.ts || 1);
       return { ...a, x: a.x + (a.x - p.x) * ahead, y: a.y + (a.y - p.y) * ahead };
     }
     const f = (t - a.ts) / (c.ts - a.ts || 1);
@@ -1112,6 +1116,7 @@ export class Matchmaker {
         mon.x = pre.x + (tx - pre.x) * k;
         mon.y = pre.y + (ty - pre.y) * k;
       }
+      if (this.foeSample) this.blendFoeJump(mon, tx, ty, s.i, dt);
       mon.dir = this.fd(s.d);
     }
     mon.vx = mon.vy = 0;
@@ -1122,6 +1127,26 @@ export class Matchmaker {
       mon.air.h += (s.ah - mon.air.h) * k;
       mon.air.vz = 0;
     } else mon.air = null;
+  }
+
+  // When updates arrive in a burst after a stall, the interpolated position leaps ahead in one frame. That leap is
+  // kept as a visual offset (`foeErr`) that fades out over about a quarter of a second, so the opponent glides to
+  // where it really is. Only leaps faster than any real movement count: normal motion, dashes included, follows
+  // the server path exactly (no added lag), and a teleport or a switch (over 180 px, or a different Pokémon) shows at once.
+  blendFoeJump(mon, tx, ty, i, dt) {
+    const last = this.foeLast, e = (this.foeErr ??= { x: 0, y: 0 });
+    this.foeLast = { mon, i, x: tx, y: ty };
+    if (!last || last.mon !== mon || last.i !== i) { e.x = e.y = 0; return; }
+    const jx = tx - last.x, jy = ty - last.y, jump = Math.hypot(jx, jy);
+    if (jump > 180) { e.x = e.y = 0; return; }
+    if (jump > Math.max(8, 600 * dt)) { e.x -= jx; e.y -= jy; } // faster than 600 px/s: a burst, not movement
+    const fade = Math.exp(-dt / 0.09);
+    e.x *= fade; e.y *= fade;
+    if (Math.hypot(e.x, e.y) < 0.05) e.x = e.y = 0;
+    const size = Math.hypot(e.x, e.y);
+    if (size > 160) { e.x *= 160 / size; e.y *= 160 / size; }
+    mon.x = tx + e.x;
+    mon.y = ty + e.y;
   }
 
   // ── Result: always the server's ──
